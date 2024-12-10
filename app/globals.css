@@ -25,7 +25,7 @@
     --ring: 221.2 83.2% 53.3%;
     --radius: 0.5rem;
   }
-
+ 
   .dark {
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
@@ -46,6 +46,18 @@
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 224.3 76.3% 48%;
+  }
+}
+
+@layer components {
+  .border-border {
+    border: 1px solid hsl(var(--border));
+  }
+  .bg-background {
+    background-color: hsl(var(--background));
+  }
+  .text-foreground {
+    color: hsl(var(--foreground));
   }
 }
 

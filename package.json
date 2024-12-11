@@ -74,6 +74,8 @@
     "react-hook-form": "^7.53.0",
     "react-hot-toast": "^2.4.1",
     "react-resizable-panels": "^2.1.3",
+    "react-spring": "^9.7.5",
+    "react-use-gesture": "^9.1.3",
     "recharts": "^2.12.7",
     "sonner": "^1.5.0",
     "tailwind-merge": "^2.5.2",

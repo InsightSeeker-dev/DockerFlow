@@ -1,87 +1,80 @@
 'use client';
 
 import { useSession, signOut } from 'next-auth/react';
-import { Bell, ChevronDown, Search, User } from 'lucide-react';
-import Image from 'next/image';
-import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Bell, Settings, LogOut, User } from 'lucide-react';
 
 export function Navbar() {
   const { data: session } = useSession();
-  const [showUserMenu, setShowUserMenu] = useState(false);
+
+  const handleSignOut = () => {
+    signOut({ callbackUrl: '/' });
+  };
+
+  const userInitials = session?.user?.name
+    ? session.user.name.split(' ').map(n => n[0]).join('').toUpperCase()
+    : 'U';
 
   return (
-    <nav className="bg-black/40 backdrop-blur-sm border-b border-gray-800/50">
+    <nav className="border-b border-gray-800 bg-gray-900/50 backdrop-blur-xl">
       <div className="mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
-          {/* Search Bar */}
-          <div className="flex-1 max-w-md">
-            <div className="relative">
-              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                <Search className="h-5 w-5 text-gray-400" aria-hidden="true" />
-              </div>
-              <input
-                type="text"
-                className="block w-full rounded-lg border border-gray-800/50 bg-black/20 py-2 pl-10 pr-3 text-gray-300 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
-                placeholder="Search containers, images..."
-              />
-            </div>
+          <div className="flex-1 flex items-center">
+            <Input
+              type="search"
+              placeholder="Search containers..."
+              className="max-w-sm bg-gray-800 border-gray-700"
+            />
           </div>
 
-          {/* Right section */}
-          <div className="flex items-center space-x-6">
-            {/* Notifications */}
-            <button className="relative text-gray-400 hover:text-gray-300">
-              <Bell className="h-6 w-6" />
-              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-xs text-white">
-                3
-              </span>
-            </button>
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" size="icon" className="relative">
+              <Bell className="h-5 w-5" />
+              <span className="absolute top-0 right-0 h-2 w-2 rounded-full bg-red-500" />
+            </Button>
 
-            {/* Profile dropdown */}
-            <div className="relative">
-              <button
-                onClick={() => setShowUserMenu(!showUserMenu)}
-                className="flex items-center space-x-3 rounded-lg border border-gray-800/50 bg-black/20 px-3 py-2 text-sm font-medium text-gray-300 hover:bg-gray-800/30"
-              >
-                {session?.user?.image ? (
-                  <Image
-                    src={session.user.image}
-                    alt="Profile"
-                    width={28}
-                    height={28}
-                    className="rounded-full"
-                  />
-                ) : (
-                  <User className="h-5 w-5 text-gray-400" />
-                )}
-                <span>{session?.user?.name || 'User'}</span>
-                <ChevronDown className="h-4 w-4 text-gray-400" />
-              </button>
-
-              {/* Dropdown menu */}
-              {showUserMenu && (
-                <div className="absolute right-0 mt-2 w-48 rounded-lg border border-gray-800/50 bg-black/90 py-1 shadow-lg backdrop-blur-sm">
-                  <a
-                    href="/dashboard/profile"
-                    className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-800/50"
-                  >
-                    Your Profile
-                  </a>
-                  <a
-                    href="/dashboard/settings"
-                    className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-800/50"
-                  >
-                    Settings
-                  </a>
-                  <button
-                    onClick={() => signOut()}
-                    className="block w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-gray-800/50"
-                  >
-                    Sign out
-                  </button>
-                </div>
-              )}
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="relative h-10 w-10 rounded-full">
+                  <Avatar>
+                    <AvatarImage src={session?.user?.image || ''} />
+                    <AvatarFallback>{userInitials}</AvatarFallback>
+                  </Avatar>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56 bg-gray-900 border-gray-800">
+                <DropdownMenuLabel className="text-gray-400">
+                  {session?.user?.name}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-gray-800" />
+                <DropdownMenuItem className="flex items-center gap-2 cursor-pointer">
+                  <User className="h-4 w-4" />
+                  Profile
+                </DropdownMenuItem>
+                <DropdownMenuItem className="flex items-center gap-2 cursor-pointer">
+                  <Settings className="h-4 w-4" />
+                  Settings
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="bg-gray-800" />
+                <DropdownMenuItem 
+                  className="flex items-center gap-2 text-red-500 cursor-pointer"
+                  onClick={handleSignOut}
+                >
+                  <LogOut className="h-4 w-4" />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>

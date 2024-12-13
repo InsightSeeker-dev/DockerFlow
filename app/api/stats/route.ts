@@ -44,14 +44,15 @@ function calculateCPUPercentage(stats: ContainerStats): number {
   const systemDelta = stats.cpu_stats.system_cpu_usage - stats.precpu_stats.system_cpu_usage;
   return (cpuDelta / systemDelta) * 100;
 }
+
 // Add session type
 interface ExtendedSession extends Session {
   user: {
     id: string;
     email: string;
-    role: string;
   } & Session['user']
 }
+
 // Main API handler
 export async function GET() {
   try {
@@ -69,7 +70,6 @@ export async function GET() {
       where: { id: session.user.id },
       select: {
         id: true,
-        role: true,
         memoryLimit: true,
         storageLimit: true
       }
@@ -116,9 +116,8 @@ export async function GET() {
     }
 
     // Determine resource limits based on user role
-    const isAdmin = user.role === 'ADMIN';
-    const memoryLimit = isAdmin ? os.totalmem() : user.memoryLimit;
-    const storageLimit = isAdmin ? os.totalmem() : user.storageLimit;
+    const memoryLimit = user.memoryLimit;
+    const storageLimit = user.storageLimit;
 
     // Prepare response
     const systemStats: SystemStats = {

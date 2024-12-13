@@ -1,60 +1,84 @@
-datasource db {
-  provider = "mongodb"
-  url      = env("DATABASE_URL")
-}
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
   provider = "prisma-client-js"
   previewFeatures = ["mongodb"]
 }
 
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
 model User {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  name            String
-  email           String   @unique
-  password        String
-  avatar          String?
-  bio             String?
-  role            String   @default("USER")
-  memoryLimit     Int      @default(1073741824)  // 1GB in bytes
-  storageLimit    Int      @default(5368709120)  // 5GB in bytes
-  containers      Container[]
-  storage         UserStorage[]
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                String      @id @default(auto()) @map("_id") @db.ObjectId
+  name              String?     // Required
+  username          String      @unique
+  email             String      @unique // Required
+  password          String      // Required
+  emailVerified     DateTime?
+  verificationToken String?     
+  role              String      @default("admin")  // Ajout du rôle avec "admin" par défaut
+  image             String?
+  resetToken        String?     @unique
+  resetTokenExpiry  DateTime?
+  memoryLimit       Int         @default(2147483648)  // 2GB default
+  storageLimit      Int         @default(10737418240) // 10GB default
+  accounts          Account[]
+  sessions          Session[]
+  containers        Container[]
+  storage           UserStorage[]
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(auto()) @map("_id") @db.ObjectId
+  userId            String  @db.ObjectId
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.String
+  access_token      String? @db.String
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.String
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  sessionToken String   @unique
+  userId       String   @db.ObjectId
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Container {
-  id          String   @id @map("_id")
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
   name        String
   image       String
-  status      String   @default("stopped")
-  port        Int?
-  url         String?
-  dockerfile  String?
-  memory      Int      @default(268435456)  // 256MB default
-  storage     Int      @default(1073741824) // 1GB default
+  status      String
+  ports       Json?
+  created     DateTime @default(now())
   userId      String   @db.ObjectId
-  user        User     @relation(fields: [userId], references: [id])
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model UserStorage {
-  id            String    @id @default(auto()) @map("_id") @db.ObjectId
-  name          String
-  path          String
-  size          Int
-  type          String
-  userId        String    @db.ObjectId
-  user          User      @relation(fields: [userId], references: [id])
-  parentId      String?   @db.ObjectId
-  parent        UserStorage?  @relation("StorageHierarchy", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  children      UserStorage[] @relation("StorageHierarchy")
-  isDirectory   Boolean   @default(false)
-  isDockerImage Boolean   @default(false)
-  dockerImageTag String?
-  dockerImageId  String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  path        String
+  size        Int
+  userId      String   @db.ObjectId
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  created     DateTime @default(now())
+  updated     DateTime @updatedAt
 }

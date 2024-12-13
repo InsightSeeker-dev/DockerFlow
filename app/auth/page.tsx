@@ -1,12 +1,14 @@
 'use client';
 import { Lock, User, Mail, Container, AlertCircle, Eye, EyeOff } from 'lucide-react';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
+import Link from 'next/link';
 
 const DockerFlowAuth = () => {
   const router = useRouter();
+  const [isClient, setIsClient] = useState(false);
   const [isLogin, setIsLogin] = useState(true);
   const [formData, setFormData] = useState({
     email: '',
@@ -18,9 +20,27 @@ const DockerFlowAuth = () => {
     email?: string;
     password?: string;
     submit?: string;
+    action?: JSX.Element;
   }>({});
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  if (!isClient) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md">
+          <h2 className="text-center text-3xl font-extrabold text-gray-900">
+            Loading...
+          </h2>
+        </div>
+      </div>
+    );
+  }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -72,6 +92,24 @@ const DockerFlowAuth = () => {
         });
 
         if (result?.error) {
+          if (result.error === 'No user found') {
+            setErrors({
+              submit: 'No account found with this email address.',
+              action: (
+                <button
+                  onClick={() => {
+                    setIsLogin(false);
+                    setFormData(prev => ({ ...prev, password: '' }));
+                    setErrors({});
+                  }}
+                  className="text-blue-500 hover:text-blue-400 underline ml-1"
+                >
+                  Create an account
+                </button>
+              )
+            });
+            return;
+          }
           throw new Error(result.error);
         }
 
@@ -81,25 +119,62 @@ const DockerFlowAuth = () => {
         const response = await fetch('/api/auth/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData),
+          body: JSON.stringify({
+            username: formData.username,
+            email: formData.email,
+            password: formData.password,
+          }),
         });
+
+        const data = await response.json();
 
         if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.message || 'Registration failed');
+          if (data.type === 'EMAIL_EXISTS') {
+            setErrors({
+              submit: data.error,
+              action: (
+                <button
+                  onClick={() => {
+                    setIsLogin(true);
+                    setFormData(prev => ({ ...prev, password: '' }));
+                    setErrors({});
+                  }}
+                  className="text-blue-500 hover:text-blue-400 underline ml-1"
+                >
+                  Sign in instead
+                </button>
+              )
+            });
+          } else if (data.type === 'EMAIL_NOT_VERIFIED') {
+            setErrors({
+              submit: data.error,
+              action: (
+                <button
+                  onClick={() => {
+                    // TODO: Ajouter la logique pour renvoyer l'email de vérification
+                    setErrors({});
+                  }}
+                  className="text-blue-500 hover:text-blue-400 underline ml-1"
+                >
+                  Resend verification email
+                </button>
+              )
+            });
+          } else {
+            throw new Error(data.error || 'Registration failed');
+          }
+          return;
         }
 
-        // Automatically log in after successful registration
-        await signIn('credentials', {
-          redirect: false,
-          email: formData.email,
-          password: formData.password,
-        });
-
-        router.push('/dashboard');
+        // Rediriger vers la page d'attente de vérification
+        router.push('/verify-request');
       }
-    } catch (error) {
-      setErrors({ submit: 'An error occurred. Please try again.' });
+    } catch (error: any) {
+      console.error('Authentication error:', error);
+      setErrors(prev => ({
+        ...prev,
+        submit: error.message
+      }));
     } finally {
       setIsLoading(false);
     }
@@ -294,18 +369,14 @@ const DockerFlowAuth = () => {
               </motion.button>
 
               {isLogin && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="text-center mt-4"
-                >
-                  <a
-                    href="#"
-                    className="text-sm text-gray-400 hover:text-blue-400 transition-colors duration-200"
+                <div className="flex justify-center mt-4">
+                  <Link
+                    href="/forgot-password"
+                    className="text-sm font-medium text-blue-600 hover:text-blue-500"
                   >
-                    Forgot Password?
-                  </a>
-                </motion.div>
+                    Forgot your password?
+                  </Link>
+                </div>
               )}
 
               {errors.submit && (
@@ -315,6 +386,18 @@ const DockerFlowAuth = () => {
                   className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400/90 text-sm"
                 >
                   {errors.submit}
+                  {errors.action && (
+                    <span className="ml-2">{errors.action}</span>
+                  )}
+                </motion.div>
+              )}
+              {successMessage && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="mt-4 p-3 bg-green-500/10 border border-green-500/20 rounded-lg text-green-400/90 text-sm"
+                >
+                  {successMessage}
                 </motion.div>
               )}
             </motion.form>

@@ -1,3 +1,70 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --background: 222.2 84% 4.9%;
+  --foreground: 210 40% 98%;
+  
+  --card: 222.2 84% 4.9%;
+  --card-foreground: 210 40% 98%;
+ 
+  --popover: 222.2 84% 4.9%;
+  --popover-foreground: 210 40% 98%;
+ 
+  --primary: 217.2 91.2% 59.8%;
+  --primary-foreground: 222.2 47.4% 11.2%;
+ 
+  --secondary: 217.2 32.6% 17.5%;
+  --secondary-foreground: 210 40% 98%;
+ 
+  --muted: 217.2 32.6% 17.5%;
+  --muted-foreground: 215 20.2% 65.1%;
+ 
+  --accent: 217.2 32.6% 17.5%;
+  --accent-foreground: 210 40% 98%;
+ 
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 210 40% 98%;
+ 
+  --border: 217.2 32.6% 17.5%;
+  --input: 217.2 32.6% 17.5%;
+  --ring: 224.3 76.3% 48%;
+}
+
+body {
+  @apply bg-gray-900 text-gray-100;
+}
+
+/* Style global pour les conteneurs principaux */
+.container-dark {
+  @apply bg-gray-800 border border-gray-700/50;
+}
+
+/* Style global pour les inputs */
+.input-dark {
+  @apply bg-gray-800/30 border border-gray-700/50 text-gray-100 focus:ring-2 focus:ring-blue-500/50 focus:border-transparent;
+}
+
+/* Style global pour les boutons */
+.button-primary {
+  @apply bg-blue-500 hover:bg-blue-600 text-white transition-colors;
+}
+
+.button-secondary {
+  @apply bg-gray-700 hover:bg-gray-600 text-gray-100 transition-colors;
+}
+
+/* Animations globales */
+.fade-in {
+  @apply transition-opacity duration-200;
+}
+
+/* Styles pour les messages d'erreur et de succès */
+.error-message {
+  @apply text-red-400 bg-red-500/10 border border-red-500/20;
+}
+
+.success-message {
+  @apply text-green-400 bg-green-500/10 border border-green-500/20;
+}

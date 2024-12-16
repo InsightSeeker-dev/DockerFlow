@@ -13,15 +13,10 @@ const DockerFlowAuth = () => {
   const [formData, setFormData] = useState({
     email: '',
     password: '',
-    username: ''
+    username: '',
+    accountType: 'user'
   });
-  const [errors, setErrors] = useState<{
-    username?: string;
-    email?: string;
-    password?: string;
-    submit?: string;
-    action?: JSX.Element;
-  }>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -42,18 +37,25 @@ const DockerFlowAuth = () => {
     );
   }
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const clearError = (field: string) => {
+    setErrors(prev => {
+      const newErrors = { ...prev };
+      delete newErrors[field];
+      return newErrors;
+    });
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+    clearError(name); // Efface l'erreur quand l'utilisateur commence à modifier le champ
+  };
+
+  const handleAccountTypeChange = (type: string) => {
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      accountType: type
     }));
-    if (errors[name as keyof typeof errors]) {
-      setErrors(prev => ({
-        ...prev,
-        [name]: ''
-      }));
-    }
   };
 
   const validateForm = () => {
@@ -76,105 +78,52 @@ const DockerFlowAuth = () => {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const newErrors = validateForm();
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
-      return;
-    }
     setIsLoading(true);
+    setErrors({});
+
     try {
       if (isLogin) {
-        // Login
         const result = await signIn('credentials', {
-          redirect: false,
           email: formData.email,
           password: formData.password,
+          redirect: false,
         });
 
         if (result?.error) {
-          if (result.error === 'No user found') {
-            setErrors({
-              submit: 'No account found with this email address.',
-              action: (
-                <button
-                  onClick={() => {
-                    setIsLogin(false);
-                    setFormData(prev => ({ ...prev, password: '' }));
-                    setErrors({});
-                  }}
-                  className="text-blue-500 hover:text-blue-400 underline ml-1"
-                >
-                  Create an account
-                </button>
-              )
-            });
+          if (result.error === 'Please verify your email first') {
+            // Rediriger vers la page de renvoi de vérification
+            router.push(`/auth/verify-request?email=${encodeURIComponent(formData.email)}`);
             return;
           }
-          throw new Error(result.error);
+          setErrors({ auth: result.error });
+        } else {
+          const response = await fetch('/api/auth/session');
+          const session = await response.json();
+          
+          // Rediriger en fonction du rôle
+          if (session?.user?.role === 'admin') {
+            router.push('/admin/dashboard');
+          } else {
+            router.push('/dashboard');
+          }
         }
-
-        router.push('/dashboard');
       } else {
-        // Register
         const response = await fetch('/api/auth/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            username: formData.username,
-            email: formData.email,
-            password: formData.password,
-          }),
+          body: JSON.stringify(formData),
         });
 
         const data = await response.json();
 
         if (!response.ok) {
-          if (data.type === 'EMAIL_EXISTS') {
-            setErrors({
-              submit: data.error,
-              action: (
-                <button
-                  onClick={() => {
-                    setIsLogin(true);
-                    setFormData(prev => ({ ...prev, password: '' }));
-                    setErrors({});
-                  }}
-                  className="text-blue-500 hover:text-blue-400 underline ml-1"
-                >
-                  Sign in instead
-                </button>
-              )
-            });
-          } else if (data.type === 'EMAIL_NOT_VERIFIED') {
-            setErrors({
-              submit: data.error,
-              action: (
-                <button
-                  onClick={() => {
-                    // TODO: Ajouter la logique pour renvoyer l'email de vérification
-                    setErrors({});
-                  }}
-                  className="text-blue-500 hover:text-blue-400 underline ml-1"
-                >
-                  Resend verification email
-                </button>
-              )
-            });
-          } else {
-            throw new Error(data.error || 'Registration failed');
-          }
-          return;
+          setErrors({ auth: data.error || 'Registration failed' });
+        } else {
+          router.push('/auth/verify-request');
         }
-
-        // Rediriger vers la page d'attente de vérification
-        router.push('/verify-request');
       }
-    } catch (error: any) {
-      console.error('Authentication error:', error);
-      setErrors(prev => ({
-        ...prev,
-        submit: error.message
-      }));
+    } catch (error) {
+      setErrors({ auth: 'An unexpected error occurred' });
     } finally {
       setIsLoading(false);
     }
@@ -242,163 +191,255 @@ const DockerFlowAuth = () => {
               onSubmit={handleSubmit}
               className="space-y-5"
             >
-              {!isLogin && (
-                <div>
-                  <label className="block text-gray-200 text-sm font-medium mb-2" htmlFor="username">
-                    <User className="inline-block mr-2 mb-1" size={16} />
-                    Username
-                  </label>
-                  <motion.input
-                    variants={inputVariants}
-                    initial="rest"
-                    whileFocus="focus"
-                    type="text"
-                    id="username"
-                    name="username"
-                    value={formData.username}
-                    onChange={handleChange}
-                    className={`w-full px-4 py-2.5 bg-gray-900/50 text-gray-100 rounded-lg border ${
-                      errors.username ? 'border-red-500/50' : 'border-gray-700'
-                    } focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all duration-200`}
-                    placeholder="Choose a username"
-                  />
-                  {errors.username && (
-                    <motion.p
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="mt-2 text-xs text-red-400/90 flex items-center"
+              {isLogin ? (
+                // Formulaire de connexion
+                <div className="space-y-4">
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                    <input
+                      type="email"
+                      name="email"
+                      placeholder="Email"
+                      className="pl-10 pr-4 py-3 w-full border border-gray-700/50 rounded-lg bg-gray-800/30 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200"
+                      value={formData.email}
+                      onChange={handleChange}
+                      onFocus={() => clearError('email')}
+                      disabled={isLoading}
+                    />
+                    {errors.email && (
+                      <motion.p 
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mt-1 text-sm text-red-400 flex items-center"
+                      >
+                        <AlertCircle className="mr-1" size={12} />
+                        {errors.email}
+                      </motion.p>
+                    )}
+                  </div>
+
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      name="password"
+                      placeholder="Password"
+                      className="pl-10 pr-12 py-3 w-full border border-gray-700/50 rounded-lg bg-gray-800/30 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200"
+                      value={formData.password}
+                      onChange={handleChange}
+                      onFocus={() => clearError('password')}
+                      disabled={isLoading}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300 transition-colors focus:outline-none"
                     >
-                      <AlertCircle size={12} className="mr-1" />
-                      {errors.username}
-                    </motion.p>
-                  )}
+                      {showPassword ? (
+                        <EyeOff size={20} />
+                      ) : (
+                        <Eye size={20} />
+                      )}
+                    </button>
+                    {errors.password && (
+                      <motion.p 
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mt-1 text-sm text-red-400 flex items-center"
+                      >
+                        <AlertCircle className="mr-1" size={12} />
+                        {errors.password}
+                      </motion.p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                // Formulaire d'inscription
+                <div className="space-y-4">
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                    <input
+                      type="text"
+                      name="username"
+                      placeholder="Username"
+                      className="pl-10 pr-4 py-3 w-full border border-gray-700/50 rounded-lg bg-gray-800/30 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200"
+                      value={formData.username}
+                      onChange={handleChange}
+                      onFocus={() => clearError('username')}
+                      disabled={isLoading}
+                    />
+                    {errors.username && (
+                      <motion.p 
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mt-1 text-sm text-red-400 flex items-center"
+                      >
+                        <AlertCircle className="mr-1" size={12} />
+                        {errors.username}
+                      </motion.p>
+                    )}
+                  </div>
+
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                    <input
+                      type="email"
+                      name="email"
+                      placeholder="Email"
+                      className="pl-10 pr-4 py-3 w-full border border-gray-700/50 rounded-lg bg-gray-800/30 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200"
+                      value={formData.email}
+                      onChange={handleChange}
+                      onFocus={() => clearError('email')}
+                      disabled={isLoading}
+                    />
+                    {errors.email && (
+                      <motion.p 
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mt-1 text-sm text-red-400 flex items-center"
+                      >
+                        <AlertCircle className="mr-1" size={12} />
+                        {errors.email}
+                      </motion.p>
+                    )}
+                  </div>
+
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      name="password"
+                      placeholder="Password"
+                      className="pl-10 pr-12 py-3 w-full border border-gray-700/50 rounded-lg bg-gray-800/30 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200"
+                      value={formData.password}
+                      onChange={handleChange}
+                      onFocus={() => clearError('password')}
+                      disabled={isLoading}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300 transition-colors focus:outline-none"
+                    >
+                      {showPassword ? (
+                        <EyeOff size={20} />
+                      ) : (
+                        <Eye size={20} />
+                      )}
+                    </button>
+                    {errors.password && (
+                      <motion.p 
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mt-1 text-sm text-red-400 flex items-center"
+                      >
+                        <AlertCircle className="mr-1" size={12} />
+                        {errors.password}
+                      </motion.p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm text-gray-400">Account Type</label>
+                    <div className="grid grid-cols-2 gap-4">
+                      <button
+                        type="button"
+                        onClick={() => handleAccountTypeChange('user')}
+                        className={`p-4 rounded-lg border ${
+                          formData.accountType === 'user'
+                            ? 'border-blue-500 bg-blue-500/10'
+                            : 'border-gray-700/50 bg-gray-800/30'
+                        } transition-all duration-200 hover:border-blue-500/50`}
+                      >
+                        <div className="flex flex-col items-center space-y-2">
+                          <User className={`${
+                            formData.accountType === 'user' ? 'text-blue-500' : 'text-gray-400'
+                          }`} size={24} />
+                          <span className={`text-sm font-medium ${
+                            formData.accountType === 'user' ? 'text-blue-500' : 'text-gray-400'
+                          }`}>
+                            User
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            Basic features
+                          </span>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleAccountTypeChange('pro')}
+                        className={`p-4 rounded-lg border ${
+                          formData.accountType === 'pro'
+                            ? 'border-blue-500 bg-blue-500/10'
+                            : 'border-gray-700/50 bg-gray-800/30'
+                        } transition-all duration-200 hover:border-blue-500/50`}
+                      >
+                        <div className="flex flex-col items-center space-y-2">
+                          <Container className={`${
+                            formData.accountType === 'pro' ? 'text-blue-500' : 'text-gray-400'
+                          }`} size={24} />
+                          <span className={`text-sm font-medium ${
+                            formData.accountType === 'pro' ? 'text-blue-500' : 'text-gray-400'
+                          }`}>
+                            Pro
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            Advanced features
+                          </span>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
 
-              <div>
-                <label className="block text-gray-200 text-sm font-medium mb-2" htmlFor="email">
-                  <Mail className="inline-block mr-2 mb-1" size={16} />
-                  Email
-                </label>
-                <motion.input
-                  variants={inputVariants}
-                  initial="rest"
-                  whileFocus="focus"
-                  type="email"
-                  id="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  className={`w-full px-4 py-2.5 bg-gray-900/50 text-gray-100 rounded-lg border ${
-                    errors.email ? 'border-red-500/50' : 'border-gray-700'
-                  } focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all duration-200`}
-                  placeholder="Enter your email"
-                />
-                {errors.email && (
-                  <motion.p
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="mt-2 text-xs text-red-400/90 flex items-center"
-                  >
-                    <AlertCircle size={12} className="mr-1" />
-                    {errors.email}
-                  </motion.p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-gray-200 text-sm font-medium mb-2" htmlFor="password">
-                  <Lock className="inline-block mr-2 mb-1" size={16} />
-                  Password
-                </label>
-                <div className="relative">
-                  <motion.input
-                    variants={inputVariants}
-                    initial="rest"
-                    whileFocus="focus"
-                    type={showPassword ? 'text' : 'password'}
-                    id="password"
-                    name="password"
-                    value={formData.password}
-                    onChange={handleChange}
-                    className={`w-full px-4 py-2.5 bg-gray-900/50 text-gray-100 rounded-lg border ${
-                      errors.password ? 'border-red-500/50' : 'border-gray-700'
-                    } focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all duration-200`}
-                    placeholder="Enter your password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-300 transition-colors"
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-                {errors.password && (
-                  <motion.p
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="mt-2 text-xs text-red-400/90 flex items-center"
-                  >
-                    <AlertCircle size={12} className="mr-1" />
-                    {errors.password}
-                  </motion.p>
-                )}
-              </div>
+              {errors.auth && (
+                <motion.div 
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-3 rounded-lg bg-red-500/10 border border-red-500/20"
+                >
+                  <p className="text-sm text-red-400 flex items-center">
+                    <AlertCircle className="mr-2" size={16} />
+                    {errors.auth}
+                  </p>
+                </motion.div>
+              )}
 
               <motion.button
                 type="submit"
+                disabled={isLoading}
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.99 }}
-                className={`w-full mt-6 px-4 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-medium rounded-lg 
-                  ${isLoading ? 'opacity-75 cursor-not-allowed' : 'hover:from-blue-600 hover:to-blue-700'} 
-                  transition-all duration-200 shadow-lg shadow-blue-500/20`}
-                disabled={isLoading}
+                className={`w-full py-3 px-4 rounded-lg text-white font-medium transition-all duration-200 ${
+                  isLoading
+                    ? 'bg-blue-500/50 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-lg shadow-blue-500/20'
+                }`}
               >
                 {isLoading ? (
-                  <span className="flex items-center justify-center">
-                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <div className="flex items-center justify-center">
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    Processing...
-                  </span>
+                    Please wait...
+                  </div>
                 ) : (
                   isLogin ? 'Sign In' : 'Create Account'
                 )}
               </motion.button>
 
               {isLogin && (
-                <div className="flex justify-center mt-4">
+                <div className="mt-4 text-center">
                   <Link
                     href="/forgot-password"
-                    className="text-sm font-medium text-blue-600 hover:text-blue-500"
+                    className="text-sm text-gray-400 hover:text-blue-400 transition-colors duration-200"
                   >
                     Forgot your password?
                   </Link>
                 </div>
-              )}
-
-              {errors.submit && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400/90 text-sm"
-                >
-                  {errors.submit}
-                  {errors.action && (
-                    <span className="ml-2">{errors.action}</span>
-                  )}
-                </motion.div>
-              )}
-              {successMessage && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="mt-4 p-3 bg-green-500/10 border border-green-500/20 rounded-lg text-green-400/90 text-sm"
-                >
-                  {successMessage}
-                </motion.div>
               )}
             </motion.form>
           </AnimatePresence>

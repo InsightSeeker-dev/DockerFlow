@@ -8,9 +8,8 @@ export async function GET(request: Request) {
 
     if (!token) {
       console.log('No token provided');
-      return NextResponse.json(
-        { error: 'Token is required' },
-        { status: 400 }
+      return NextResponse.redirect(
+        `${process.env.NEXT_PUBLIC_APP_URL}/auth?error=Token is required`
       );
     }
 
@@ -25,9 +24,8 @@ export async function GET(request: Request) {
 
     if (!user) {
       console.log('No user found with token:', token);
-      return NextResponse.json(
-        { error: 'Invalid or expired token' },
-        { status: 400 }
+      return NextResponse.redirect(
+        `${process.env.NEXT_PUBLIC_APP_URL}/auth?error=Invalid or expired token`
       );
     }
 
@@ -47,22 +45,20 @@ export async function GET(request: Request) {
 
       console.log('User verified successfully:', user.id);
 
-      return NextResponse.json(
-        { message: 'Email verified successfully' },
-        { status: 200 }
+      // Rediriger vers la page de connexion avec un message de succès
+      return NextResponse.redirect(
+        `${process.env.NEXT_PUBLIC_APP_URL}/auth?success=Email verified successfully. You can now log in.`
       );
-    } catch (updateError) {
-      console.error('Error updating user:', updateError);
-      return NextResponse.json(
-        { error: 'Failed to verify email' },
-        { status: 500 }
+    } catch (error) {
+      console.error('Error updating user:', error);
+      return NextResponse.redirect(
+        `${process.env.NEXT_PUBLIC_APP_URL}/auth?error=Failed to verify email`
       );
     }
   } catch (error) {
-    console.error('Email verification error:', error);
-    return NextResponse.json(
-      { error: 'Failed to verify email' },
-      { status: 500 }
+    console.error('Verification error:', error);
+    return NextResponse.redirect(
+      `${process.env.NEXT_PUBLIC_APP_URL}/auth?error=An error occurred`
     );
   }
 }

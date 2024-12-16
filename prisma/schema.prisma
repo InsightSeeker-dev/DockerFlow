@@ -17,20 +17,30 @@ model User {
   username          String      @unique
   email             String      @unique // Required
   password          String      // Required
-  emailVerified     DateTime?
-  verificationToken String?     
-  role              String      @default("admin")  // Ajout du rôle avec "admin" par défaut
+  emailVerified     DateTime?   // Pour la vérification d'email
+  verificationToken String?     // Token de vérification
+  role              String      @default("admin")  // Par défaut, tous les utilisateurs sont admin
+  status            String      @default("active") // "active", "inactive", "suspended"
   image             String?
-  resetToken        String?     @unique
+  resetToken        String?     
   resetTokenExpiry  DateTime?
-  memoryLimit       Int         @default(2147483648)  // 2GB default
-  storageLimit      Int         @default(10737418240) // 10GB default
+  cpuLimit          Int         @default(4000)    // 4 CPU cores par défaut pour les admins
+  memoryLimit       Int         @default(8589934592)  // 8GB default pour les admins
+  storageLimit      Int         @default(107374182400) // 100GB default pour les admins
+  cpuThreshold      Int         @default(80)
+  memoryThreshold   Int         @default(85)
+  storageThreshold  Int         @default(90)
   accounts          Account[]
   sessions          Session[]
   containers        Container[]
   storage           UserStorage[]
+  dockerImages      DockerImage[]
+  resourceUsage     ResourceUsage[]
+  alerts            Alert[]
+  terminalSessions  TerminalSession[]
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
+  lastLogin         DateTime?
 
   @@map("users")
 }
@@ -52,6 +62,7 @@ model Account {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+  @@map("accounts")
 }
 
 model Session {
@@ -60,25 +71,84 @@ model Session {
   userId       String   @db.ObjectId
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
 }
 
 model Container {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
   name        String
-  image       String
+  imageId     String
   status      String
   ports       Json?
+  volumes     Json?
+  env         Json?
+  cpuLimit    Int
+  memoryLimit Int
   created     DateTime @default(now())
   userId      String   @db.ObjectId
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resourceUsage ResourceUsage[]
+
+  @@map("containers")
 }
 
 model UserStorage {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  path      String
+  size      Int
+  created   DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_storage")
+}
+
+model DockerImage {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  name      String
+  tag       String
+  size      Int
+  created   DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("docker_images")
+}
+
+model ResourceUsage {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  path        String
-  size        Int
   userId      String   @db.ObjectId
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  created     DateTime @default(now())
-  updated     DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id])
+  containerId String?  @db.ObjectId
+  container   Container? @relation(fields: [containerId], references: [id])
+  cpuUsage    Float
+  memoryUsage Float
+  networkIO   Float
+  timestamp   DateTime @default(now())
+
+  @@map("resource_usage")
+}
+
+model Alert {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  type      String
+  message   String
+  status    String   @default("pending")
+  created   DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("alerts")
+}
+
+model TerminalSession {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  containerId String
+  status    String
+  created   DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("terminal_sessions")
 }

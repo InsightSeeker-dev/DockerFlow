@@ -22,6 +22,11 @@ const registerSchema = z.object({
     .min(6, 'Password must be at least 6 characters')
     .max(100, 'Password cannot exceed 100 characters')
     .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/, 'Password must contain at least one uppercase letter, one lowercase letter, and one number'),
+  accountType: z
+    .enum(['pro', 'user'], {
+      required_error: "Account type is required",
+      invalid_type_error: "Account type must be either 'pro' or 'user'"
+    })
 });
 
 export async function POST(request: Request) {
@@ -48,130 +53,96 @@ export async function POST(request: Request) {
       );
     }
 
-    const { username, email, password } = result.data;
+    const { username, email, password, accountType } = result.data;
 
     // Vérifier si l'utilisateur existe déjà
-    const existingUser = await prisma.user.findUnique({
-      where: { email },
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email },
+          { username }
+        ]
+      }
     });
 
     if (existingUser) {
-      if (!existingUser.emailVerified) {
-        console.log('User exists but not verified, sending new verification email');
-        const verificationToken = randomBytes(32).toString('hex');
-        
-        // Mettre à jour le token
-        await prisma.user.update({
-          where: { email },
-          data: { verificationToken }
-        });
-
-        // Envoyer un nouvel email de vérification
-        const verificationUrl = `${process.env.NEXT_PUBLIC_APP_URL}/verify-email?token=${verificationToken}`;
-        
-        try {
-          await sendEmail({
-            to: email,
-            subject: 'Verify your email for DockerFlow',
-            html: `
-              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                <h1 style="color: #2563eb;">Welcome to DockerFlow!</h1>
-                <p>Please verify your email address by clicking the button below:</p>
-                <div style="text-align: center; margin: 30px 0;">
-                  <a href="${verificationUrl}" 
-                     style="background-color: #2563eb; color: white; padding: 12px 24px; 
-                            text-decoration: none; border-radius: 5px; display: inline-block;">
-                    Verify Email
-                  </a>
-                </div>
-                <p style="color: #666;">If the button doesn't work, copy and paste this link into your browser:</p>
-                <p style="color: #2563eb; word-break: break-all;">${verificationUrl}</p>
-              </div>
-            `,
-          });
-          console.log('Verification email sent successfully to:', email);
-        } catch (error) {
-          console.error('Error sending verification email:', error);
-          throw new Error('Failed to send verification email');
-        }
-
-        return NextResponse.json(
-          {
-            message: 'A new verification email has been sent. Please check your inbox.',
-            resendLink: true
-          },
-          { status: 200 }
-        );
-      }
-
+      const field = existingUser.email === email ? 'email' : 'username';
+      console.log(`${field} already exists:`, existingUser[field]);
       return NextResponse.json(
-        { error: 'Email already registered' },
+        { error: `${field} already exists` },
         { status: 400 }
       );
     }
 
-    // Hasher le mot de passe
-    const hashedPassword = await bcrypt.hash(password, 12);
+    // Créer le token de vérification
     const verificationToken = randomBytes(32).toString('hex');
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     // Créer l'utilisateur
     const user = await prisma.user.create({
       data: {
-        name: username,
         username,
         email,
         password: hashedPassword,
         verificationToken,
-        role: 'admin',
-        memoryLimit: 2 * 1024 * 1024 * 1024, // 2GB
-        storageLimit: 10 * 1024 * 1024 * 1024, // 10GB
+        role: accountType === 'pro' ? 'admin' : 'user',
+        status: 'active',
+        cpuLimit: accountType === 'pro' ? 4000 : 2000, // 4 cores pour pro, 2 pour user
+        memoryLimit: accountType === 'pro' ? 8589934592 : 4294967296, // 8GB pour pro, 4GB pour user
+        storageLimit: accountType === 'pro' ? 107374182400 : 53687091200, // 100GB pour pro, 50GB pour user
+        cpuThreshold: 80,
+        memoryThreshold: 85,
+        storageThreshold: 90,
       },
     });
 
-    console.log('User created successfully:', user.id);
-
     // Envoyer l'email de vérification
-    const verificationUrl = `${process.env.NEXT_PUBLIC_APP_URL}/verify-email?token=${verificationToken}`;
+    const verificationUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/verify-email?token=${verificationToken}`;
     
-    try {
-      console.log('Sending verification email to new user:', email);
-      await sendEmail({
-        to: email,
-        subject: 'Welcome to DockerFlow - Verify Your Email',
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h1 style="color: #2563eb;">Welcome to DockerFlow!</h1>
-            <p>Thank you for registering! Please verify your email address by clicking the button below:</p>
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${verificationUrl}" 
-                 style="background-color: #2563eb; color: white; padding: 12px 24px; 
-                        text-decoration: none; border-radius: 5px; display: inline-block;">
-                Verify Email
-              </a>
-            </div>
-            <p style="color: #666;">If the button doesn't work, copy and paste this link into your browser:</p>
-            <p style="color: #2563eb; word-break: break-all;">${verificationUrl}</p>
-          </div>
-        `,
-      });
-      console.log('Verification email sent successfully to new user');
-    } catch (error) {
-      console.error('Error sending verification email:', error);
-      // On continue l'inscription même si l'envoi d'email échoue
-      console.log('Proceeding with registration despite email failure');
-    }
+    await sendEmail({
+      to: email,
+      subject: 'Welcome to DockerFlow - Verify Your Email',
+      html: `
+        <h1>Welcome to DockerFlow!</h1>
+        <p>Your account has been created successfully.</p>
+        <p>Please verify your email address by clicking the link below:</p>
+        <a href="${verificationUrl}" style="display: inline-block; padding: 10px 20px; background-color: #0070f3; color: white; text-decoration: none; border-radius: 5px;">Verify Email</a>
+        <p>Resource Limits:</p>
+        <ul>
+          <li>CPU: ${accountType === 'pro' ? '4 cores' : '2 cores'}</li>
+          <li>Memory: ${accountType === 'pro' ? '8GB' : '4GB'}</li>
+          <li>Storage: ${accountType === 'pro' ? '100GB' : '50GB'}</li>
+        </ul>
+        <p>As a ${accountType === 'pro' ? 'pro' : 'user'} user, you can:</p>
+        <ul>
+          <li>Create and manage containers</li>
+          <li>Monitor system resources</li>
+          <li>Configure system settings</li>
+        </ul>
+        <p>If you did not create this account, please ignore this email.</p>
+      `,
+    });
 
-    return NextResponse.json(
-      { 
-        message: 'Registration successful. Please check your email to verify your account.',
-        userId: user.id
+    console.log('User created successfully:', {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+    });
+
+    return NextResponse.json({
+      message: 'Registration successful. Please check your email to verify your account.',
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
       },
-      { status: 201 }
-    );
+    });
+
   } catch (error) {
     console.error('Registration error:', error);
     return NextResponse.json(
-      { error: 'Failed to register user' },
+      { error: 'Failed to create user' },
       { status: 500 }
     );
   }

@@ -27,7 +27,7 @@ const adminNavigation = [
 export function Sidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
-  const isAdmin = session?.user?.role === 'ADMIN';
+  const isAdmin = session?.user?.role === 'ADMIN' || session?.user?.role === 'SUPER_ADMIN';
 
   return (
     <div className="flex w-64 flex-col border-r bg-background">

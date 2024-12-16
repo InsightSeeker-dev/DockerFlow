@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 
 export async function PATCH(
   request: Request,
@@ -9,52 +9,49 @@ export async function PATCH(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || session.user.role !== 'admin') {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    if (!session?.user || session.user.role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { status } = await request.json();
-    if (!['active', 'inactive'].includes(status)) {
+    const data = await request.json();
+    const { status } = data;
+
+    if (!['active', 'inactive', 'suspended'].includes(status)) {
       return NextResponse.json(
-        { error: 'Invalid status' },
+        { error: 'Invalid status value' },
         { status: 400 }
       );
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: params.userId },
-    });
-
-    if (!user) {
+    // Prevent self-deactivation
+    if (session.user.userId === params.userId) {
       return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
-    }
-
-    // Ne pas permettre de désactiver son propre compte
-    if (user.id === session.user.id) {
-      return NextResponse.json(
-        { error: 'Cannot modify your own account' },
+        { error: 'Cannot modify your own status' },
         { status: 400 }
       );
     }
 
-    const updatedUser = await prisma.user.update({
-      where: { id: params.userId },
+    const user = await prisma.user.update({
+      where: { userId: params.userId },
       data: { status },
       select: {
-        id: true,
+        userId: true,
         name: true,
+        username: true,
         email: true,
+        role: true,
         status: true,
       },
     });
 
-    return NextResponse.json(updatedUser);
+    // If user is deactivated, terminate all their sessions
+    if (status !== 'active') {
+      await prisma.session.deleteMany({
+        where: { userId: params.userId },
+      });
+    }
+
+    return NextResponse.json(user);
   } catch (error) {
     console.error('Failed to update user status:', error);
     return NextResponse.json(

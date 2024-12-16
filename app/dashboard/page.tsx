@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import { Cpu, Database, HardDrive, Layers, Plus, Terminal, Activity } from 'lucide-react';
 import { Container } from '@/types/docker';
 import { SystemStats } from '@/types/system';
@@ -12,18 +13,25 @@ import { CreateContainerDialog } from '@/components/dashboard/CreateContainerDia
 
 export default function DashboardPage() {
   const { data: session } = useSession();
+  const router = useRouter();
   const [containers, setContainers] = useState<Container[]>([]);
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
 
   useEffect(() => {
+    // Rediriger les admins vers leur tableau de bord
+    if (session?.user?.role === 'admin') {
+      router.push('/admin/dashboard');
+      return;
+    }
+
     if (session) {
       fetchData();
       const interval = setInterval(fetchData, 5000);
       return () => clearInterval(interval);
     }
-  }, [session]);
+  }, [session, router]);
 
   const fetchData = async () => {
     try {

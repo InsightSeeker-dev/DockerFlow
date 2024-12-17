@@ -3,7 +3,7 @@ import { Slider } from '@/components/ui/slider';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { UserResource } from '@/types/admin';
-import { Cpu, Memory, HardDrive } from 'lucide-react';
+import { Cpu, CircleOff, HardDrive } from 'lucide-react';
 
 interface UserResourceManagerProps {
   userId: string;
@@ -67,7 +67,7 @@ export const UserResourceManager: React.FC<UserResourceManagerProps> = ({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center">
-            <Memory className="mr-2" /> Memory Resources
+            <CircleOff className="mr-2" /> Memory Resources
           </CardTitle>
         </CardHeader>
         <CardContent>

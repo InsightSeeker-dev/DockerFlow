@@ -20,17 +20,24 @@ export default function VerifyEmail() {
 
     const verifyEmail = async () => {
       try {
-        const response = await fetch(`/api/auth/verify-email?token=${token}`);
-        const data = await response.json();
-
+        const response = await fetch(`/api/auth/verify-email?token=${token}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ token }),
+        });
+        
         if (response.ok) {
           setStatus('success');
-          setMessage(data.message);
+          setMessage('Email verified successfully. You can now log in.');
         } else {
           setStatus('error');
-          setMessage(data.error);
+          const data = await response.json().catch(() => ({ error: 'An error occurred during email verification' }));
+          setMessage(data.error || 'An error occurred during email verification');
         }
       } catch (error) {
+        console.error('Verification error:', error);
         setStatus('error');
         setMessage('An error occurred during email verification');
       }

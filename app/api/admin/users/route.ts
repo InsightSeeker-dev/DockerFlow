@@ -106,28 +106,33 @@ export async function POST(request: Request) {
       },
     });
 
-    const verificationUrl = `${process.env.NEXTAUTH_URL}/verify-email?token=${verificationToken}`;
+    const verificationUrl = `${process.env.NEXT_PUBLIC_APP_URL}/verify-email?token=${verificationToken}`;
 
-    await sendEmail({
-      to: email,
-      subject: 'Vérifiez votre compte DockerFlow',
-      html: `
-        <h1>Bienvenue sur DockerFlow !</h1>
-        <p>Votre compte a été créé avec succès par un administrateur.</p>
-        <p>Pour activer votre compte, veuillez cliquer sur le lien ci-dessous :</p>
-        <a href="${verificationUrl}" style="display: inline-block; background-color: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin: 16px 0;">
-          Vérifier mon adresse email
-        </a>
-        <p>Ce lien expirera dans 24 heures.</p>
-        <p>Vos limites de ressources :</p>
-        <ul>
-          <li>CPU : ${cpuLimit} millicores (${cpuLimit/1000} cores)</li>
-          <li>Mémoire : ${Math.round(memoryLimit/1024/1024/1024 * 100) / 100}GB</li>
-          <li>Stockage : ${Math.round(storageLimit/1024/1024/1024 * 100) / 100}GB</li>
-        </ul>
-        <p>Si vous n'avez pas demandé ce compte, vous pouvez ignorer cet email.</p>
-      `,
-    });
+    try {
+      await sendEmail({
+        to: email,
+        subject: 'Vérifiez votre compte DockerFlow',
+        html: `
+          <h1>Bienvenue sur DockerFlow !</h1>
+          <p>Votre compte a été créé avec succès par un administrateur.</p>
+          <p>Pour activer votre compte, veuillez cliquer sur le lien ci-dessous :</p>
+          <a href="${verificationUrl}" style="display: inline-block; background-color: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin: 16px 0;">
+            Vérifier mon adresse email
+          </a>
+          <p>Ce lien expirera dans 24 heures.</p>
+          <p>Vos limites de ressources :</p>
+          <ul>
+            <li>CPU : ${cpuLimit} millicores (${cpuLimit/1000} cores)</li>
+            <li>Mémoire : ${Math.round(memoryLimit/1024/1024/1024 * 100) / 100}GB</li>
+            <li>Stockage : ${Math.round(storageLimit/1024/1024/1024 * 100) / 100}GB</li>
+          </ul>
+          <p>Si vous n'avez pas demandé ce compte, vous pouvez ignorer cet email.</p>
+        `,
+      });
+    } catch (emailError) {
+      console.error('Failed to send verification email:', emailError);
+      // Ne pas échouer la création de l'utilisateur si l'envoi de l'email échoue
+    }
 
     const { password: _, ...userWithoutPassword } = user;
     return NextResponse.json(userWithoutPassword);

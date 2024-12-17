@@ -4,6 +4,7 @@ import { hash } from 'bcryptjs';
 import { sendEmail } from '@/lib/email';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import crypto from 'crypto';
 
 export async function GET() {
   try {
@@ -53,7 +54,7 @@ export async function POST(request: Request) {
       email,
       password,
       role = 'user',
-      status = 'active',
+      status = 'pending',
       cpuLimit = 1000,
       memoryLimit = 2147483648,
       storageLimit = 10737418240,
@@ -83,6 +84,9 @@ export async function POST(request: Request) {
     const hashedPassword = await hash(password, 10);
     const username = email.split('@')[0];
 
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const verificationTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 heures
+
     const user = await prisma.user.create({
       data: {
         name,
@@ -97,22 +101,31 @@ export async function POST(request: Request) {
         cpuThreshold,
         memoryThreshold,
         storageThreshold,
+        verificationToken,
+        verificationTokenExpires,
       },
     });
 
+    const verificationUrl = `${process.env.NEXTAUTH_URL}/verify-email?token=${verificationToken}`;
+
     await sendEmail({
       to: email,
-      subject: 'Welcome to DockerFlow',
+      subject: 'Vérifiez votre compte DockerFlow',
       html: `
-        <h1>Welcome to DockerFlow!</h1>
-        <p>Your account has been created successfully.</p>
-        <p>You can now log in using your email and password.</p>
-        <p>Resource Limits:</p>
+        <h1>Bienvenue sur DockerFlow !</h1>
+        <p>Votre compte a été créé avec succès par un administrateur.</p>
+        <p>Pour activer votre compte, veuillez cliquer sur le lien ci-dessous :</p>
+        <a href="${verificationUrl}" style="display: inline-block; background-color: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin: 16px 0;">
+          Vérifier mon adresse email
+        </a>
+        <p>Ce lien expirera dans 24 heures.</p>
+        <p>Vos limites de ressources :</p>
         <ul>
-          <li>CPU: ${cpuLimit} millicores (${cpuLimit/1000} cores)</li>
-          <li>Memory: ${Math.round(memoryLimit/1024/1024/1024 * 100) / 100}GB</li>
-          <li>Storage: ${Math.round(storageLimit/1024/1024/1024 * 100) / 100}GB</li>
+          <li>CPU : ${cpuLimit} millicores (${cpuLimit/1000} cores)</li>
+          <li>Mémoire : ${Math.round(memoryLimit/1024/1024/1024 * 100) / 100}GB</li>
+          <li>Stockage : ${Math.round(storageLimit/1024/1024/1024 * 100) / 100}GB</li>
         </ul>
+        <p>Si vous n'avez pas demandé ce compte, vous pouvez ignorer cet email.</p>
       `,
     });
 

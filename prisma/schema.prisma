@@ -12,35 +12,36 @@ datasource db {
 }
 
 model User {
-  id                String      @id @default(auto()) @map("_id") @db.ObjectId
-  name              String?     // Required
-  username          String      @unique
-  email             String      @unique // Required
-  password          String      // Required
-  emailVerified     DateTime?   // Pour la vérification d'email
-  verificationToken String?     // Token de vérification
-  role              String      @default("admin")  // Par défaut, tous les utilisateurs sont admin
-  status            String      @default("active") // "active", "inactive", "suspended"
-  image             String?
-  resetToken        String?     
-  resetTokenExpiry  DateTime?
-  cpuLimit          Int         @default(4000)    // 4 CPU cores par défaut pour les admins
-  memoryLimit       Int         @default(8589934592)  // 8GB default pour les admins
-  storageLimit      Int         @default(107374182400) // 100GB default pour les admins
-  cpuThreshold      Int         @default(80)
-  memoryThreshold   Int         @default(85)
-  storageThreshold  Int         @default(90)
-  accounts          Account[]
-  sessions          Session[]
-  containers        Container[]
-  storage           UserStorage[]
-  dockerImages      DockerImage[]
-  resourceUsage     ResourceUsage[]
-  alerts            Alert[]
-  terminalSessions  TerminalSession[]
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
-  lastLogin         DateTime?
+  id                     String      @id @default(auto()) @map("_id") @db.ObjectId
+  name                   String?     // Required
+  username               String      @unique
+  email                  String      @unique // Required
+  password               String      // Required
+  emailVerified         DateTime?   // Pour la vérification d'email
+  verificationToken     String?     // Token de vérification
+  verificationTokenExpires DateTime? // Date d'expiration du token de vérification
+  role                   String      @default("admin")  // Par défaut, tous les utilisateurs sont admin
+  status                 String      @default("active") // "active", "inactive", "suspended", "pending"
+  image                  String?
+  resetToken             String?     
+  resetTokenExpiry       DateTime?
+  cpuLimit               Int         @default(4000)    // 4 CPU cores par défaut pour les admins
+  memoryLimit            Int         @default(8589934592)  // 8GB default pour les admins
+  storageLimit           Int         @default(107374182400) // 100GB default pour les admins
+  cpuThreshold           Int         @default(80)
+  memoryThreshold        Int         @default(85)
+  storageThreshold       Int         @default(90)
+  accounts               Account[]
+  sessions               Session[]
+  containers             Container[]
+  storage                UserStorage[]
+  dockerImages           DockerImage[]
+  resourceUsage          ResourceUsage[]
+  alerts                 Alert[]
+  terminalSessions       TerminalSession[]
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
+  lastLogin              DateTime?
 
   @@map("users")
 }

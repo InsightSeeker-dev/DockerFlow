@@ -15,15 +15,18 @@ export async function GET(request: Request) {
 
     console.log('Verifying token:', token);
 
-    // Trouver l'utilisateur avec ce token
+    // Trouver l'utilisateur avec ce token et vérifier qu'il n'est pas expiré
     const user = await prisma.user.findFirst({
       where: {
         verificationToken: token,
+        verificationTokenExpires: {
+          gt: new Date(),
+        },
       },
     });
 
     if (!user) {
-      console.log('No user found with token:', token);
+      console.log('No user found with token or token expired:', token);
       return NextResponse.redirect(
         `${process.env.NEXT_PUBLIC_APP_URL}/auth?error=Invalid or expired token`
       );
@@ -40,6 +43,8 @@ export async function GET(request: Request) {
         data: {
           emailVerified: new Date(),
           verificationToken: null,
+          verificationTokenExpires: null,
+          status: 'active', // Mettre à jour le statut en 'active'
         },
       });
 
@@ -49,16 +54,18 @@ export async function GET(request: Request) {
       return NextResponse.redirect(
         `${process.env.NEXT_PUBLIC_APP_URL}/auth?success=Email verified successfully. You can now log in.`
       );
-    } catch (error) {
-      console.error('Error updating user:', error);
+
+    } catch (updateError) {
+      console.error('Error updating user:', updateError);
       return NextResponse.redirect(
         `${process.env.NEXT_PUBLIC_APP_URL}/auth?error=Failed to verify email`
       );
     }
+
   } catch (error) {
     console.error('Verification error:', error);
     return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_APP_URL}/auth?error=An error occurred`
+      `${process.env.NEXT_PUBLIC_APP_URL}/auth?error=Failed to verify email`
     );
   }
 }

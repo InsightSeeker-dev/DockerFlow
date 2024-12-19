@@ -3,8 +3,8 @@ export interface SystemStats {
   containersRunning: number;
   containersStopped: number;
   images: number;
-  cpuCount: number;
   cpuUsage: number;
+  cpuCount: number;
   networkIO: number;
   memoryUsage: {
     used: number;
@@ -16,7 +16,7 @@ export interface SystemStats {
     total: number;
     percentage: number;
   };
-  resourceLimits: {
+  resourceLimits?: {
     memory: {
       limit: number;
       available: number;

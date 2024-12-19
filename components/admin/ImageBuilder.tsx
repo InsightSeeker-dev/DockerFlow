@@ -61,7 +61,11 @@ interface BuildHistory {
   error?: string;
 }
 
-export default function ImageBuilder() {
+interface ImageBuilderProps {
+  onSuccess: () => void;
+}
+
+export default function ImageBuilder({ onSuccess }: ImageBuilderProps) {
   const [dockerfile, setDockerfile] = useState('');
   const [buildTag, setBuildTag] = useState('');
   const [buildContext, setBuildContext] = useState<File[]>([]);
@@ -240,6 +244,7 @@ CMD ["nginx", "-g", "daemon off;"]`,
       setShowBuildDialog(false);
       setBuildContext([]);
       setBuildTag('');
+      onSuccess();
     } catch (error) {
       console.error('Error building image:', error);
       toast.error('Erreur lors de la construction de l\'image');

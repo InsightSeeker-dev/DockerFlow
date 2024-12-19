@@ -7,7 +7,8 @@ import {
   Bell, 
   ChevronDown, 
   LayoutDashboard,
-  Activity
+  Activity,
+  Settings
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -24,10 +25,12 @@ import AlertCenter from '@/components/admin/AlertCenter';
 import { SystemStats } from '@/types/system';
 import { UserResource } from '@/types/admin';
 import { useResources, ResourceUsage } from '@/hooks/use-resources';
+import { useRouter } from 'next/navigation';
 
 type Tab = 'overview' | 'users' | 'containers' | 'monitoring' | 'alerts';
 
 export default function AdminDashboard() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string>('');
@@ -163,6 +166,10 @@ export default function AdminDashboard() {
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">Administration</h2>
         <div className="flex items-center space-x-2">
+          <Button variant="outline" onClick={() => router.push('/admin/settings')} className="flex items-center gap-2">
+            <Settings className="h-4 w-4" />
+            Paramètres
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" className="ml-auto">

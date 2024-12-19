@@ -20,6 +20,31 @@ export async function PUT(request: Request) {
       if (value) updates[field] = value;
     });
 
+    // Handle Docker settings
+    const defaultRegistry = formData.get('defaultRegistry');
+    const autoUpdate = formData.get('autoUpdate');
+    const resourceLimits = formData.get('resourceLimits');
+
+    if (defaultRegistry) updates.defaultRegistry = defaultRegistry;
+    if (autoUpdate) updates.autoUpdate = autoUpdate === 'true';
+    if (resourceLimits) {
+      try {
+        updates.resourceLimits = JSON.parse(resourceLimits as string);
+      } catch (e) {
+        console.error('Failed to parse resource limits:', e);
+      }
+    }
+
+    // Handle notification settings
+    const notifications = formData.get('notifications');
+    if (notifications) {
+      try {
+        updates.notifications = JSON.parse(notifications as string);
+      } catch (e) {
+        console.error('Failed to parse notifications:', e);
+      }
+    }
+
     // Handle password change
     const currentPassword = formData.get('currentPassword');
     const newPassword = formData.get('newPassword');

@@ -23,6 +23,11 @@ model User {
   role                   String      @default("admin")  // Par défaut, tous les utilisateurs sont admin
   status                 String      @default("active") // "active", "inactive", "suspended", "pending"
   image                  String?
+  bio                    String?     // Biographie de l'utilisateur
+  defaultRegistry        String      @default("docker.io") // Registry Docker par défaut
+  autoUpdate            Boolean     @default(true)      // Mise à jour automatique des conteneurs
+  resourceLimits        Json?       // Limites de ressources personnalisées
+  notifications         Json?       // Préférences de notifications
   resetToken             String?     
   resetTokenExpiry       DateTime?
   cpuLimit               Int         @default(4000)    // 4 CPU cores par défaut pour les admins
@@ -133,17 +138,37 @@ model ResourceUsage {
 }
 
 model Alert {
-  id           String    @id @default(auto()) @map("_id") @db.ObjectId
-  userId       String    @db.ObjectId
-  type         String    // 'cpu', 'memory', 'storage', 'container'
-  message      String
-  status       String    @default("pending") // 'pending', 'acknowledged', 'resolved'
-  severity     String    @default("info")    // 'info', 'warning', 'critical'
-  acknowledged Boolean   @default(false)
-  created      DateTime  @default(now())
-  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id            String    @id @default(cuid())
+  type          String    // error, warning, info, success
+  title         String
+  message       String
+  source        String
+  timestamp     DateTime  @default(now())
+  acknowledged  Boolean   @default(false)
+  acknowledgedAt DateTime?
+  acknowledgedBy String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  @@map("alerts")
+  @@index([type])
+  @@index([timestamp])
+  @@index([acknowledged])
+}
+
+model AlertRule {
+  id          String    @id @default(cuid())
+  name        String
+  type        String    // cpu, memory, disk, network, container
+  condition   String    // >, <, >=, <=, ==
+  threshold   Float
+  enabled     Boolean   @default(true)
+  createdBy   String
+  createdAt   DateTime  @default(now())
+  updatedBy   String?
+  updatedAt   DateTime  @updatedAt
+
+  @@index([type])
+  @@index([enabled])
 }
 
 model TerminalSession {

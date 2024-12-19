@@ -1,69 +1,278 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Activity, Cpu, HardDrive, Network } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { 
+  Activity, 
+  Cpu, 
+  HardDrive, 
+  Network, 
+  Download,
+  AlertTriangle 
+} from 'lucide-react';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer
+} from 'recharts';
+import { toast } from 'sonner';
+
+interface ResourceThresholds {
+  cpu: number;
+  memory: number;
+  disk: number;
+  network: number;
+}
+
+interface SystemMetrics {
+  timestamp: number;
+  cpu: number;
+  memory: number;
+  disk: number;
+  network: number;
+}
 
 export default function ResourceMonitoring() {
+  const [metrics, setMetrics] = useState<SystemMetrics[]>([]);
+  const [thresholds, setThresholds] = useState<ResourceThresholds>({
+    cpu: 80,
+    memory: 80,
+    disk: 90,
+    network: 1000
+  });
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [showAlerts, setShowAlerts] = useState(true);
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+
+    const fetchMetrics = async () => {
+      try {
+        const response = await fetch('/api/admin/metrics');
+        if (response.ok) {
+          const data = await response.json();
+          setMetrics(prev => {
+            const newMetrics = [...prev, {
+              timestamp: Date.now(),
+              ...data
+            }].slice(-30); // Garde les 30 derniers points
+            
+            // Vérification des seuils
+            if (showAlerts) {
+              if (data.cpu > thresholds.cpu) {
+                toast.warning(`Utilisation CPU élevée: ${data.cpu}%`);
+              }
+              if (data.memory > thresholds.memory) {
+                toast.warning(`Utilisation mémoire élevée: ${data.memory}%`);
+              }
+              if (data.disk > thresholds.disk) {
+                toast.warning(`Espace disque critique: ${data.disk}%`);
+              }
+            }
+            
+            return newMetrics;
+          });
+        }
+      } catch (error) {
+        console.error('Erreur lors de la récupération des métriques:', error);
+      }
+    };
+
+    fetchMetrics();
+    if (autoRefresh) {
+      interval = setInterval(fetchMetrics, 5000);
+    }
+
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [autoRefresh, thresholds, showAlerts]);
+
+  const handleExportData = () => {
+    const csvContent = [
+      ['Timestamp', 'CPU (%)', 'Mémoire (%)', 'Disque (%)', 'Réseau (MB/s)'],
+      ...metrics.map(m => [
+        new Date(m.timestamp).toISOString(),
+        m.cpu.toFixed(2),
+        m.memory.toFixed(2),
+        m.disk.toFixed(2),
+        (m.network / 1024 / 1024).toFixed(2)
+      ])
+    ].map(row => row.join(',')).join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `system-metrics-${new Date().toISOString()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  };
+
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Surveillance des ressources système</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* CPU Usage */}
-            <div className="p-4 border rounded-lg">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium">CPU</span>
-                <Cpu className="h-4 w-4 text-gray-400" />
-              </div>
-              <div className="text-2xl font-bold">0%</div>
-              <div className="text-sm text-gray-400">0/4 cores</div>
-            </div>
-
-            {/* Memory Usage */}
-            <div className="p-4 border rounded-lg">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium">Mémoire</span>
-                <Activity className="h-4 w-4 text-gray-400" />
-              </div>
-              <div className="text-2xl font-bold">0%</div>
-              <div className="text-sm text-gray-400">0/16 GB</div>
-            </div>
-
-            {/* Disk Usage */}
-            <div className="p-4 border rounded-lg">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium">Stockage</span>
-                <HardDrive className="h-4 w-4 text-gray-400" />
-              </div>
-              <div className="text-2xl font-bold">0%</div>
-              <div className="text-sm text-gray-400">0/100 GB</div>
-            </div>
-
-            {/* Network Usage */}
-            <div className="p-4 border rounded-lg">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium">Réseau</span>
-                <Network className="h-4 w-4 text-gray-400" />
-              </div>
-              <div className="text-2xl font-bold">0 MB/s</div>
-              <div className="text-sm text-gray-400">↑0 MB/s ↓0 MB/s</div>
-            </div>
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-3xl font-bold tracking-tight">Monitoring des ressources</h2>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={autoRefresh}
+              onCheckedChange={setAutoRefresh}
+            />
+            <Label>Actualisation auto</Label>
           </div>
-        </CardContent>
-      </Card>
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={showAlerts}
+              onCheckedChange={setShowAlerts}
+            />
+            <Label>Alertes</Label>
+          </div>
+          <Button onClick={handleExportData} variant="outline" className="flex items-center gap-2">
+            <Download className="h-4 w-4" />
+            Exporter
+          </Button>
+        </div>
+      </div>
 
-      {/* Historical Data */}
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">CPU</CardTitle>
+            <Cpu className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {metrics.length > 0 ? `${metrics[metrics.length - 1].cpu.toFixed(1)}%` : '0%'}
+            </div>
+            <div className="mt-4">
+              <Label>Seuil d'alerte</Label>
+              <Input
+                type="number"
+                value={thresholds.cpu}
+                onChange={(e) => setThresholds({ ...thresholds, cpu: Number(e.target.value) })}
+                className="mt-1"
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Mémoire</CardTitle>
+            <Activity className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {metrics.length > 0 ? `${metrics[metrics.length - 1].memory.toFixed(1)}%` : '0%'}
+            </div>
+            <div className="mt-4">
+              <Label>Seuil d'alerte</Label>
+              <Input
+                type="number"
+                value={thresholds.memory}
+                onChange={(e) => setThresholds({ ...thresholds, memory: Number(e.target.value) })}
+                className="mt-1"
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Disque</CardTitle>
+            <HardDrive className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {metrics.length > 0 ? `${metrics[metrics.length - 1].disk.toFixed(1)}%` : '0%'}
+            </div>
+            <div className="mt-4">
+              <Label>Seuil d'alerte</Label>
+              <Input
+                type="number"
+                value={thresholds.disk}
+                onChange={(e) => setThresholds({ ...thresholds, disk: Number(e.target.value) })}
+                className="mt-1"
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Réseau</CardTitle>
+            <Network className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {metrics.length > 0 
+                ? `${(metrics[metrics.length - 1].network / 1024 / 1024).toFixed(1)} MB/s` 
+                : '0 MB/s'}
+            </div>
+            <div className="mt-4">
+              <Label>Seuil d'alerte (MB/s)</Label>
+              <Input
+                type="number"
+                value={thresholds.network}
+                onChange={(e) => setThresholds({ ...thresholds, network: Number(e.target.value) })}
+                className="mt-1"
+              />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       <Card>
         <CardHeader>
-          <CardTitle>Historique d'utilisation</CardTitle>
+          <CardTitle>Historique des performances</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-[300px] flex items-center justify-center text-gray-400">
-            Graphique d'utilisation à venir
+          <div className="h-[400px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={metrics}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis 
+                  dataKey="timestamp" 
+                  tickFormatter={(timestamp) => new Date(timestamp).toLocaleTimeString()}
+                />
+                <YAxis />
+                <Tooltip 
+                  labelFormatter={(timestamp) => new Date(timestamp).toLocaleString()}
+                  formatter={(value: number) => [`${value.toFixed(2)}%`]}
+                />
+                <Line 
+                  type="monotone" 
+                  dataKey="cpu" 
+                  stroke="#8884d8" 
+                  name="CPU"
+                />
+                <Line 
+                  type="monotone" 
+                  dataKey="memory" 
+                  stroke="#82ca9d" 
+                  name="Mémoire"
+                />
+                <Line 
+                  type="monotone" 
+                  dataKey="disk" 
+                  stroke="#ffc658" 
+                  name="Disque"
+                />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
         </CardContent>
       </Card>

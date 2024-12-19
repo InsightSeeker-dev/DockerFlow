@@ -1,6 +1,7 @@
 'use client';
 
 import { useSession, signOut } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -16,9 +17,18 @@ import { Bell, Settings, LogOut, User } from 'lucide-react';
 
 export function Navbar() {
   const { data: session } = useSession();
+  const router = useRouter();
 
   const handleSignOut = () => {
     signOut({ callbackUrl: '/' });
+  };
+
+  const handleProfile = () => {
+    router.push('/dashboard/profile');
+  };
+
+  const handleSettings = () => {
+    router.push('/dashboard/settings');
   };
 
   const userInitials = session?.user?.name
@@ -57,11 +67,17 @@ export function Navbar() {
                   {session?.user?.name}
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator className="bg-gray-800" />
-                <DropdownMenuItem className="flex items-center gap-2 cursor-pointer">
+                <DropdownMenuItem 
+                  className="flex items-center gap-2 cursor-pointer"
+                  onClick={handleProfile}
+                >
                   <User className="h-4 w-4" />
                   Profile
                 </DropdownMenuItem>
-                <DropdownMenuItem className="flex items-center gap-2 cursor-pointer">
+                <DropdownMenuItem 
+                  className="flex items-center gap-2 cursor-pointer"
+                  onClick={handleSettings}
+                >
                   <Settings className="h-4 w-4" />
                   Settings
                 </DropdownMenuItem>

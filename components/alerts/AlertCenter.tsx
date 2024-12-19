@@ -149,7 +149,7 @@ const AlertCenter: React.FC<AlertCenterProps> = ({ userId }) => {
                       <div>
                         <p className="font-medium">{alert.message}</p>
                         <p className="text-sm text-gray-400">
-                          {getTimeAgo(alert.timestamp)}
+                          {getTimeAgo(alert.created)}
                         </p>
                       </div>
                       {!alert.acknowledged && (
@@ -163,10 +163,12 @@ const AlertCenter: React.FC<AlertCenterProps> = ({ userId }) => {
                       )}
                     </div>
                     <div className="mt-1 text-sm">
-                      <span className="text-gray-400">
-                        Current: {alert.currentValue.toFixed(1)}% |
-                        Threshold: {alert.threshold}%
-                      </span>
+                      {alert.currentValue !== undefined && alert.threshold !== undefined && (
+                        <span className="text-gray-400">
+                          Current: {alert.currentValue.toFixed(1)}% |
+                          Threshold: {alert.threshold}%
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -7,17 +7,16 @@ const execAsync = promisify(exec);
 
 async function getDiskUsage() {
   try {
-    // Pour Windows
-    const { stdout } = await execAsync('wmic logicaldisk get size,freespace,caption');
+    const { stdout } = await execAsync('df -B1 /');
     const lines = stdout.trim().split('\n').slice(1);
     let totalSize = 0;
     let totalFree = 0;
 
     lines.forEach(line => {
-      const [caption, freeSpace, size] = line.trim().split(/\s+/);
-      if (size && freeSpace) {
+      const [, size, , available] = line.trim().split(/\s+/);
+      if (size && available) {
         totalSize += parseInt(size);
-        totalFree += parseInt(freeSpace);
+        totalFree += parseInt(available);
       }
     });
 

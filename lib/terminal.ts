@@ -86,7 +86,7 @@ class TerminalManager extends EventEmitter {
   public async getUserSessions(userId: string): Promise<TerminalSession[]> {
     const sessions = await prisma.terminalSession.findMany({
       where: { userId },
-      orderBy: { startTime: 'desc' },
+      orderBy: { created: 'desc' },
       take: 10,
     });
 
@@ -94,9 +94,9 @@ class TerminalManager extends EventEmitter {
       id: session.id,
       containerId: session.containerId,
       userId: session.userId,
-      startTime: session.startTime,
-      lastActivity: session.lastActivity,
-      commandHistory: session.commandHistory,
+      startTime: session.created,
+      lastActivity: session.created,
+      commandHistory: [],
     }));
   }
 
@@ -105,16 +105,15 @@ class TerminalManager extends EventEmitter {
       await prisma.terminalSession.upsert({
         where: { id: session.id },
         update: {
-          lastActivity: session.lastActivity,
-          commandHistory: session.commandHistory,
+          status: 'active',
+          created: session.lastActivity,
         },
         create: {
           id: session.id,
           containerId: session.containerId,
           userId: session.userId,
-          startTime: session.startTime,
-          lastActivity: session.lastActivity,
-          commandHistory: session.commandHistory,
+          status: 'active',
+          created: session.startTime,
         },
       });
     } catch (error) {
@@ -153,11 +152,27 @@ class TerminalManager extends EventEmitter {
         AttachStderr: true,
       });
 
-      const { output, stderr } = await exec.start({});
-      return {
-        stdout: output.toString(),
-        stderr: stderr.toString(),
-      };
+      const stream = await exec.start({});
+      return new Promise((resolve, reject) => {
+        let stdout = '';
+        let stderr = '';
+
+        stream.on('data', (chunk) => {
+          stdout += chunk.toString();
+        });
+
+        stream.on('error', (err) => {
+          stderr += err.toString();
+        });
+
+        stream.on('end', () => {
+          resolve({ stdout, stderr });
+        });
+
+        stream.on('error', (err) => {
+          reject(err);
+        });
+      });
     } catch (error) {
       console.error('Error executing command:', error);
       throw new Error('Failed to execute command');

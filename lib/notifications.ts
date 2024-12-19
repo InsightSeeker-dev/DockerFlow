@@ -1,16 +1,19 @@
 import { prisma } from './prisma';
 
+export type AlertType = 'cpu' | 'memory' | 'storage' | 'container';
+export type AlertSeverity = 'info' | 'warning' | 'critical';
+
 export interface Alert {
   id: string;
   userId: string;
-  type: 'cpu' | 'memory' | 'storage' | 'container';
-  severity: 'info' | 'warning' | 'critical';
+  type: string;
   message: string;
-  resourceId?: string;
-  threshold: number;
-  currentValue: number;
-  timestamp: Date;
+  status: string;
+  severity: AlertSeverity;
   acknowledged: boolean;
+  created: Date;
+  currentValue?: number;
+  threshold?: number;
 }
 
 export interface AlertThreshold {
@@ -50,33 +53,46 @@ export class NotificationService {
 
   public async createAlert(
     userId: string,
-    type: Alert['type'],
-    severity: Alert['severity'],
+    type: AlertType,
     message: string,
-    currentValue: number,
-    resourceId?: string
-  ) {
+    severity: AlertSeverity = 'info'
+  ): Promise<Alert> {
     const alert = await prisma.alert.create({
       data: {
         userId,
         type,
-        severity,
         message,
-        resourceId,
-        threshold: this.thresholds.get(userId)?.[type] || DEFAULT_THRESHOLDS[type],
-        currentValue,
-        acknowledged: false,
+        status: 'pending',
       },
     });
 
-    this.notifyListeners(userId, alert);
-    await this.sendEmailNotification(alert);
-    return alert;
+    const alertWithExtras: Alert = {
+      id: alert.id,
+      userId: alert.userId,
+      type: alert.type,
+      message: alert.message,
+      status: alert.status,
+      severity: severity,
+      acknowledged: false,
+      created: alert.created,
+      currentValue: undefined,
+      threshold: undefined,
+    };
+
+    const listeners = this.listeners.get(userId) || [];
+    listeners.forEach((listener) => listener(alertWithExtras));
+
+    return alertWithExtras;
   }
 
-  private async sendEmailNotification(alert: Alert) {
+  private async sendEmailNotification(
+    userId: string, 
+    alert: Alert, 
+    severity: AlertSeverity,
+    currentValue: number
+  ) {
     const user = await prisma.user.findUnique({
-      where: { id: alert.userId },
+      where: { id: userId },
     });
 
     if (!user || !user.email) return;
@@ -84,113 +100,43 @@ export class NotificationService {
     // Vous pouvez utiliser votre service d'email existant ici
     const emailData = {
       to: user.email,
-      subject: `DockerFlow Alert: ${alert.severity.toUpperCase()} - ${alert.type}`,
+      subject: `DockerFlow Alert: ${severity.toUpperCase()} - ${alert.type}`,
       text: `
         Resource Alert for DockerFlow
         
         Type: ${alert.type}
-        Severity: ${alert.severity}
+        Severity: ${severity}
         Message: ${alert.message}
-        Current Value: ${alert.currentValue}
-        Threshold: ${alert.threshold}
-        Time: ${alert.timestamp}
+        Current Value: ${currentValue}%
+        Threshold: ${this.thresholds.get(userId)?.[alert.type as keyof AlertThreshold] || DEFAULT_THRESHOLDS[alert.type as keyof AlertThreshold]}%
+        Time: ${alert.created}
         
         Please check your DockerFlow dashboard for more details.
       `,
     };
 
-    try {
-      // Utiliser votre fonction d'envoi d'email
-      // await sendEmail(emailData);
-      console.log('Alert email sent:', emailData);
-    } catch (error) {
-      console.error('Failed to send alert email:', error);
-    }
+    // TODO: Implémenter l'envoi d'email
+    console.log('Email would be sent:', emailData);
   }
 
-  public async acknowledgeAlert(alertId: string, userId: string) {
-    const alert = await prisma.alert.update({
-      where: { id: alertId },
-      data: { acknowledged: true },
-    });
-
-    this.notifyListeners(userId, alert);
-    return alert;
+  public subscribe(userId: string, callback: (alert: Alert) => void) {
+    const userListeners = this.listeners.get(userId) || [];
+    userListeners.push(callback);
+    this.listeners.set(userId, userListeners);
   }
 
-  public async getAlerts(userId: string, options: {
-    acknowledged?: boolean;
-    severity?: Alert['severity'];
-    limit?: number;
-  } = {}) {
-    return prisma.alert.findMany({
-      where: {
-        userId,
-        ...(options.acknowledged !== undefined && { acknowledged: options.acknowledged }),
-        ...(options.severity && { severity: options.severity }),
-      },
-      orderBy: { timestamp: 'desc' },
-      take: options.limit || 50,
-    });
-  }
-
-  public subscribeToAlerts(userId: string, listener: (alert: Alert) => void) {
-    if (!this.listeners.has(userId)) {
-      this.listeners.set(userId, []);
-    }
-    this.listeners.get(userId)?.push(listener);
-  }
-
-  public unsubscribeFromAlerts(userId: string, listener: (alert: Alert) => void) {
-    const userListeners = this.listeners.get(userId);
-    if (userListeners) {
-      const index = userListeners.indexOf(listener);
-      if (index > -1) {
-        userListeners.splice(index, 1);
-      }
+  public unsubscribe(userId: string, callback: (alert: Alert) => void) {
+    const userListeners = this.listeners.get(userId) || [];
+    const index = userListeners.indexOf(callback);
+    if (index > -1) {
+      userListeners.splice(index, 1);
+      this.listeners.set(userId, userListeners);
     }
   }
 
   private notifyListeners(userId: string, alert: Alert) {
-    this.listeners.get(userId)?.forEach(listener => listener(alert));
-  }
-
-  public checkResourceUsage(userId: string, stats: {
-    cpu?: number;
-    memory?: number;
-    storage?: number;
-  }) {
-    const thresholds = this.getThresholds(userId);
-
-    if (stats.cpu !== undefined && stats.cpu > thresholds.cpu) {
-      this.createAlert(
-        userId,
-        'cpu',
-        stats.cpu > thresholds.cpu + 10 ? 'critical' : 'warning',
-        `CPU usage exceeds threshold: ${stats.cpu.toFixed(1)}%`,
-        stats.cpu
-      );
-    }
-
-    if (stats.memory !== undefined && stats.memory > thresholds.memory) {
-      this.createAlert(
-        userId,
-        'memory',
-        stats.memory > thresholds.memory + 10 ? 'critical' : 'warning',
-        `Memory usage exceeds threshold: ${stats.memory.toFixed(1)}%`,
-        stats.memory
-      );
-    }
-
-    if (stats.storage !== undefined && stats.storage > thresholds.storage) {
-      this.createAlert(
-        userId,
-        'storage',
-        stats.storage > thresholds.storage + 5 ? 'critical' : 'warning',
-        `Storage usage exceeds threshold: ${stats.storage.toFixed(1)}%`,
-        stats.storage
-      );
-    }
+    const userListeners = this.listeners.get(userId) || [];
+    userListeners.forEach(listener => listener(alert));
   }
 }
 

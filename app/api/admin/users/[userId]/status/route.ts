@@ -24,7 +24,7 @@ export async function PATCH(
     }
 
     // Prevent self-deactivation
-    if (session.user.userId === params.userId) {
+    if (session.user.id === params.userId) {
       return NextResponse.json(
         { error: 'Cannot modify your own status' },
         { status: 400 }
@@ -32,10 +32,10 @@ export async function PATCH(
     }
 
     const user = await prisma.user.update({
-      where: { userId: params.userId },
+      where: { id: params.userId },
       data: { status },
       select: {
-        userId: true,
+        id: true,
         name: true,
         username: true,
         email: true,

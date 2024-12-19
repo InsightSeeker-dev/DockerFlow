@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '../../auth/[...nextauth]/route';
-import { db } from '@/lib/db';
+import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 import { hash, compare } from 'bcryptjs';
 
 export async function PUT(request: Request) {
@@ -26,7 +26,7 @@ export async function PUT(request: Request) {
     const confirmPassword = formData.get('confirmPassword');
 
     if (currentPassword && newPassword && confirmPassword) {
-      const user = await db.user.findUnique({
+      const user = await prisma.user.findUnique({
         where: { id: session.user.id as string },
         select: { password: true },
       });
@@ -54,7 +54,7 @@ export async function PUT(request: Request) {
     }
 
     // Update user in database
-    const updatedUser = await db.user.update({
+    const updatedUser = await prisma.user.update({
       where: { id: session.user.id as string },
       data: updates,
     });

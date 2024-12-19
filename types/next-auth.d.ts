@@ -1,7 +1,7 @@
+import { User as PrismaUser } from "@prisma/client";
 import 'next-auth';
-import { DefaultSession } from 'next-auth';
 
-declare module 'next-auth' {
+declare module "next-auth" {
   interface Session {
     user: {
       id: string;
@@ -9,24 +9,21 @@ declare module 'next-auth' {
       name: string;
       username: string;
       emailVerified: Date | null;
-    } & DefaultSession['user']
+      role: string;
+      status: string;
+      image?: string | null;
+    }
   }
 
-  interface User {
-    id: string;
-    email: string;
-    name: string;
-    username: string;
-    emailVerified: Date | null;
+  // Étendre l'interface User avec tous les champs de PrismaUser
+  interface User extends Omit<PrismaUser, 'name'> {
+    name: string; // S'assurer que name n'est jamais null
   }
-}
 
-declare module 'next-auth/jwt' {
   interface JWT {
     id: string;
-    email: string;
-    name: string;
-    username: string;
+    role: string;
+    status: string;
     emailVerified: Date | null;
   }
 }

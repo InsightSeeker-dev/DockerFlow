@@ -5,7 +5,7 @@ import { EventEmitter } from 'events';
 const docker = new Docker();
 const monitoringEmitter = new EventEmitter();
 
-interface ContainerStats {
+export interface ContainerStats {
   cpu_stats: {
     cpu_usage: {
       total_usage: number;
@@ -30,9 +30,23 @@ interface ContainerStats {
     };
     system_cpu_usage: number;
   };
+  networks?: {
+    [key: string]: {
+      rx_bytes: number;
+      tx_bytes: number;
+    };
+  };
 }
 
-interface MonitoringError extends Error {
+export interface SystemStats {
+  cpuUsage: number;
+  memoryUsage: number;
+  memoryTotal: number;
+  diskUsage: number;
+  diskTotal: number;
+}
+
+export interface MonitoringError extends Error {
   containerId?: string;
 }
 
@@ -126,9 +140,10 @@ export function subscribeToErrors(callback: (data: any) => void) {
   return () => monitoringEmitter.off('error', callback);
 }
 
-export default {
+export const resourceMonitor = {
   getContainerStats,
   startMonitoring,
   subscribeToStats,
   subscribeToErrors,
+  saveResourceUsage
 };

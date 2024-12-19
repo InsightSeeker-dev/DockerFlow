@@ -38,15 +38,13 @@ export async function POST(request: Request) {
     }
 
     const data = await request.json();
-    const { name, tag, size, source, dockerfile } = data;
+    const { name, tag, size } = data;
 
     const image = await prisma.dockerImage.create({
       data: {
         name,
         tag,
         size,
-        source,
-        dockerfile,
         userId: session.user.id,
       },
     });

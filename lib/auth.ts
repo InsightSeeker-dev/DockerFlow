@@ -2,7 +2,8 @@ import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
 import { compare } from "bcryptjs";
-import { PrismaAdapter } from "@next-auth/prisma-adapter";
+import { PrismaAdapter } from "@auth/prisma-adapter";
+import { Adapter } from "next-auth/adapters";
 import { PrismaUser } from "@/types/prisma";
 
 declare module "next-auth" {
@@ -15,34 +16,37 @@ declare module "next-auth" {
       emailVerified: Date | null;
       role: string;
       status: string;
+      image?: string | null;
     }
   }
   interface User extends PrismaUser {}
+  interface JWT {
+    id: string;
+    role: string;
+    status: string;
+    emailVerified: Date | null;
+  }
 }
 
 export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma),
+  adapter: PrismaAdapter(prisma) as Adapter,
   session: {
     strategy: "jwt",
     maxAge: 30 * 24 * 60 * 60, // 30 jours
   },
   pages: {
     signIn: '/auth',
-    signOut: '/auth',
-    error: '/auth',
   },
   providers: [
     CredentialsProvider({
-      name: "credentials",
+      name: 'credentials',
       credentials: {
-        email: { label: "Email", type: "email" },
+        email: { label: "Email", type: "text" },
         password: { label: "Password", type: "password" }
       },
-      async authorize(
-        credentials: Record<"email" | "password", string> | undefined
-      ): Promise<any> {
+      async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
-          throw new Error('Please enter your email and password');
+          throw new Error('Invalid credentials');
         }
 
         const user = await prisma.user.findUnique({
@@ -51,44 +55,26 @@ export const authOptions: NextAuthOptions = {
           }
         });
 
-        if (!user) {
-          throw new Error('No user found with this email');
+        if (!user || !user?.password) {
+          throw new Error('Invalid credentials');
         }
 
-        // Vérifier si le compte est actif
+        const isCorrectPassword = await compare(
+          credentials.password,
+          user.password
+        );
+
+        if (!isCorrectPassword) {
+          throw new Error('Invalid credentials');
+        }
+
         if (user.status !== 'active') {
-          throw new Error('Your account is not active');
+          throw new Error('Account is not active');
         }
-
-        // Vérifier le mot de passe
-        const isPasswordValid = await compare(credentials.password, user.password);
-        if (!isPasswordValid) {
-          throw new Error('Invalid password');
-        }
-
-        // Si l'email n'est pas vérifié, on met à jour la dernière connexion mais on renvoie une erreur
-        if (!user.emailVerified) {
-          await prisma.user.update({
-            where: { id: user.id },
-            data: { lastLogin: new Date() },
-          });
-          throw new Error('Please verify your email first');
-        }
-
-        // Mettre à jour la dernière connexion
-        await prisma.user.update({
-          where: { id: user.id },
-          data: { lastLogin: new Date() },
-        });
 
         return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          username: user.username,
-          emailVerified: user.emailVerified,
-          role: user.role,
-          status: user.status,
+          ...user,
+          name: user.name || user.username, // Ensure name is never null
         };
       }
     })
@@ -96,10 +82,13 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.id = user.id;
-        token.role = user.role;
-        token.status = user.status;
-        token.emailVerified = user.emailVerified;
+        return {
+          ...token,
+          id: user.id,
+          role: (user as PrismaUser).role,
+          status: (user as PrismaUser).status,
+          emailVerified: user.emailVerified,
+        };
       }
       return token;
     },

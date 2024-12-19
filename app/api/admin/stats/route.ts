@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth';
 import { prisma } from '@/lib/prisma';
 import { authOptions } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
@@ -26,7 +28,7 @@ export async function GET() {
       prisma.container.count(),
       prisma.userStorage.aggregate({
         _sum: {
-          used: true
+          size: true
         }
       }),
       prisma.user.count({
@@ -41,7 +43,7 @@ export async function GET() {
     return NextResponse.json({
       totalUsers,
       totalContainers,
-      totalStorage: totalStorage._sum.used || 0,
+      totalStorage: totalStorage._sum.size || 0,
       activeUsers,
     });
   } catch (error) {

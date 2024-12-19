@@ -22,6 +22,10 @@ const createContainerSchema = z.object({
   image: z.string(),
   ports: z.array(z.string()).optional(),
   useStorageImage: z.boolean().optional(),
+  cpuLimit: z.number().optional(),
+  memoryLimit: z.number().optional(),
+  volumes: z.array(z.string()).optional(),
+  env: z.array(z.string()).optional(),
 });
 
 const containerActionSchema = z.object({
@@ -74,7 +78,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { name, image, ports, useStorageImage } = createContainerSchema.parse(body);
+    const { name, image, ports, useStorageImage, cpuLimit, memoryLimit, volumes, env } = createContainerSchema.parse(body);
 
     // Check storage limit before creating container
     const imageSize = await getImageSize(image);
@@ -92,10 +96,9 @@ export async function POST(request: Request) {
     // If using a storage image, check if it exists
     let finalImage = image;
     if (useStorageImage) {
-      const storageImage = await prisma.userStorage.findFirst({
+      const storageImage = await prisma.dockerImage.findFirst({
         where: {
           userId: session.user.id,
-          isDockerImage: true,
           name: image,
         },
       });
@@ -107,8 +110,8 @@ export async function POST(request: Request) {
         );
       }
 
-      // Use the stored Docker image ID
-      finalImage = storageImage.dockerImageId || image;
+      // Use the stored Docker image name and tag
+      finalImage = `${storageImage.name}:${storageImage.tag}`;
     }
 
     // Check if image exists locally, if not pull it
@@ -117,7 +120,7 @@ export async function POST(request: Request) {
     } catch (error) {
       // Image doesn't exist locally, try to pull it
       try {
-        await pullImage(session.user.id, finalImage);
+        await pullImage(finalImage, session.user.id);
       } catch (pullError) {
         return NextResponse.json(
           { error: `Failed to pull image: ${finalImage}. Please make sure the image name is correct and you have internet connection.` },
@@ -162,13 +165,18 @@ export async function POST(request: Request) {
     const containerState = await containerInfo.inspect();
 
     // Save container to database with user association
-    await prisma.container.create({
+    const container = await prisma.container.create({
       data: {
         id: containerInfo.id,
         name,
-        image: finalImage,
+        imageId: finalImage,
         status: containerState.State?.Status || 'created',
-        userId: session.user.id
+        userId: session.user.id,
+        cpuLimit: cpuLimit || 4000,  // 4 CPU cores par défaut
+        memoryLimit: memoryLimit || 8589934592,  // 8GB par défaut
+        ports: ports ? JSON.stringify(ports) : null,
+        volumes: volumes ? JSON.stringify(volumes) : null,
+        env: env ? JSON.stringify(env) : null
       }
     });
 

@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ArrowRight, CheckCircle2, XCircle } from 'lucide-react';
 import Link from 'next/link';
 
-export default function VerifyEmail() {
+function VerifyEmailForm() {
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
@@ -20,7 +20,7 @@ export default function VerifyEmail() {
 
     const verifyEmail = async () => {
       try {
-        const response = await fetch(`/api/auth/verify-email?token=${token}`, {
+        const response = await fetch('/api/auth/verify-email', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -87,5 +87,22 @@ export default function VerifyEmail() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function VerifyEmail() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-gray-800 rounded-lg shadow-lg p-8">
+          <div className="flex flex-col items-center justify-center space-y-4">
+            <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            <h2 className="text-2xl font-semibold text-white">Loading...</h2>
+          </div>
+        </div>
+      </div>
+    }>
+      <VerifyEmailForm />
+    </Suspense>
   );
 }

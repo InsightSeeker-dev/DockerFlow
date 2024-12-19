@@ -1,11 +1,11 @@
 export interface UserResource {
-  id: string;
+  id?: string;
   cpuLimit: number;
   memoryLimit: number;
   storageLimit: number;
-  cpuUsage: number;
-  memoryUsage: number;
-  storageUsage: number;
+  cpuUsage?: number;
+  memoryUsage?: number;
+  storageUsage?: number;
 }
 
 export interface DockerImageInfo {

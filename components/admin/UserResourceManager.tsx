@@ -2,13 +2,13 @@ import React from 'react';
 import { Slider } from '@/components/ui/slider';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { UserResource } from '@/types/admin';
+import { ResourceUsage } from '@/hooks/use-resources';
 import { Cpu, CircleOff, HardDrive } from 'lucide-react';
 
 interface UserResourceManagerProps {
   userId: string;
-  resources: UserResource;
-  onUpdate: (userId: string, updates: Partial<UserResource>) => Promise<void>;
+  resources: ResourceUsage | null;
+  onUpdate: (updates: Partial<ResourceUsage>) => Promise<void>;
 }
 
 const formatBytes = (bytes: number): string => {
@@ -31,7 +31,7 @@ export const UserResourceManager: React.FC<UserResourceManagerProps> = ({
     resource: 'cpuLimit' | 'memoryLimit' | 'storageLimit',
     value: number
   ) => {
-    await onUpdate(userId, { [resource]: value });
+    await onUpdate({ [resource]: value });
   };
 
   return (
@@ -47,18 +47,18 @@ export const UserResourceManager: React.FC<UserResourceManagerProps> = ({
             <div>
               <div className="flex justify-between mb-2">
                 <span>CPU Limit</span>
-                <span>{formatCPU(resources.cpuLimit)}</span>
+                <span>{formatCPU(resources?.cpuLimit || 0)}</span>
               </div>
               <Slider
-                value={[resources.cpuLimit]}
+                value={[resources?.cpuLimit || 0]}
                 max={4000} // 4 cores
                 step={100}
                 onValueChange={([value]) => handleSliderChange('cpuLimit', value)}
               />
             </div>
             <div className="flex justify-between text-sm text-gray-500">
-              <span>Usage: {formatCPU(resources.cpuUsage)}</span>
-              <span>{((resources.cpuUsage / resources.cpuLimit) * 100).toFixed(1)}%</span>
+              <span>Usage: {formatCPU(resources?.cpuUsage || 0)}</span>
+              <span>{((resources?.cpuUsage || 0) / (resources?.cpuLimit || 1) * 100).toFixed(1)}%</span>
             </div>
           </div>
         </CardContent>
@@ -75,18 +75,18 @@ export const UserResourceManager: React.FC<UserResourceManagerProps> = ({
             <div>
               <div className="flex justify-between mb-2">
                 <span>Memory Limit</span>
-                <span>{formatBytes(resources.memoryLimit)}</span>
+                <span>{formatBytes(resources?.memoryLimit || 0)}</span>
               </div>
               <Slider
-                value={[resources.memoryLimit]}
+                value={[resources?.memoryLimit || 0]}
                 max={8589934592} // 8GB
                 step={268435456} // 256MB
                 onValueChange={([value]) => handleSliderChange('memoryLimit', value)}
               />
             </div>
             <div className="flex justify-between text-sm text-gray-500">
-              <span>Usage: {formatBytes(resources.memoryUsage)}</span>
-              <span>{((resources.memoryUsage / resources.memoryLimit) * 100).toFixed(1)}%</span>
+              <span>Usage: {formatBytes(resources?.memoryUsage || 0)}</span>
+              <span>{((resources?.memoryUsage || 0) / (resources?.memoryLimit || 1) * 100).toFixed(1)}%</span>
             </div>
           </div>
         </CardContent>
@@ -103,18 +103,18 @@ export const UserResourceManager: React.FC<UserResourceManagerProps> = ({
             <div>
               <div className="flex justify-between mb-2">
                 <span>Storage Limit</span>
-                <span>{formatBytes(resources.storageLimit)}</span>
+                <span>{formatBytes(resources?.storageLimit || 0)}</span>
               </div>
               <Slider
-                value={[resources.storageLimit]}
+                value={[resources?.storageLimit || 0]}
                 max={107374182400} // 100GB
                 step={1073741824} // 1GB
                 onValueChange={([value]) => handleSliderChange('storageLimit', value)}
               />
             </div>
             <div className="flex justify-between text-sm text-gray-500">
-              <span>Usage: {formatBytes(resources.storageUsage)}</span>
-              <span>{((resources.storageUsage / resources.storageLimit) * 100).toFixed(1)}%</span>
+              <span>Usage: {formatBytes(resources?.storageUsage || 0)}</span>
+              <span>{((resources?.storageUsage || 0) / (resources?.storageLimit || 1) * 100).toFixed(1)}%</span>
             </div>
           </div>
         </CardContent>

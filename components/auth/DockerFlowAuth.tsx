@@ -2,17 +2,27 @@ import React, { useState } from 'react';
 import { Lock, User, Mail, Container, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+interface FormData {
+  email: string;
+  password: string;
+  username?: string;
+}
+
+interface FormErrors {
+  [key: string]: string;
+}
+
 const DockerFlowAuth = () => {
   const [isLogin, setIsLogin] = useState(true);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormData>({
     email: '',
     password: '',
     username: ''
   });
-  const [errors, setErrors] = useState({});
+  const [errors, setErrors] = useState<FormErrors>({});
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleChange = (e) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
@@ -28,7 +38,7 @@ const DockerFlowAuth = () => {
   };
 
   const validateForm = () => {
-    const newErrors = {};
+    const newErrors: FormErrors = {};
     if (!formData.email) {
       newErrors.email = 'Email is required';
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
@@ -45,7 +55,7 @@ const DockerFlowAuth = () => {
     return newErrors;
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const newErrors = validateForm();
     

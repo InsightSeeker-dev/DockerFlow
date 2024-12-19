@@ -102,15 +102,20 @@ export async function POST(request: Request) {
       }
 
       // Save image to user's storage
-      const savedImage = await prisma.userStorage.create({
+      const savedImage = await prisma.dockerImage.create({
         data: {
-          name: tag ? `${name}:${tag}` : name,
+          name,
+          tag: tag || 'latest',
+          size: imageSize,
+          userId: session.user.id,
+        },
+      });
+
+      // Also track the storage usage
+      await prisma.userStorage.create({
+        data: {
           path: `/docker/images/${name}`,
           size: imageSize,
-          type: 'docker-image',
-          isDockerImage: true,
-          dockerImageTag: tag || 'latest',
-          dockerImageId: image.Id,
           userId: session.user.id,
         },
       });

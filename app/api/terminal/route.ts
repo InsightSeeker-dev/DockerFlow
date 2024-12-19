@@ -1,11 +1,16 @@
 import { NextResponse } from 'next/server';
-import { WebSocket } from 'ws';
 import Docker from 'dockerode';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
 const docker = new Docker();
-const clients = new Map<WebSocket, { containerId?: string; cleanup: () => void }>();
+const clients = new Map<any, { containerId?: string; cleanup: () => void }>();
+
+interface MessageEvent {
+  data: string | Buffer;
+  type: string;
+  target: any;
+}
 
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
@@ -14,103 +19,120 @@ export async function GET(req: Request) {
   }
 
   const { searchParams } = new URL(req.url);
-  const containerId = searchParams.get('containerId');
+  const rawContainerId = searchParams.get('containerId');
+  const containerId = rawContainerId || undefined; // Conversion de null en undefined
   const upgrade = req.headers.get('upgrade');
 
   if (upgrade?.toLowerCase() !== 'websocket') {
     return new Response('Expected websocket', { status: 426 });
   }
 
-  const { socket, response } = Deno.upgradeWebSocket(req);
+  try {
+    const { socket, response } = (await req as any).socket.server.upgrade(req);
 
-  socket.onopen = async () => {
-    console.log('Terminal client connected');
+    socket.onopen = async () => {
+      console.log('Terminal client connected');
 
-    let cleanup = () => {};
+      let cleanup = () => {};
 
-    if (containerId) {
-      try {
-        const container = docker.getContainer(containerId);
-        const exec = await container.exec({
-          AttachStdin: true,
-          AttachStdout: true,
-          AttachStderr: true,
-          Tty: true,
-          Cmd: ['/bin/sh']
+      if (containerId) {
+        try {
+          const container = docker.getContainer(containerId);
+          const exec = await container.exec({
+            AttachStdin: true,
+            AttachStdout: true,
+            AttachStderr: true,
+            Tty: true,
+            Cmd: ['/bin/sh']
+          });
+
+          const stream = await exec.start({
+            hijack: true,
+            stdin: true
+          });
+
+          stream.on('data', (chunk) => {
+            if (socket.readyState === 1) { // OPEN
+              socket.send(chunk.toString());
+            }
+          });
+
+          socket.onmessage = (event: { data: string | Buffer; type: string }) => {
+            const data = event.data.toString();
+            if (data.startsWith('RESIZE:')) {
+              const [rows, cols] = data.substring(7).split('x').map(Number);
+              exec.resize({ h: rows, w: cols }).catch(console.error);
+            } else {
+              stream.write(data);
+            }
+          };
+
+          cleanup = () => {
+            stream.end();
+          };
+        } catch (error) {
+          console.error('Failed to connect to container:', error);
+          socket.close();
+          return;
+        }
+      } else {
+        // Terminal système par défaut
+        const shell = process.platform === 'win32' ? 'powershell.exe' : 'bash';
+        const pty = require('node-pty').spawn(shell, [], {
+          name: 'xterm-color',
+          cols: 80,
+          rows: 24,
+          cwd: process.cwd(),
+          env: process.env
         });
 
-        const stream = await exec.start({
-          hijack: true,
-          stdin: true
-        });
-
-        stream.on('data', (chunk) => {
-          if (socket.readyState === WebSocket.OPEN) {
-            socket.send(chunk.toString());
+        pty.onData((data: string) => {
+          if (socket.readyState === 1) { // OPEN
+            socket.send(data);
           }
         });
 
-        socket.onmessage = (event) => {
-          if (event.data.startsWith('RESIZE:')) {
-            const [rows, cols] = event.data.substring(7).split('x').map(Number);
-            exec.resize({ h: rows, w: cols }).catch(console.error);
+        socket.onmessage = (event: { data: string | Buffer; type: string }) => {
+          const data = event.data.toString();
+          if (data.startsWith('RESIZE:')) {
+            const [rows, cols] = data.substring(7).split('x').map(Number);
+            pty.resize(cols, rows);
           } else {
-            stream.write(event.data);
+            pty.write(data);
           }
         };
 
         cleanup = () => {
-          stream.end();
+          pty.kill();
         };
-      } catch (error) {
-        console.error('Failed to connect to container:', error);
-        socket.close();
-        return;
       }
-    } else {
-      // Terminal système par défaut
-      const shell = process.platform === 'win32' ? 'powershell.exe' : 'bash';
-      const pty = require('node-pty').spawn(shell, [], {
-        name: 'xterm-color',
-        cols: 80,
-        rows: 24,
-        cwd: process.cwd(),
-        env: process.env
-      });
 
-      pty.onData((data: string) => {
-        if (socket.readyState === WebSocket.OPEN) {
-          socket.send(data);
-        }
-      });
+      clients.set(socket, { containerId, cleanup });
+    };
 
-      socket.onmessage = (event) => {
-        if (event.data.startsWith('RESIZE:')) {
-          const [rows, cols] = event.data.substring(7).split('x').map(Number);
-          pty.resize(cols, rows);
-        } else {
-          pty.write(event.data);
-        }
-      };
+    socket.onclose = () => {
+      const client = clients.get(socket);
+      if (client) {
+        client.cleanup();
+        clients.delete(socket);
+      }
+      console.log('Terminal client disconnected');
+    };
 
-      cleanup = () => {
-        pty.kill();
-      };
-    }
+    socket.onerror = (error: any) => {
+      console.error('WebSocket error:', error);
+      const client = clients.get(socket);
+      if (client) {
+        client.cleanup();
+        clients.delete(socket);
+      }
+    };
 
-    clients.set(socket, { containerId, cleanup });
-  };
-
-  socket.onclose = () => {
-    console.log('Terminal client disconnected');
-    const client = clients.get(socket);
-    if (client) {
-      client.cleanup();
-      clients.delete(socket);
-    }
-  };
-
-  return response;
+    return response;
+  } catch (error) {
+    console.error('Error in terminal handler:', error);
+    return new Response('Internal Server Error', { status: 500 });
+  }
 }
 
 // Nettoyer les connexions à la fermeture du serveur
@@ -119,4 +141,5 @@ process.on('SIGTERM', () => {
     client.cleanup();
     socket.close();
   });
+  clients.clear();
 });

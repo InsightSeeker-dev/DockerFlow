@@ -6,8 +6,11 @@ import os from 'os';
 import { SystemStats } from '@/types/system';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { prisma } from '@/lib/prisma';
 
 const execAsync = promisify(exec);
+
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
@@ -16,6 +19,22 @@ export async function GET() {
       return NextResponse.json(
         { error: 'Authentication required' },
         { status: 401 }
+      );
+    }
+
+    // Récupérer les limites de l'utilisateur depuis la base de données
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: {
+        memoryLimit: true,
+        storageLimit: true
+      }
+    });
+
+    if (!user) {
+      return NextResponse.json(
+        { error: 'User not found' },
+        { status: 404 }
       );
     }
 
@@ -37,25 +56,58 @@ export async function GET() {
     const freeMemory = os.freemem();
     const usedMemory = totalMemory - freeMemory;
 
+    // Get network usage
+    let totalNetworkIO = 0;
+    const runningContainers = containers.filter(c => c.State === 'running');
+    
+    for (const container of runningContainers) {
+      try {
+        const dockerContainer = docker.getContainer(container.Id);
+        const stats = await dockerContainer.stats({ stream: false });
+        
+        if (stats.networks) {
+          Object.values(stats.networks).forEach(network => {
+            totalNetworkIO += (network.rx_bytes || 0) + (network.tx_bytes || 0);
+          });
+        }
+      } catch (error) {
+        console.error(`Failed to get network stats for container ${container.Id}:`, error);
+      }
+    }
+
     // Get disk usage
     const { used: diskUsed, total: diskTotal } = await getDiskUsage();
 
     const stats: SystemStats = {
       containers: containers.length,
-      containersRunning,
-      containersStopped: containers.length - containersRunning,
+      containersRunning: containers.filter(c => c.State === 'running').length,
+      containersStopped: containers.filter(c => c.State !== 'running').length,
       images: images.length,
-      cpuUsage,
+      cpuCount: os.cpus().length,
+      cpuUsage: cpuUsage,
+      networkIO: totalNetworkIO,
       memoryUsage: {
         used: usedMemory,
         total: totalMemory,
-        percentage: (usedMemory / totalMemory) * 100,
+        percentage: (usedMemory / totalMemory) * 100
       },
       diskUsage: {
         used: diskUsed,
         total: diskTotal,
-        percentage: (diskUsed / diskTotal) * 100,
+        percentage: (diskUsed / diskTotal) * 100
       },
+      resourceLimits: {
+        memory: {
+          limit: user.memoryLimit || 1073741824, // 1GB default
+          available: user.memoryLimit ? user.memoryLimit - usedMemory : 1073741824 - usedMemory,
+          formatted: formatBytes(user.memoryLimit || 1073741824)
+        },
+        storage: {
+          limit: user.storageLimit || 107374182400, // 100GB default
+          available: user.storageLimit ? user.storageLimit - diskUsed : 107374182400 - diskUsed,
+          formatted: formatBytes(user.storageLimit || 107374182400)
+        }
+      }
     };
 
     return NextResponse.json(stats);
@@ -110,4 +162,11 @@ async function getDiskUsage(): Promise<{ used: number; total: number }> {
       used: total - free,
     };
   }
+}
+
+function formatBytes(bytes: number): string {
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  if (bytes === 0) return '0 Byte';
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return Math.round((bytes / Math.pow(1024, i)) * 100) / 100 + ' ' + sizes[i];
 }

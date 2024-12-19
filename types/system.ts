@@ -3,7 +3,9 @@ export interface SystemStats {
   containersRunning: number;
   containersStopped: number;
   images: number;
+  cpuCount: number;
   cpuUsage: number;
+  networkIO: number;
   memoryUsage: {
     used: number;
     total: number;
@@ -27,22 +29,7 @@ export interface SystemStats {
     };
   };
 }
-export interface SystemStats {
-  containers: number;
-  containersRunning: number;
-  containersStopped: number;
-  images: number;
-  storage: {
-    used: number;
-    total: number;
-    percentage: number;
-    formatted: {
-      used: string;
-      total: string;
-      available: string;
-    }
-  }
-}
+
 export interface User {
   id: string;
   name: string;

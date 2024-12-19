@@ -3,12 +3,14 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getDockerClient } from '@/lib/docker/client';
 import { prisma } from '@/lib/prisma';
+import os from 'os';
 import { Container as DockerContainer, ContainerInspectInfo } from 'dockerode';
-import * as os from 'os';
 import { SystemStats } from '@/types/system';
 import { Prisma, User } from '@prisma/client';
 import { Session } from 'next-auth';
 import { getUserStorageUsage } from '@/lib/docker/storage';
+
+export const dynamic = 'force-dynamic';
 
 // Types
 interface ContainerStats {
@@ -27,6 +29,12 @@ interface ContainerStats {
       total_usage: number;
     };
     system_cpu_usage: number;
+  };
+  networks?: {
+    [key: string]: {
+      rx_bytes: number;
+      tx_bytes: number;
+    };
   };
 }
 
@@ -94,6 +102,7 @@ export async function GET() {
     let totalCPUPercent = 0;
     let runningContainers = 0;
     let totalSize = 0;
+    let totalNetworkIO = 0;
 
     // Collect container stats
     for (const container of userContainers) {
@@ -106,6 +115,13 @@ export async function GET() {
           runningContainers++;
           totalMemory += stats.memory_stats.usage || 0;
           totalCPUPercent += calculateCPUPercentage(stats);
+          
+          // Calculate network I/O from stats
+          if (stats.networks) {
+            Object.values(stats.networks).forEach(network => {
+              totalNetworkIO += network.rx_bytes + network.tx_bytes;
+            });
+          }
         }
 
         totalSize += (info as any).SizeRw || 0;
@@ -125,7 +141,9 @@ export async function GET() {
       containersRunning: runningContainers,
       containersStopped: userContainers.length - runningContainers,
       images: images.length,
+      cpuCount: os.cpus().length,
       cpuUsage: totalCPUPercent,
+      networkIO: totalNetworkIO,
       memoryUsage: {
         used: totalMemory,
         total: memoryLimit,
@@ -146,16 +164,6 @@ export async function GET() {
           limit: storageLimit,
           available: Math.max(0, storageLimit - totalSize),
           formatted: formatBytes(storageLimit)
-        }
-      },
-      storage: {
-        used: 0,
-        total: 0,
-        percentage: 0,
-        formatted: {
-          used: '',
-          total: '',
-          available: ''
         }
       }
     };

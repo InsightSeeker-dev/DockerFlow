@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { WebSocket } from 'ws';
+import { WebSocket, ErrorEvent } from 'ws';
 import Docker from 'dockerode';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
@@ -36,30 +36,32 @@ export async function GET(request: Request) {
 
     // Upgrade the HTTP connection to a WebSocket connection
     const { socket, response } = (await request as any).socket.server.upgrade(request);
-    const ws = new WebSocket(null as any);
-    ws.setSocket(socket);
-
+    
     // Pipe container stream to WebSocket
     stream.on('data', (chunk: Buffer) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(chunk);
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(chunk);
       }
     });
 
     // Pipe WebSocket to container stream
-    ws.on('message', (msg: Buffer) => {
+    socket.on('message', (msg: Buffer) => {
       stream.write(msg);
     });
 
-    // Handle WebSocket close
-    ws.on('close', () => {
+    socket.on('close', () => {
+      stream.end();
+    });
+
+    socket.on('error', (error: ErrorEvent) => {
+      console.error('WebSocket error:', error);
       stream.end();
     });
 
     // Handle container stream end
     stream.on('end', () => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.close();
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.close();
       }
     });
 

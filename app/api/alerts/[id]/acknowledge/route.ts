@@ -27,7 +27,7 @@ export async function POST(
 
     const updatedAlert = await prisma.alert.update({
       where: { id: params.id },
-      data: { acknowledged: true },
+      data: { status: 'acknowledged' },
     });
 
     return NextResponse.json(updatedAlert);

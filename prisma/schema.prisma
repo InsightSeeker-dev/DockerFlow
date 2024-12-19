@@ -39,6 +39,7 @@ model User {
   resourceUsage          ResourceUsage[]
   alerts                 Alert[]
   terminalSessions       TerminalSession[]
+  verificationTokens     VerificationToken[]
   createdAt              DateTime    @default(now())
   updatedAt              DateTime    @updatedAt
   lastLogin              DateTime?
@@ -132,13 +133,15 @@ model ResourceUsage {
 }
 
 model Alert {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId    String   @db.ObjectId
-  type      String
-  message   String
-  status    String   @default("pending")
-  created   DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId       String    @db.ObjectId
+  type         String    // 'cpu', 'memory', 'storage', 'container'
+  message      String
+  status       String    @default("pending") // 'pending', 'acknowledged', 'resolved'
+  severity     String    @default("info")    // 'info', 'warning', 'critical'
+  acknowledged Boolean   @default(false)
+  created      DateTime  @default(now())
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("alerts")
 }
@@ -152,4 +155,14 @@ model TerminalSession {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("terminal_sessions")
+}
+
+model VerificationToken {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  token     String   @unique
+  userId    String   @db.ObjectId
+  expires   DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("verification_tokens")
 }

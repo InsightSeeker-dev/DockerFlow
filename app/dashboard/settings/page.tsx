@@ -19,7 +19,7 @@ export default function SettingsPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
-  const [avatar, setAvatar] = useState<File | null>(null);
+  const [image, setImage] = useState<File | null>(null);
 
   const [formData, setFormData] = useState({
     name: session?.user?.name || '',
@@ -72,9 +72,9 @@ export default function SettingsPage() {
     }));
   };
 
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setAvatar(e.target.files[0]);
+      setImage(e.target.files[0]);
     }
   };
 
@@ -91,8 +91,8 @@ export default function SettingsPage() {
           formDataToSend.append(key, String(value));
         }
       });
-      if (avatar) {
-        formDataToSend.append('avatar', avatar);
+      if (image) {
+        formDataToSend.append('image', image);
       }
 
       const response = await fetch('/api/user/settings', {
@@ -143,14 +143,14 @@ export default function SettingsPage() {
               <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="flex items-center space-x-4">
                   <Avatar className="h-20 w-20">
-                    <AvatarImage src={session?.user?.image || ''} />
+                    <AvatarImage src={session?.user?.image || '/default-avatar.png'} />
                     <AvatarFallback>{session?.user?.name?.[0] || 'U'}</AvatarFallback>
                   </Avatar>
                   <Input
                     type="file"
                     accept="image/*"
-                    onChange={handleAvatarChange}
-                    className="max-w-xs bg-gray-800 dark:bg-gray-700 border-gray-700 dark:border-gray-600"
+                    onChange={handleImageUpload}
+                    className="w-full max-w-sm"
                   />
                 </div>
 

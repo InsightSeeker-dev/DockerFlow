@@ -5,6 +5,8 @@ import Docker from 'dockerode';
 
 const docker = new Docker();
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);

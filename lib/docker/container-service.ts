@@ -1,10 +1,52 @@
 import { getDockerClient } from './client';
-import type { Container, ContainerStats } from './types';
+import type { Container, ContainerStats, NetworkSettings } from './types';
+import type { ContainerInfo } from 'dockerode';
+import { prisma } from '@/lib/prisma';
 
 export async function listContainers(): Promise<Container[]> {
   const docker = getDockerClient();
   try {
-    return await docker.listContainers({ all: true });
+    const containers = await docker.listContainers({ all: true });
+    const containerNames = containers.map(c => c.Names[0].replace(/^\//, ''));
+    
+    // Récupérer les informations supplémentaires de la base de données
+    const dbContainers = await prisma.container.findMany({
+      where: {
+        name: {
+          in: containerNames
+        }
+      }
+    });
+
+    // Créer une map pour un accès rapide aux données de la base
+    const dbContainersMap = new Map(dbContainers.map(c => [c.name, c]));
+
+    // Combiner les informations Docker avec celles de la base de données
+    return containers.map(container => {
+      const containerName = container.Names[0].replace(/^\//, '');
+      const dbContainer = dbContainersMap.get(containerName);
+      
+      // Convertir NetworkSettings au format attendu
+      const networkSettings: NetworkSettings = {
+        Networks: container.NetworkSettings?.Networks || {},
+        Ports: container.Ports?.reduce((acc, port) => {
+          const key = `${port.PrivatePort}/${port.Type}`;
+          acc[key] = port.PublicPort ? [{
+            HostIp: port.IP || '0.0.0.0',
+            HostPort: port.PublicPort.toString()
+          }] : null;
+          return acc;
+        }, {} as NetworkSettings['Ports']) || {}
+      };
+
+      return {
+        ...container,
+        NetworkSettings: networkSettings,
+        createdAt: dbContainer?.created.toISOString() || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        userId: dbContainer?.userId || 'system'
+      } as Container;
+    });
   } catch (error) {
     console.error('Error listing containers:', error);
     throw new Error('Failed to list containers');

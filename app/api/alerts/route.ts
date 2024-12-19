@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { AlertSeverity } from '@/lib/notifications';
 
 export async function GET(request: Request) {
   try {
@@ -11,17 +12,17 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url);
-    const acknowledged = searchParams.get('acknowledged');
+    const status = searchParams.get('status');
     const severity = searchParams.get('severity');
     const limit = searchParams.get('limit');
 
     const alerts = await prisma.alert.findMany({
       where: {
         userId: session.user.id,
-        ...(acknowledged !== null && { acknowledged: acknowledged === 'true' }),
+        ...(status && { status }),
         ...(severity && { severity }),
       },
-      orderBy: { timestamp: 'desc' },
+      orderBy: { created: 'desc' },
       take: limit ? parseInt(limit) : 50,
     });
 
@@ -43,17 +44,36 @@ export async function POST(request: Request) {
     }
 
     const data = await request.json();
-    const { type, severity, message, resourceId, threshold, currentValue } = data;
+    const { type, message, severity = 'info' as AlertSeverity } = data;
+
+    // Validation des données
+    if (!type || !message) {
+      return NextResponse.json(
+        { error: 'Type and message are required' },
+        { status: 400 }
+      );
+    }
+
+    if (!['cpu', 'memory', 'storage', 'container'].includes(type)) {
+      return NextResponse.json(
+        { error: 'Invalid alert type' },
+        { status: 400 }
+      );
+    }
+
+    if (!['info', 'warning', 'critical'].includes(severity)) {
+      return NextResponse.json(
+        { error: 'Invalid severity level' },
+        { status: 400 }
+      );
+    }
 
     const alert = await prisma.alert.create({
       data: {
         userId: session.user.id,
         type,
-        severity,
         message,
-        resourceId,
-        threshold,
-        currentValue,
+        status: 'pending',
       },
     });
 

@@ -32,6 +32,10 @@ import {
 import AdminSettings from './AdminSettings';
 import { SystemStats } from '@/types/system';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Logo } from '@/components/ui/logo';
+import { Button } from '@/components/ui/button';
+import { LogOut } from 'lucide-react';
+import { signOut } from 'next-auth/react';
 
 interface RecentActivity {
   id: string;
@@ -77,7 +81,17 @@ export default function AdminDashboard() {
   return (
     <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
       <div className="flex items-center justify-between space-y-2">
-        <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
+        <div className="flex items-center gap-2">
+          <Logo size="lg" />
+        </div>
+        <Button 
+          variant="destructive" 
+          onClick={() => signOut({ callbackUrl: '/' })}
+          className="flex items-center gap-2"
+        >
+          <LogOut className="h-4 w-4" />
+          Déconnexion
+        </Button>
       </div>
       <Tabs defaultValue={activeTab} className="space-y-4" onValueChange={setActiveTab}>
         <TabsList>

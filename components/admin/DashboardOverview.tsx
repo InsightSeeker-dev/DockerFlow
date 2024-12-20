@@ -1,7 +1,7 @@
 import React from 'react';
 import { MetricCard } from '@/components/dashboard/MetricCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Container, Users, Activity, Cpu, HardDrive, Signal } from 'lucide-react';
+import { Container, Users, Activity, Cpu, HardDrive, Signal, Image } from 'lucide-react';
 import { SystemStats } from '@/types/system';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -172,6 +172,63 @@ export function DashboardOverview({ systemStats, recentActivities }: DashboardOv
           </Card>
         </motion.div>
       </div>
+
+      {/* Section Images */}
+      <motion.div variants={item}>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Image className="h-5 w-5 text-purple-500" />
+              Images Docker
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-full bg-purple-500/10">
+                    <Image className="h-4 w-4 text-purple-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Images Totales</p>
+                    <p className="text-2xl font-bold">{systemStats.images.total}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-full bg-blue-500/10">
+                    <HardDrive className="h-4 w-4 text-blue-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Espace Utilisé</p>
+                    <p className="text-2xl font-bold">
+                      {(systemStats.images.size / (1024 * 1024 * 1024)).toFixed(2)} GB
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-full bg-green-500/10">
+                    <Activity className="h-4 w-4 text-green-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Taille Moyenne</p>
+                    <p className="text-2xl font-bold">
+                      {systemStats.images.total > 0
+                        ? ((systemStats.images.size / systemStats.images.total) / (1024 * 1024)).toFixed(0)
+                        : 0} MB
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
     </motion.div>
   );
 }

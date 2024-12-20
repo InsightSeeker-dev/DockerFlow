@@ -107,38 +107,34 @@ export default function AdminDashboard() {
         </Button>
       </div>
       <Tabs defaultValue={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid grid-cols-4 md:grid-cols-8 lg:grid-cols-8">
+        <TabsList className="inline-flex h-10 items-center justify-center rounded-md bg-muted p-1">
           <TabsTrigger value="dashboard" className="flex items-center gap-2">
             <LayoutDashboard className="h-4 w-4" />
-            <span className="hidden md:inline">Overview</span>
+            <span>Overview</span>
           </TabsTrigger>
           <TabsTrigger value="containers" className="flex items-center gap-2">
             <Container className="h-4 w-4" />
-            <span className="hidden md:inline">Containers</span>
+            <span>Containers</span>
           </TabsTrigger>
           <TabsTrigger value="images" className="flex items-center gap-2">
             <Image className="h-4 w-4" />
-            <span className="hidden md:inline">Images</span>
+            <span>Images</span>
           </TabsTrigger>
           <TabsTrigger value="networks" className="flex items-center gap-2">
             <Network className="h-4 w-4" />
-            <span className="hidden md:inline">Networks</span>
+            <span>Networks</span>
           </TabsTrigger>
           <TabsTrigger value="users" className="flex items-center gap-2">
             <Users className="h-4 w-4" />
-            <span className="hidden md:inline">Users</span>
+            <span>Users</span>
           </TabsTrigger>
           <TabsTrigger value="alerts" className="flex items-center gap-2">
             <Bell className="h-4 w-4" />
-            <span className="hidden md:inline">Alerts</span>
-          </TabsTrigger>
-          <TabsTrigger value="activity" className="flex items-center gap-2">
-            <Activity className="h-4 w-4" />
-            <span className="hidden md:inline">Activity</span>
+            <span>Alerts</span>
           </TabsTrigger>
           <TabsTrigger value="settings" className="flex items-center gap-2">
             <Settings className="h-4 w-4" />
-            <span className="hidden md:inline">Settings</span>
+            <span>Settings</span>
           </TabsTrigger>
         </TabsList>
 

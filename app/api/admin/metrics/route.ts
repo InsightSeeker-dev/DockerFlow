@@ -6,6 +6,8 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
+export const dynamic = 'force-dynamic';
+
 async function getSystemMetrics() {
   try {
     // CPU Usage

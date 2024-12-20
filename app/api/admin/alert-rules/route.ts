@@ -47,14 +47,22 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { name, type, condition, threshold } = body;
+    const { name, type, condition, threshold, action } = body;
 
     const rule = await prisma.alertRule.create({
       data: {
         name,
         type,
-        condition,
-        threshold,
+        condition: {
+          ...condition,
+          threshold
+        },
+        action: action || {
+          type: 'notification',
+          settings: {
+            enabled: true
+          }
+        },
         enabled: true,
         createdBy: session.user.id,
       },

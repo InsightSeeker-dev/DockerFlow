@@ -58,7 +58,7 @@ export async function GET(request: Request) {
     const alerts = await prisma.alert.findMany({
       where,
       orderBy: {
-        timestamp: 'desc',
+        createdAt: 'desc',
       },
     });
 
@@ -96,8 +96,7 @@ export async function POST(request: Request) {
         title,
         message,
         source,
-        timestamp: new Date(),
-        acknowledged: false,
+        userId: session.user.id,
       },
     });
 

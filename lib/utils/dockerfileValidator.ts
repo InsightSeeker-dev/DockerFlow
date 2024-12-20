@@ -297,6 +297,6 @@ export function analyzeDockerfileSecurity(content: string): {
   return {
     issues,
     score: Math.max(0, Math.min(100, score)),
-    recommendations: [...new Set(recommendations)],
+    recommendations: Array.from(recommendations),
   };
 }

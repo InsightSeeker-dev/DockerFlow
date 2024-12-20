@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import {
   Dialog,
   DialogContent,
@@ -44,6 +46,7 @@ import {
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { Shield, Wand2, Lightbulb, CheckCircle2 } from 'lucide-react';
 
 interface BuildLog {
   status: string;
@@ -69,8 +72,7 @@ export default function ImageBuilder({ onSuccess }: ImageBuilderProps) {
   const [dockerfile, setDockerfile] = useState('');
   const [buildTag, setBuildTag] = useState('');
   const [buildContext, setBuildContext] = useState<File[]>([]);
-  const [showBuildDialog, setShowBuildDialog] = useState(false);
-  const [building, setBuilding] = useState(false);
+  const [isBuilding, setIsBuilding] = useState(false);
   const [buildLogs, setBuildLogs] = useState<BuildLog[]>([]);
   const [buildHistory, setBuildHistory] = useState<BuildHistory[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState('custom');
@@ -157,7 +159,7 @@ CMD ["nginx", "-g", "daemon off;"]`,
       return;
     }
 
-    setBuilding(true);
+    setIsBuilding(true);
     setBuildLogs([]);
 
     const buildId = Date.now().toString();
@@ -241,7 +243,7 @@ CMD ["nginx", "-g", "daemon off;"]`,
       );
 
       toast.success('Image construite avec succès');
-      setShowBuildDialog(false);
+      setIsBuilding(false);
       setBuildContext([]);
       setBuildTag('');
       onSuccess();
@@ -262,7 +264,7 @@ CMD ["nginx", "-g", "daemon off;"]`,
         )
       );
     } finally {
-      setBuilding(false);
+      setIsBuilding(false);
     }
   };
 
@@ -271,7 +273,7 @@ CMD ["nginx", "-g", "daemon off;"]`,
       {/* Header */}
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">Construction d'Images</h2>
-        <Button onClick={() => setShowBuildDialog(true)}>
+        <Button onClick={() => setIsBuilding(true)}>
           <Plus className="h-4 w-4 mr-2" />
           Nouvelle Construction
         </Button>
@@ -352,7 +354,7 @@ CMD ["nginx", "-g", "daemon off;"]`,
       </Card>
 
       {/* Build Dialog */}
-      <Dialog open={showBuildDialog} onOpenChange={setShowBuildDialog}>
+      <Dialog open={isBuilding} onOpenChange={setIsBuilding}>
         <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle>Construction d'une nouvelle image</DialogTitle>
@@ -398,14 +400,14 @@ CMD ["nginx", "-g", "daemon off;"]`,
                     <h3 className="font-medium">Validation</h3>
                     <div className="flex items-center gap-2">
                       {validationResult.valid ? (
-                        <Badge variant="success" className="flex items-center">
+                        <Badge variant="default" className="bg-green-500 text-white flex items-center">
                           <Check className="h-3 w-3 mr-1" />
                           Valide
                         </Badge>
                       ) : (
                         <Badge variant="destructive" className="flex items-center">
                           <X className="h-3 w-3 mr-1" />
-                          Erreurs détectées
+                          Non valide
                         </Badge>
                       )}
                       <div className="flex items-center gap-1">
@@ -573,21 +575,22 @@ CMD ["nginx", "-g", "daemon off;"]`,
 
           <DialogFooter>
             <Button
-              variant="outline"
+              variant="default"
               onClick={() => validateDockerfile(dockerfile)}
-              disabled={!dockerfile || building}
+              disabled={!dockerfile || isBuilding}
             >
               <CheckCircle2 className="h-4 w-4 mr-2" />
               Valider
             </Button>
-            <Button variant="outline" onClick={() => setShowBuildDialog(false)}>
+            <Button variant="outline" onClick={() => setIsBuilding(false)}>
               Annuler
             </Button>
             <Button
+              variant="default"
               onClick={handleBuild}
-              disabled={building || (validationResult && !validationResult.valid)}
+              disabled={isBuilding || Boolean(validationResult && !validationResult.valid)}
             >
-              {building ? (
+              {isBuilding ? (
                 <>
                   <RefreshCcw className="h-4 w-4 mr-2 animate-spin" />
                   Construction...

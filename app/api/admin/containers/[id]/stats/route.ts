@@ -33,10 +33,10 @@ export async function GET(
       acc + (net.tx_bytes || 0), 0);
 
     // Calculer l'utilisation du disque
-    const blockRead = stats.blkio_stats.io_service_bytes_recursive?.find(
+    const blockRead = stats.blkio_stats?.io_service_bytes_recursive?.find(
       (stat: any) => stat.op.toLowerCase() === 'read'
     )?.value || 0;
-    const blockWrite = stats.blkio_stats.io_service_bytes_recursive?.find(
+    const blockWrite = stats.blkio_stats?.io_service_bytes_recursive?.find(
       (stat: any) => stat.op.toLowerCase() === 'write'
     )?.value || 0;
 
@@ -60,7 +60,7 @@ export async function GET(
         read_bytes: blockRead,
         write_bytes: blockWrite
       },
-      pids: stats.pids_stats.current
+      pids: stats.pids_stats?.current || 0
     };
 
     return NextResponse.json(formattedStats);

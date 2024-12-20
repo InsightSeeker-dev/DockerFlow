@@ -1,28 +1,31 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { AlertSeverity } from '@/lib/notifications';
+import { Prisma } from '@prisma/client';
+import { z } from 'zod';
 
-export async function GET(request: Request) {
+const alertQuerySchema = z.object({
+  userId: z.string().optional(),
+  severity: z.string().optional(),
+  limit: z.string().optional(),
+});
+
+export async function GET(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const { searchParams } = new URL(request.url);
-    const status = searchParams.get('status');
-    const severity = searchParams.get('severity');
-    const limit = searchParams.get('limit');
+    const { searchParams } = new URL(req.url);
+    const query = alertQuerySchema.parse(Object.fromEntries(searchParams));
+    const { severity, limit } = query;
 
     const alerts = await prisma.alert.findMany({
       where: {
         userId: session.user.id,
-        ...(status && { status }),
         ...(severity && { severity }),
       },
-      orderBy: { created: 'desc' },
+      orderBy: [{ id: 'desc' }],
       take: limit ? parseInt(limit) : 50,
     });
 
@@ -36,45 +39,32 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+const createAlertSchema = z.object({
+  type: z.string(),
+  message: z.string(),
+  severity: z.string().optional(),
+});
+
+export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const data = await request.json();
-    const { type, message, severity = 'info' as AlertSeverity } = data;
-
-    // Validation des données
-    if (!type || !message) {
       return NextResponse.json(
-        { error: 'Type and message are required' },
-        { status: 400 }
+        { error: 'Unauthorized' },
+        { status: 401 }
       );
     }
 
-    if (!['cpu', 'memory', 'storage', 'container'].includes(type)) {
-      return NextResponse.json(
-        { error: 'Invalid alert type' },
-        { status: 400 }
-      );
-    }
-
-    if (!['info', 'warning', 'critical'].includes(severity)) {
-      return NextResponse.json(
-        { error: 'Invalid severity level' },
-        { status: 400 }
-      );
-    }
+    const body = await req.json();
+    const { type, message, severity } = createAlertSchema.parse(body);
 
     const alert = await prisma.alert.create({
       data: {
-        userId: session.user.id,
         type,
         message,
-        status: 'pending',
-      },
+        userId: session.user.id,
+        ...(severity && { severity }),
+      }
     });
 
     return NextResponse.json(alert);

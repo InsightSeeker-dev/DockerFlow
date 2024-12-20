@@ -137,10 +137,22 @@ export async function GET() {
 
     // Prepare response
     const systemStats: SystemStats = {
+      // Container Stats
       containers: userContainers.length,
       containersRunning: runningContainers,
       containersStopped: userContainers.length - runningContainers,
+      containersError: 0, // À implémenter si nécessaire
+      
+      // Image Stats
       images: images.length,
+      
+      // User Stats
+      totalUsers: 1, // Pour les stats utilisateur, on montre juste l'utilisateur courant
+      activeUsers: 1,
+      newUsers: 0,
+      suspendedUsers: 0,
+      
+      // System Resources
       cpuCount: os.cpus().length,
       cpuUsage: totalCPUPercent,
       networkIO: totalNetworkIO,
@@ -153,18 +165,6 @@ export async function GET() {
         used: totalSize,
         total: storageLimit,
         percentage: (totalSize / storageLimit) * 100
-      },
-      resourceLimits: {
-        memory: {
-          limit: memoryLimit,
-          available: Math.max(0, memoryLimit - totalMemory),
-          formatted: formatBytes(memoryLimit)
-        },
-        storage: {
-          limit: storageLimit,
-          available: Math.max(0, storageLimit - totalSize),
-          formatted: formatBytes(storageLimit)
-        }
       }
     };
 

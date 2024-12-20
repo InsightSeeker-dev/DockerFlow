@@ -18,6 +18,7 @@ export async function GET(
 
     const image = docker.getImage(params.id);
     const imageInfo = await image.inspect();
+    const imageHistory = await image.history();
 
     // Formater les informations de l'image
     const formattedInfo = {
@@ -29,7 +30,7 @@ export async function GET(
       virtualSize: imageInfo.VirtualSize,
       digest: imageInfo.RepoDigests?.[0]?.split('@')[1] || '',
       labels: imageInfo.Config.Labels || {},
-      history: imageInfo.History || [],
+      history: imageHistory,
       architecture: imageInfo.Architecture,
       os: imageInfo.Os,
       author: imageInfo.Author,

@@ -1,19 +1,13 @@
+import { type Alert as PrismaAlert, Prisma } from '@prisma/client';
 import { prisma } from './prisma';
+import nodemailer from 'nodemailer';
 
-export type AlertType = 'cpu' | 'memory' | 'storage' | 'container';
-export type AlertSeverity = 'info' | 'warning' | 'critical';
-
-export interface Alert {
-  id: string;
-  userId: string;
+export interface AlertType {
   type: string;
   message: string;
-  status: string;
-  severity: AlertSeverity;
-  acknowledged: boolean;
-  created: Date;
-  currentValue?: number;
-  threshold?: number;
+  severity?: 'info' | 'warning' | 'error' | 'critical';
+  status?: 'pending' | 'resolved' | 'dismissed';
+  acknowledged?: boolean;
 }
 
 export interface AlertThreshold {
@@ -28,10 +22,20 @@ const DEFAULT_THRESHOLDS: AlertThreshold = {
   storage: 90, // 90% storage usage
 };
 
+// Configure nodemailer transporter
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: parseInt(process.env.SMTP_PORT || '587'),
+  secure: process.env.SMTP_SECURE === 'true',
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASSWORD,
+  },
+});
+
 export class NotificationService {
   private static instance: NotificationService;
-  private listeners: Map<string, ((alert: Alert) => void)[]> = new Map();
-  private thresholds: Map<string, AlertThreshold> = new Map();
+  private listeners: Map<string, ((alert: PrismaAlert) => void)[]> = new Map();
 
   private constructor() {}
 
@@ -42,101 +46,147 @@ export class NotificationService {
     return NotificationService.instance;
   }
 
-  public setThresholds(userId: string, thresholds: Partial<AlertThreshold>) {
-    const currentThresholds = this.thresholds.get(userId) || { ...DEFAULT_THRESHOLDS };
-    this.thresholds.set(userId, { ...currentThresholds, ...thresholds });
+  public async setThresholds(userId: string, thresholds: Partial<AlertThreshold>) {
+    try {
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          ...(thresholds.cpu !== undefined && { cpuThreshold: thresholds.cpu }),
+          ...(thresholds.memory !== undefined && { memoryThreshold: thresholds.memory }),
+          ...(thresholds.storage !== undefined && { storageThreshold: thresholds.storage }),
+        },
+      });
+    } catch (error) {
+      console.error('Failed to update user thresholds:', error);
+      throw new Error('Failed to update alert thresholds');
+    }
   }
 
-  public getThresholds(userId: string): AlertThreshold {
-    return this.thresholds.get(userId) || { ...DEFAULT_THRESHOLDS };
+  public async getThresholds(userId: string): Promise<AlertThreshold> {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          cpuThreshold: true,
+          memoryThreshold: true,
+          storageThreshold: true,
+        },
+      });
+
+      if (!user) {
+        return { ...DEFAULT_THRESHOLDS };
+      }
+
+      return {
+        cpu: user.cpuThreshold,
+        memory: user.memoryThreshold,
+        storage: user.storageThreshold,
+      };
+    } catch (error) {
+      console.error('Failed to get user thresholds:', error);
+      return { ...DEFAULT_THRESHOLDS };
+    }
   }
 
   public async createAlert(
     userId: string,
-    type: AlertType,
+    type: string,
     message: string,
-    severity: AlertSeverity = 'info'
-  ): Promise<Alert> {
+    severity: string = 'info'
+  ): Promise<PrismaAlert> {
     const alert = await prisma.alert.create({
       data: {
         userId,
         type,
         message,
+        severity,
         status: 'pending',
-      },
+        acknowledged: false,
+      }
     });
-
-    const alertWithExtras: Alert = {
-      id: alert.id,
-      userId: alert.userId,
-      type: alert.type,
-      message: alert.message,
-      status: alert.status,
-      severity: severity,
-      acknowledged: false,
-      created: alert.created,
-      currentValue: undefined,
-      threshold: undefined,
-    };
 
     const listeners = this.listeners.get(userId) || [];
-    listeners.forEach((listener) => listener(alertWithExtras));
+    listeners.forEach(listener => listener(alert));
 
-    return alertWithExtras;
+    return alert;
   }
 
-  private async sendEmailNotification(
+  public async sendEmailNotification(
     userId: string, 
-    alert: Alert, 
-    severity: AlertSeverity,
+    alert: PrismaAlert, 
+    severity: string,
     currentValue: number
   ) {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-    });
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { 
+          email: true,
+          cpuThreshold: true,
+          memoryThreshold: true,
+          storageThreshold: true,
+        }
+      });
 
-    if (!user || !user.email) return;
+      if (!user?.email) {
+        console.error(`No email found for user ${userId}`);
+        return;
+      }
 
-    // Vous pouvez utiliser votre service d'email existant ici
-    const emailData = {
-      to: user.email,
-      subject: `DockerFlow Alert: ${severity.toUpperCase()} - ${alert.type}`,
-      text: `
-        Resource Alert for DockerFlow
-        
-        Type: ${alert.type}
-        Severity: ${severity}
-        Message: ${alert.message}
-        Current Value: ${currentValue}%
-        Threshold: ${this.thresholds.get(userId)?.[alert.type as keyof AlertThreshold] || DEFAULT_THRESHOLDS[alert.type as keyof AlertThreshold]}%
-        Time: ${alert.created}
-        
-        Please check your DockerFlow dashboard for more details.
-      `,
-    };
+      const thresholds = {
+        cpu: user.cpuThreshold,
+        memory: user.memoryThreshold,
+        storage: user.storageThreshold,
+      };
 
-    // TODO: Implémenter l'envoi d'email
-    console.log('Email would be sent:', emailData);
-  }
+      const threshold = thresholds[alert.type as keyof AlertThreshold] || 
+                       DEFAULT_THRESHOLDS[alert.type as keyof AlertThreshold];
 
-  public subscribe(userId: string, callback: (alert: Alert) => void) {
-    const userListeners = this.listeners.get(userId) || [];
-    userListeners.push(callback);
-    this.listeners.set(userId, userListeners);
-  }
+      const emailContent = `
+        <h2>DockerFlow Alert</h2>
+        <p><strong>Severity:</strong> ${severity}</p>
+        <p><strong>Type:</strong> ${alert.type}</p>
+        <p><strong>Message:</strong> ${alert.message}</p>
+        <p><strong>Current Value:</strong> ${currentValue}%</p>
+        <p><strong>Threshold:</strong> ${threshold}%</p>
+        <p><strong>Time:</strong> ${alert.timestamp.toLocaleString()}</p>
+        <br>
+        <p>Please check your DockerFlow dashboard for more details.</p>
+        <p><a href="${process.env.NEXT_PUBLIC_APP_URL}/alerts">View Alert</a></p>
+      `;
 
-  public unsubscribe(userId: string, callback: (alert: Alert) => void) {
-    const userListeners = this.listeners.get(userId) || [];
-    const index = userListeners.indexOf(callback);
-    if (index > -1) {
-      userListeners.splice(index, 1);
-      this.listeners.set(userId, userListeners);
+      await transporter.sendMail({
+        from: process.env.SMTP_FROM,
+        to: user.email,
+        subject: `DockerFlow Alert: ${severity.toUpperCase()} - ${alert.type}`,
+        html: emailContent,
+      });
+
+      console.log(`Email notification sent to ${user.email} for alert ${alert.id}`);
+    } catch (error) {
+      console.error('Failed to send email notification:', error);
+      throw new Error(`Failed to send email notification: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-  private notifyListeners(userId: string, alert: Alert) {
-    const userListeners = this.listeners.get(userId) || [];
-    userListeners.forEach(listener => listener(alert));
+  public subscribe(userId: string, callback: (alert: PrismaAlert) => void) {
+    const listeners = this.listeners.get(userId) || [];
+    listeners.push(callback);
+    this.listeners.set(userId, listeners);
+  }
+
+  public unsubscribe(userId: string, callback: (alert: PrismaAlert) => void) {
+    const listeners = this.listeners.get(userId) || [];
+    const index = listeners.indexOf(callback);
+    if (index !== -1) {
+      listeners.splice(index, 1);
+      this.listeners.set(userId, listeners);
+    }
+  }
+
+  private notifyListeners(userId: string, alert: PrismaAlert) {
+    const listeners = this.listeners.get(userId) || [];
+    listeners.forEach(listener => listener(alert));
   }
 }
 

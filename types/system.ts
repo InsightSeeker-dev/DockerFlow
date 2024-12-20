@@ -1,8 +1,20 @@
 export interface SystemStats {
+  // Container Stats
   containers: number;
   containersRunning: number;
   containersStopped: number;
+  containersError: number;
+  
+  // Image Stats
   images: number;
+  
+  // User Stats
+  totalUsers: number;
+  activeUsers: number;
+  newUsers: number;
+  suspendedUsers: number;
+  
+  // System Resources
   cpuUsage: number;
   cpuCount: number;
   networkIO: number;
@@ -16,6 +28,8 @@ export interface SystemStats {
     total: number;
     percentage: number;
   };
+  
+  // Optional resource limits
   resourceLimits?: {
     memory: {
       limit: number;

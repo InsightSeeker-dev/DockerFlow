@@ -79,10 +79,28 @@ export async function GET() {
     const { used: diskUsed, total: diskTotal } = await getDiskUsage();
 
     const stats: SystemStats = {
+      // Container Stats
       containers: containers.length,
       containersRunning: containers.filter(c => c.State === 'running').length,
       containersStopped: containers.filter(c => c.State !== 'running').length,
+      containersError: containers.filter(c => !['running', 'exited'].includes(c.State)).length,
+      
+      // Image Stats
       images: images.length,
+      
+      // User Stats
+      totalUsers: await prisma.user.count(),
+      activeUsers: await prisma.user.count({ where: { status: 'active' } }),
+      newUsers: await prisma.user.count({
+        where: {
+          createdAt: {
+            gte: new Date(Date.now() - 24 * 60 * 60 * 1000) // Last 24 hours
+          }
+        }
+      }),
+      suspendedUsers: await prisma.user.count({ where: { status: 'suspended' } }),
+      
+      // System Resources
       cpuCount: os.cpus().length,
       cpuUsage: cpuUsage,
       networkIO: totalNetworkIO,

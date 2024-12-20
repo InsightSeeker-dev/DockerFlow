@@ -11,6 +11,21 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model AlertRule {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  description String?
+  type        String    // container, system, user
+  condition   Json      // Conditions de déclenchement
+  action      Json      // Actions à effectuer
+  enabled     Boolean   @default(true)
+  severity    String    @default("info") // info, warning, error, critical
+  createdBy   String    @db.ObjectId
+  user        User      @relation(fields: [createdBy], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
 model User {
   id                     String      @id @default(auto()) @map("_id") @db.ObjectId
   name                   String?     // Required
@@ -43,6 +58,7 @@ model User {
   dockerImages           DockerImage[]
   resourceUsage          ResourceUsage[]
   alerts                 Alert[]
+  alertRules             AlertRule[]
   terminalSessions       TerminalSession[]
   verificationTokens     VerificationToken[]
   createdAt              DateTime    @default(now())
@@ -138,37 +154,18 @@ model ResourceUsage {
 }
 
 model Alert {
-  id            String    @id @default(cuid())
-  type          String    // error, warning, info, success
-  title         String
-  message       String
-  source        String
-  timestamp     DateTime  @default(now())
-  acknowledged  Boolean   @default(false)
-  acknowledgedAt DateTime?
-  acknowledgedBy String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId       String   @db.ObjectId
+  type         String
+  message      String
+  severity     String   @default("info")  // info, warning, error, critical
+  status       String   @default("pending")  // pending, resolved, dismissed
+  acknowledged Boolean  @default(false)
+  timestamp    DateTime @default(now())
+  created      DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id])
 
-  @@index([type])
-  @@index([timestamp])
-  @@index([acknowledged])
-}
-
-model AlertRule {
-  id          String    @id @default(cuid())
-  name        String
-  type        String    // cpu, memory, disk, network, container
-  condition   String    // >, <, >=, <=, ==
-  threshold   Float
-  enabled     Boolean   @default(true)
-  createdBy   String
-  createdAt   DateTime  @default(now())
-  updatedBy   String?
-  updatedAt   DateTime  @updatedAt
-
-  @@index([type])
-  @@index([enabled])
+  @@map("alerts")
 }
 
 model TerminalSession {

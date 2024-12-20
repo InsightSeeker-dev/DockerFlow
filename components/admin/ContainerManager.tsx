@@ -280,9 +280,9 @@ export default function ContainerManager() {
                     <Badge
                       variant={
                         container.state === 'running'
-                          ? 'success'
+                          ? 'default'
                           : container.state === 'paused'
-                          ? 'warning'
+                          ? 'secondary'
                           : 'destructive'
                       }
                     >

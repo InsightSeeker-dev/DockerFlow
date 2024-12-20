@@ -37,6 +37,7 @@ import { Button } from '@/components/ui/button';
 import { LogOut } from 'lucide-react';
 import { signOut } from 'next-auth/react';
 import { motion } from 'framer-motion';
+import { DashboardOverview } from './DashboardOverview';
 
 interface RecentActivity {
   id: string;
@@ -105,252 +106,88 @@ export default function AdminDashboard() {
           Déconnexion
         </Button>
       </div>
-      <Tabs defaultValue={activeTab} className="space-y-4" onValueChange={setActiveTab}>
-        <TabsList>
+      <Tabs defaultValue={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <TabsList className="grid grid-cols-4 md:grid-cols-8 lg:grid-cols-8">
           <TabsTrigger value="dashboard" className="flex items-center gap-2">
             <LayoutDashboard className="h-4 w-4" />
-            Overview
+            <span className="hidden md:inline">Overview</span>
           </TabsTrigger>
           <TabsTrigger value="containers" className="flex items-center gap-2">
             <Container className="h-4 w-4" />
-            Containers
+            <span className="hidden md:inline">Containers</span>
           </TabsTrigger>
           <TabsTrigger value="images" className="flex items-center gap-2">
             <Image className="h-4 w-4" />
-            Images
+            <span className="hidden md:inline">Images</span>
           </TabsTrigger>
           <TabsTrigger value="networks" className="flex items-center gap-2">
             <Network className="h-4 w-4" />
-            Networks
+            <span className="hidden md:inline">Networks</span>
           </TabsTrigger>
           <TabsTrigger value="users" className="flex items-center gap-2">
             <Users className="h-4 w-4" />
-            Users
+            <span className="hidden md:inline">Users</span>
           </TabsTrigger>
           <TabsTrigger value="alerts" className="flex items-center gap-2">
             <Bell className="h-4 w-4" />
-            Alerts
+            <span className="hidden md:inline">Alerts</span>
+          </TabsTrigger>
+          <TabsTrigger value="activity" className="flex items-center gap-2">
+            <Activity className="h-4 w-4" />
+            <span className="hidden md:inline">Activity</span>
           </TabsTrigger>
           <TabsTrigger value="settings" className="flex items-center gap-2">
             <Settings className="h-4 w-4" />
-            Settings
+            <span className="hidden md:inline">Settings</span>
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="dashboard" className="space-y-6">
-          {/* System Resources Section */}
-          <div>
-            <h3 className="text-lg font-medium mb-4">System Resources</h3>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">CPU Usage</CardTitle>
-                  <Cpu className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    {systemStats?.cpuUsage ? `${systemStats.cpuUsage.toFixed(1)}%` : 'N/A'}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {systemStats?.cpuCount ? `${systemStats.cpuCount} cores` : ''}
-                  </p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Memory Usage</CardTitle>
-                  <CircuitBoard className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    {systemStats?.memoryUsage ? `${systemStats.memoryUsage.percentage.toFixed(1)}%` : 'N/A'}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {systemStats?.memoryUsage ? `${Math.round(systemStats.memoryUsage.used / 1024 / 1024)} MB used` : ''}
-                  </p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Disk Usage</CardTitle>
-                  <HardDrive className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    {systemStats?.diskUsage ? `${systemStats.diskUsage.percentage.toFixed(1)}%` : 'N/A'}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {systemStats?.diskUsage ? `${Math.round(systemStats.diskUsage.used / 1024 / 1024)} MB used` : ''}
-                  </p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Network I/O</CardTitle>
-                  <Signal className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    {systemStats?.networkIO ? `${(systemStats.networkIO / 1024 / 1024).toFixed(1)} MB/s` : 'N/A'}
-                  </div>
-                  <p className="text-xs text-muted-foreground">Network traffic</p>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-
-          {/* Images Section */}
-          <div>
-            <h3 className="text-lg font-medium mb-4">Images</h3>
-            <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Images</CardTitle>
-                  <Image className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    {systemStats?.images?.total || 'N/A'}
-                  </div>
-                  <p className="text-xs text-muted-foreground">Docker images</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Disk Usage</CardTitle>
-                  <HardDrive className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    {systemStats?.images?.size ? `${(systemStats.images.size / (1024 * 1024 * 1024)).toFixed(2)} GB` : 'N/A'}
-                  </div>
-                  <p className="text-xs text-muted-foreground">Total size of images</p>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-
-          {/* User Management Section */}
-          <div>
-            <h3 className="text-lg font-medium mb-4">User Management</h3>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Users</CardTitle>
-                  <Users className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{systemStats?.totalUsers ?? 'N/A'}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Active Users</CardTitle>
-                  <UserCheck className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{systemStats?.activeUsers ?? 'N/A'}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">New Users</CardTitle>
-                  <UserPlus className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{systemStats?.newUsers ?? 'N/A'}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Suspended Users</CardTitle>
-                  <UserX className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{systemStats?.suspendedUsers ?? 'N/A'}</div>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-
-          {/* Container Management Section */}
-          <div>
-            <h3 className="text-lg font-medium mb-4">Container Management</h3>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Containers</CardTitle>
-                  <Container className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{systemStats?.containers ?? 'N/A'}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Running</CardTitle>
-                  <Play className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{systemStats?.containersRunning ?? 'N/A'}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Stopped</CardTitle>
-                  <Square className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{systemStats?.containersStopped ?? 'N/A'}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Error</CardTitle>
-                  <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{systemStats?.containersError ?? 'N/A'}</div>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-
-          {/* Recent Activities Section */}
-          <div>
-            <h3 className="text-lg font-medium mb-4">Recent Activities</h3>
-            <Card>
-              <ScrollArea className="h-[400px]">
-                <CardContent className="p-4">
-                  {recentActivities.length > 0 ? (
-                    recentActivities.map((activity) => (
-                      <div
-                        key={activity.id}
-                        className="flex items-center justify-between py-4 border-b last:border-0"
-                      >
-                        <div className="flex items-center space-x-4">
-                          {activity.type === 'user' && <Users className="h-4 w-4" />}
-                          {activity.type === 'container' && <Container className="h-4 w-4" />}
-                          {activity.type === 'system' && <Activity className="h-4 w-4" />}
-                          <div>
-                            <p className="text-sm font-medium">{activity.action}</p>
-                            <p className="text-xs text-muted-foreground">{activity.description}</p>
-                          </div>
-                        </div>
-                        <span className="text-xs text-muted-foreground">
-                          {new Date(activity.timestamp).toLocaleString()}
-                        </span>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="flex items-center justify-center py-8 text-muted-foreground">
-                      No recent activities
-                    </div>
-                  )}
-                </CardContent>
-              </ScrollArea>
-            </Card>
-          </div>
+        <TabsContent value="dashboard" className="space-y-4">
+          <DashboardOverview 
+            systemStats={systemStats || {
+              // Container Stats
+              containers: 0,
+              containersRunning: 0,
+              containersStopped: 0,
+              containersError: 0,
+              activeContainers: 0,
+              containerTrend: 0,
+              
+              // Image Stats
+              images: {
+                total: 0,
+                size: 0
+              },
+              
+              // User Stats
+              totalUsers: 0,
+              activeUsers: 0,
+              newUsers: 0,
+              suspendedUsers: 0,
+              userTrend: 0,
+              
+              // System Resources
+              cpuUsage: 0,
+              cpuCount: 0,
+              cpuTrend: 0,
+              networkIO: 0,
+              memoryUsage: {
+                used: 0,
+                total: 0,
+                percentage: 0
+              },
+              memoryTrend: 0,
+              diskUsage: {
+                used: 0,
+                total: 0,
+                percentage: 0
+              },
+              
+              // Performance History
+              performanceHistory: []
+            }}
+            recentActivities={recentActivities}
+          />
         </TabsContent>
 
         <TabsContent value="containers">

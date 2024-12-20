@@ -4,6 +4,8 @@ export interface SystemStats {
   containersRunning: number;
   containersStopped: number;
   containersError: number;
+  activeContainers: number;
+  containerTrend: number;
   
   // Image Stats
   images: {
@@ -16,21 +18,31 @@ export interface SystemStats {
   activeUsers: number;
   newUsers: number;
   suspendedUsers: number;
+  userTrend: number;
   
   // System Resources
   cpuUsage: number;
   cpuCount: number;
+  cpuTrend: number;
   networkIO: number;
   memoryUsage: {
     used: number;
     total: number;
     percentage: number;
   };
+  memoryTrend: number;
   diskUsage: {
     used: number;
     total: number;
     percentage: number;
   };
+  
+  // Performance History
+  performanceHistory: Array<{
+    time: string;
+    cpu: number;
+    memory: number;
+  }>;
   
   // Optional resource limits
   resourceLimits?: {

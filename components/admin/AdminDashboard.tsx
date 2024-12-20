@@ -87,9 +87,14 @@ export default function AdminDashboard() {
           whileHover={{ scale: 1.05 }}
         >
           <Container className="text-blue-500 mr-3" size={40} />
-          <h1 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-blue-600">
-            DockerFlow
-          </h1>
+          <div className="flex flex-col items-start">
+            <h1 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-blue-600">
+              DockerFlow
+            </h1>
+            <span className="text-xs font-semibold text-blue-400 ml-1">
+              Admin
+            </span>
+          </div>
         </motion.div>
         <Button 
           variant="destructive" 

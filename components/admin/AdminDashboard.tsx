@@ -36,6 +36,7 @@ import { Logo } from '@/components/ui/logo';
 import { Button } from '@/components/ui/button';
 import { LogOut } from 'lucide-react';
 import { signOut } from 'next-auth/react';
+import { motion } from 'framer-motion';
 
 interface RecentActivity {
   id: string;
@@ -81,9 +82,15 @@ export default function AdminDashboard() {
   return (
     <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
       <div className="flex items-center justify-between space-y-2">
-        <div className="flex items-center gap-2">
-          <Logo size="lg" />
-        </div>
+        <motion.div 
+          className="flex items-center justify-center"
+          whileHover={{ scale: 1.05 }}
+        >
+          <Container className="text-blue-500 mr-3" size={40} />
+          <h1 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-blue-600">
+            DockerFlow
+          </h1>
+        </motion.div>
         <Button 
           variant="destructive" 
           onClick={() => signOut({ callbackUrl: '/' })}
@@ -182,6 +189,37 @@ export default function AdminDashboard() {
                     {systemStats?.networkIO ? `${(systemStats.networkIO / 1024 / 1024).toFixed(1)} MB/s` : 'N/A'}
                   </div>
                   <p className="text-xs text-muted-foreground">Network traffic</p>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+
+          {/* Images Section */}
+          <div>
+            <h3 className="text-lg font-medium mb-4">Images</h3>
+            <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total Images</CardTitle>
+                  <Image className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {systemStats?.images?.total || 'N/A'}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Docker images</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Disk Usage</CardTitle>
+                  <HardDrive className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {systemStats?.images?.size ? `${(systemStats.images.size / (1024 * 1024 * 1024)).toFixed(2)} GB` : 'N/A'}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Total size of images</p>
                 </CardContent>
               </Card>
             </div>

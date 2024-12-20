@@ -19,14 +19,6 @@ export default function AdminSettings() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-3xl font-bold tracking-tight">Paramètres administrateur</h2>
-        <Button 
-          variant="destructive" 
-          onClick={handleSignOut}
-          className="flex items-center gap-2"
-        >
-          <LogOut className="h-4 w-4" />
-          Déconnexion
-        </Button>
       </div>
 
       <div className="grid gap-6">

@@ -6,7 +6,10 @@ export interface SystemStats {
   containersError: number;
   
   // Image Stats
-  images: number;
+  images: {
+    total: number;
+    size: number;
+  };
   
   // User Stats
   totalUsers: number;

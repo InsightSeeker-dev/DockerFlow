@@ -23,7 +23,7 @@ export async function GET() {
     const session = await getServerSession(authOptions);
     console.log('Session:', session?.user);
     
-    if (!session?.user || !['ADMIN', 'SUPER_ADMIN'].includes(session.user.role)) {
+    if (!session?.user || !['ADMIN', 'admin', 'SUPER_ADMIN', 'super_admin'].includes(session.user.role.toLowerCase())) {
       console.log('Unauthorized access attempt');
       return NextResponse.json(
         { error: 'Vous devez être administrateur pour accéder à ces statistiques' },
@@ -197,30 +197,67 @@ export async function GET() {
       containersRunning: runningContainers.length,
       containersStopped: stoppedContainers.length,
       containersError: errorContainers.length,
-      
+      containerTrend: ((runningContainers.length - stoppedContainers.length) / containers.length) * 100,
+
       // Image Stats
-      images: images.length,
-      
+      images: {
+        total: images.length,
+        size: images.reduce((acc, img) => acc + img.Size, 0),
+        pulls: images.reduce((acc, img) => acc + (img.RepoTags?.length || 0), 0),
+        tags: Object.entries(
+          images.reduce((acc, img) => {
+            (img.RepoTags || []).forEach(tag => {
+              acc[tag] = (acc[tag] || 0) + 1;
+            });
+            return acc;
+          }, {} as Record<string, number>)
+        )
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5)
+      },
+
       // User Stats
       totalUsers,
       activeUsers,
       newUsers,
       suspendedUsers,
-      
+      userTrend: ((newUsers - suspendedUsers) / Math.max(totalUsers, 1)) * 100,
+
       // System Resources
-      cpuUsage,
-      cpuCount,
-      networkIO,
+      cpuUsage: Math.round(cpuUsage),
+      cpuCount: os.cpus().length,
+      cpuTrend: 0,
+
       memoryUsage: {
-        used: usedMemory,
         total: totalMemory,
-        percentage: memoryPercentage,
+        used: usedMemory,
+        free: freeMemory,
+        percentage: Math.round(memoryPercentage)
       },
+      memoryTrend: 0,
+
       diskUsage: {
-        used: diskUsedBytes,
         total: diskTotalBytes,
-        percentage: diskPercentage,
+        used: diskUsedBytes,
+        free: diskTotalBytes - diskUsedBytes,
+        percentage: Math.round(diskPercentage)
       },
+
+      networkTraffic: {
+        in: networkIO / 2,
+        out: networkIO / 2
+      },
+
+      // Performance History
+      performanceHistory: [
+        {
+          timestamp: new Date().toLocaleTimeString(),
+          cpu: Math.round(cpuUsage),
+          memory: Math.round(memoryPercentage),
+          network: networkIO
+        }
+      ]
     };
 
     console.log('Returning stats:', stats);

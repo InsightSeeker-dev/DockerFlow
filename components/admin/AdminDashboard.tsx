@@ -38,6 +38,7 @@ import { LogOut } from 'lucide-react';
 import { signOut } from 'next-auth/react';
 import { motion } from 'framer-motion';
 import { DashboardOverview } from './DashboardOverview';
+import { getSystemStats } from '@/lib/api';
 
 interface RecentActivity {
   id: string;
@@ -49,22 +50,13 @@ interface RecentActivity {
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
-  const [selectedUserId, setSelectedUserId] = useState<string>('');
-  const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const { toast } = useToast();
-
-  const defaultSystemStats: SystemStats = {
-    // Container Stats
+  const [systemStats, setSystemStats] = useState<SystemStats>({
     containers: 0,
     containersRunning: 0,
     containersStopped: 0,
     containersError: 0,
     containerTrend: 0,
     
-    // Image Stats
     images: {
       total: 0,
       size: 0,
@@ -72,18 +64,16 @@ export default function AdminDashboard() {
       tags: []
     },
     
-    // User Stats
     totalUsers: 0,
     activeUsers: 0,
     newUsers: 0,
     suspendedUsers: 0,
     userTrend: 0,
     
-    // System Resources
     cpuUsage: 0,
     cpuCount: 0,
     cpuTrend: 0,
-    networkIO: 0,
+    
     memoryUsage: {
       used: 0,
       total: 0,
@@ -91,29 +81,36 @@ export default function AdminDashboard() {
       percentage: 0
     },
     memoryTrend: 0,
+    
     diskUsage: {
       used: 0,
       total: 0,
       free: 0,
       percentage: 0
     },
+    
     networkTraffic: {
       in: 0,
       out: 0
     },
-    
-    // Performance History
+
     performanceHistory: []
-  };
+  });
+
+  const [selectedUserId, setSelectedUserId] = useState<string>('');
+  const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
-    const fetchSystemStats = async () => {
+    const fetchStats = async () => {
       try {
-        const response = await fetch('/api/admin/system/stats');
-        if (!response.ok) throw new Error('Failed to fetch system stats');
-        const data = await response.json();
-        setSystemStats(data);
-      } catch (err) {
+        const stats = await getSystemStats();
+        setSystemStats(stats);
+        setError(null);
+      } catch (error) {
+        console.error('Error fetching system stats:', error);
         setError('Failed to load system statistics');
         toast({
           title: 'Error',
@@ -125,8 +122,12 @@ export default function AdminDashboard() {
       }
     };
 
-    fetchSystemStats();
-    const interval = setInterval(fetchSystemStats, 30000);
+    // Fetch initial stats
+    fetchStats();
+
+    // Update stats every 5 seconds
+    const interval = setInterval(fetchStats, 5000);
+
     return () => clearInterval(interval);
   }, [toast]);
 
@@ -190,7 +191,7 @@ export default function AdminDashboard() {
 
         <TabsContent value="dashboard" className="space-y-4">
           <DashboardOverview 
-            systemStats={systemStats || defaultSystemStats}
+            systemStats={systemStats}
             recentActivities={recentActivities}
           />
         </TabsContent>

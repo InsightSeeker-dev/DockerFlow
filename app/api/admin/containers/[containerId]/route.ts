@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
-import Docker from 'dockerode';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-
-const docker = new Docker();
+import { docker } from '@/lib/docker';
+import { isAdmin } from '@/lib/utils/auth-helpers';
 
 export async function GET(
   request: Request,
@@ -11,14 +10,22 @@ export async function GET(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || !['ADMIN', 'SUPER_ADMIN'].includes(session.user.role)) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    if (!isAdmin(session)) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     const container = docker.getContainer(params.containerId);
-    const inspectData = await container.inspect();
+    const containerInfo = await container.inspect();
+    const stats = await container.stats({ stream: false });
 
-    return NextResponse.json(inspectData);
+    return NextResponse.json({
+      ...containerInfo,
+      stats,
+    });
   } catch (error) {
     console.error('[CONTAINER_INSPECT]', error);
     return NextResponse.json(
@@ -34,14 +41,18 @@ export async function DELETE(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || !['ADMIN', 'SUPER_ADMIN'].includes(session.user.role)) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    if (!isAdmin(session)) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     const container = docker.getContainer(params.containerId);
     await container.remove({ force: true });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ message: 'Container deleted successfully' });
   } catch (error) {
     console.error('[CONTAINER_DELETE]', error);
     return NextResponse.json(
@@ -57,8 +68,12 @@ export async function PATCH(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || !['ADMIN', 'SUPER_ADMIN'].includes(session.user.role)) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    if (!isAdmin(session)) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     const container = docker.getContainer(params.containerId);
@@ -87,11 +102,11 @@ export async function PATCH(
         );
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ message: 'Container updated successfully' });
   } catch (error) {
-    console.error('[CONTAINER_ACTION]', error);
+    console.error('[CONTAINER_UPDATE]', error);
     return NextResponse.json(
-      { error: 'Failed to perform container action' },
+      { error: 'Failed to update container' },
       { status: 500 }
     );
   }

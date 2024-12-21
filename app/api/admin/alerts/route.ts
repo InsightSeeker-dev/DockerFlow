@@ -2,6 +2,16 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { AlertType, AlertSeverity } from '@prisma/client';
+import { z } from 'zod';
+
+const createAlertSchema = z.object({
+  type: z.enum(['CONTAINER', 'SYSTEM', 'USER']),
+  title: z.string(),
+  message: z.string(),
+  source: z.string().optional(),
+  severity: z.enum(['INFO', 'WARNING', 'ERROR', 'CRITICAL']).optional(),
+});
 
 // GET /api/admin/alerts
 export async function GET(request: Request) {
@@ -67,7 +77,7 @@ export async function GET(request: Request) {
             email: true,
           },
         },
-        acknowledgedBy: {
+        acknowledgedByUser: {
           select: {
             name: true,
             email: true,
@@ -98,14 +108,16 @@ export async function POST(request: Request) {
       );
     }
 
-    const data = await request.json();
+    const body = await request.json();
+    const { type, title, message, source, severity } = createAlertSchema.parse(body);
+
     const alert = await prisma.alert.create({
       data: {
-        type: data.type,
-        title: data.title,
-        message: data.message,
-        source: data.source,
-        severity: data.severity || 'info',
+        type: type as AlertType,
+        title,
+        message,
+        source,
+        severity: severity as AlertSeverity || AlertSeverity.INFO,
         userId: session.user.id,
       },
       include: {

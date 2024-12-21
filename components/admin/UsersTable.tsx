@@ -41,8 +41,8 @@ export function UsersTable({ users, onEditUser, onDeleteUser }: UsersTableProps)
                 </Badge>
               </TableCell>
               <TableCell>
-                <Badge variant={user.status === 'active' ? 'default' : 'destructive'}>
-                  {user.status === 'active' ? 'Active' : 'Inactive'}
+                <Badge variant={user.status === 'ACTIVE' ? 'default' : 'destructive'}>
+                  {user.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE'}
                 </Badge>
               </TableCell>
               <TableCell className="text-right">

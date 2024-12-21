@@ -53,7 +53,7 @@ export async function GET(request: Request, { params }: RouteParams) {
 export async function PUT(request: Request, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || session.user.role !== 'admin') {
+    if (!session || session.user.role !== 'ADMIN') {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -87,7 +87,7 @@ export async function PUT(request: Request, { params }: RouteParams) {
     }
 
     // Empêcher la modification du rôle admin par d'autres admins
-    if (user.role === 'admin' && session.user.id !== user.id) {
+    if (user.role === 'ADMIN' && session.user.id !== user.id) {
       return NextResponse.json(
         { error: 'Cannot modify another admin user' },
         { status: 403 }
@@ -125,7 +125,7 @@ export async function PUT(request: Request, { params }: RouteParams) {
 export async function DELETE(request: Request, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || session.user.role !== 'admin') {
+    if (!session || session.user.role !== 'ADMIN') {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }

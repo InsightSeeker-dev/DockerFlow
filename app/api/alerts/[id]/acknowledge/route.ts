@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { isAuthenticated } from '@/lib/utils/auth-helpers';
+import { ALERT_STATUS } from '@/lib/constants/alert';
+import { Session } from 'next-auth';
 
 // PATCH /api/alerts/[id]/acknowledge
 export async function PATCH(
@@ -11,35 +14,46 @@ export async function PATCH(
   try {
     const session = await getServerSession(authOptions);
     
-    if (!session?.user) {
+    if (!isAuthenticated(session)) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       );
     }
 
+    // TypeScript sait maintenant que authenticatedSession a le bon type
+    const authenticatedSession: Session & { user: { id: string } } = session;
+
     const alert = await prisma.alert.update({
-      where: { id: params.id },
+      where: {
+        id: params.id,
+      },
       data: {
         acknowledged: true,
         acknowledgedAt: new Date(),
-        acknowledgedById: session.user.id,
-        status: 'resolved'
+        acknowledgedById: authenticatedSession.user.id,
+        status: ALERT_STATUS.RESOLVED
       },
       include: {
         user: {
           select: {
+            id: true,
             name: true,
             email: true,
-          },
+            role: true,
+            status: true,
+          }
         },
-        acknowledgedBy: {
+        acknowledgedByUser: {
           select: {
+            id: true,
             name: true,
             email: true,
-          },
-        },
-      },
+            role: true,
+            status: true,
+          }
+        }
+      }
     });
 
     return NextResponse.json(alert);

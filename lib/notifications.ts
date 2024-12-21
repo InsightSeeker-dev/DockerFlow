@@ -1,12 +1,12 @@
-import { type Alert as PrismaAlert, Prisma } from '@prisma/client';
+import { type Alert as PrismaAlert, Prisma, AlertType as PrismaAlertType, AlertSeverity, AlertStatus } from '@prisma/client';
 import { prisma } from './prisma';
 import nodemailer from 'nodemailer';
 
-export interface AlertType {
-  type: string;
+export interface AlertNotification {
+  type: PrismaAlertType;
   message: string;
-  severity?: 'info' | 'warning' | 'error' | 'critical';
-  status?: 'pending' | 'resolved' | 'dismissed';
+  severity?: AlertSeverity;
+  status?: AlertStatus;
   acknowledged?: boolean;
 }
 
@@ -90,18 +90,18 @@ export class NotificationService {
 
   public async createAlert(
     userId: string,
-    type: string,
+    type: PrismaAlertType,
     message: string,
-    severity: string = 'info'
+    severity: AlertSeverity = AlertSeverity.INFO
   ): Promise<PrismaAlert> {
     const alert = await prisma.alert.create({
       data: {
         userId,
         type,
-        title: `${type.charAt(0).toUpperCase() + type.slice(1)} Alert`,
+        title: `${type.toString().charAt(0).toUpperCase() + type.toString().slice(1).toLowerCase()} Alert`,
         message,
         severity,
-        status: 'pending',
+        status: AlertStatus.PENDING,
         acknowledged: false,
       }
     });
@@ -115,7 +115,7 @@ export class NotificationService {
   public async sendEmailNotification(
     userId: string, 
     alert: PrismaAlert, 
-    severity: string,
+    severity: AlertSeverity,
     currentValue: number
   ) {
     try {
@@ -124,56 +124,30 @@ export class NotificationService {
         select: {
           email: true,
           name: true,
-          cpuThreshold: true,
-          memoryThreshold: true,
-          storageThreshold: true,
         },
       });
 
-      if (!user || !user.email) {
-        console.error('User not found or no email address');
+      if (!user?.email) {
+        console.error('User email not found for notification');
         return;
       }
 
-      // Déterminer le seuil approprié
-      let threshold: number;
-      switch (alert.type.toLowerCase()) {
-        case 'cpu':
-          threshold = user.cpuThreshold;
-          break;
-        case 'memory':
-          threshold = user.memoryThreshold;
-          break;
-        case 'storage':
-          threshold = user.storageThreshold;
-          break;
-        default:
-          threshold = 80; // Valeur par défaut
-      }
+      const emailContent = `
+        <h2>Alert: ${alert.title}</h2>
+        <p>${alert.message}</p>
+        <p>Current Value: ${currentValue}</p>
+        <p>Severity: ${severity}</p>
+        <p>Time: ${new Date().toLocaleString()}</p>
+      `;
 
-      const mailOptions = {
+      await transporter.sendMail({
         from: process.env.SMTP_FROM,
         to: user.email,
-        subject: `DockerFlow ${severity.toUpperCase()} Alert: ${alert.type}`,
-        html: `
-        <h2>DockerFlow Alert</h2>
-        <p>Hello ${user.name || 'User'},</p>
-        <p>A ${severity} alert has been triggered for your ${alert.type} usage.</p>
-        <br>
-        <p><strong>Message:</strong> ${alert.message}</p>
-        <p><strong>Current Value:</strong> ${currentValue}%</p>      
-        <p><strong>Threshold:</strong> ${threshold}%</p>
-        <p><strong>Time:</strong> ${alert.createdAt.toLocaleString()}</p>
-        <br>
-        <p>Please check your DockerFlow dashboard for more details.</p>
-        <p><a href="${process.env.NEXT_PUBLIC_APP_URL}/alerts">View Alert</a></p>
-        <br>
-        <p>Best regards,</p>
-        <p>DockerFlow Team</p>
-        `,
-      };
+        subject: `DockerFlow Alert - ${severity} - ${alert.title}`,
+        html: emailContent,
+      });
 
-      await transporter.sendMail(mailOptions);
+      console.log('Email notification sent to:', user.email);
     } catch (error) {
       console.error('Failed to send email notification:', error);
     }

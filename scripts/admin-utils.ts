@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, UserRole, UserStatus } from '@prisma/client';
 import { hash } from 'bcryptjs';
 
 export async function createAdmin(email: string, password: string) {
@@ -12,8 +12,8 @@ export async function createAdmin(email: string, password: string) {
         email,
         password: hashedPassword,
         username: email.split('@')[0],
-        role: 'admin',
-        status: 'active',
+        role: UserRole.ADMIN,
+        status: UserStatus.ACTIVE,
         emailVerified: new Date(),
         cpuLimit: 4000,
         memoryLimit: 8589934592,

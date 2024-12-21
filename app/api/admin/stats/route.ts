@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { isAdmin } from '@/lib/utils/auth-helpers';
 
 // Cette route doit être dynamique car elle utilise des données de session
 export const dynamic = 'force-dynamic';
@@ -11,7 +12,7 @@ export async function GET(request: Request) {
   try {
     const session = await getServerSession(authOptions);
     
-    if (!session?.user || !['ADMIN', 'SUPER_ADMIN'].includes(session.user.role)) {
+    if (!isAdmin(session)) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -35,14 +36,14 @@ export async function GET(request: Request) {
 
       // Utilisateurs actifs (status = 'active')
       prisma.user.count({
-        where: { status: 'active' }
+        where: { status: 'ACTIVE' }
       }),
 
-      // Utilisateurs récents (dernières 24h)
+      // Utilisateurs récents (7 derniers jours)
       prisma.user.count({
         where: {
-          updatedAt: {
-            gte: new Date(Date.now() - 24 * 60 * 60 * 1000)
+          lastLogin: {
+            gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
           }
         }
       }),
@@ -55,7 +56,7 @@ export async function GET(request: Request) {
         where: { status: 'running' }
       }),
 
-      // Total des images
+      // Total des images Docker
       prisma.dockerImage.count(),
 
       // Total des alertes
@@ -63,10 +64,10 @@ export async function GET(request: Request) {
 
       // Alertes en attente
       prisma.alert.count({
-        where: { status: 'pending' }
+        where: { status: 'PENDING' }
       }),
 
-      // Total du stockage utilisé
+      // Utilisation totale du stockage
       prisma.userStorage.aggregate({
         _sum: {
           size: true
@@ -78,22 +79,18 @@ export async function GET(request: Request) {
       users: {
         total: totalUsers,
         active: activeUsers,
-        recent: recentUsers,
+        recent: recentUsers
       },
       containers: {
         total: totalContainers,
-        running: runningContainers,
+        running: runningContainers
       },
-      images: {
-        total: totalImages,
-      },
+      images: totalImages,
       alerts: {
         total: totalAlerts,
-        pending: pendingAlerts,
+        pending: pendingAlerts
       },
-      storage: {
-        total: totalStorage._sum.size || 0,
-      },
+      storage: totalStorage._sum.size || 0
     });
   } catch (error) {
     console.error('[STATS_GET]', error);

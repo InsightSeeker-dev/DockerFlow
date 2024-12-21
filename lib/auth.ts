@@ -1,4 +1,5 @@
 import { NextAuthOptions } from "next-auth";
+import type { User } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
 import { compare } from "bcryptjs";
@@ -46,7 +47,9 @@ export const authOptions: NextAuthOptions = {
         email: { label: "Email", type: "text" },
         password: { label: "Password", type: "password" }
       },
-      async authorize(credentials) {
+      async authorize(
+        credentials: Record<"email" | "password", string> | undefined
+      ): Promise<User | null> {
         try {
           if (!credentials?.email || !credentials?.password) {
             console.error('Missing credentials');
@@ -85,7 +88,7 @@ export const authOptions: NextAuthOptions = {
             return null;
           }
 
-          if (user.status !== 'active') {
+          if (user.status !== 'ACTIVE') {
             console.error('Account not active');
             return null;
           }
@@ -96,16 +99,17 @@ export const authOptions: NextAuthOptions = {
             data: { lastLogin: new Date() }
           });
 
+          // Convert to NextAuth User type
+          const { password: _, ...userWithoutPassword } = user;
           return {
-            id: user.id,
-            email: user.email,
-            name: user.name || user.username,
-            username: user.username,
-            role: user.role,
-            status: user.status,
-            emailVerified: user.emailVerified,
-            image: user.image
-          };
+            id: userWithoutPassword.id,
+            email: userWithoutPassword.email,
+            name: userWithoutPassword.name || '',
+            username: userWithoutPassword.username,
+            image: userWithoutPassword.image,
+            role: userWithoutPassword.role,
+            status: userWithoutPassword.status
+          } as User;
         } catch (error) {
           console.error('Auth error:', error);
           return null;
@@ -125,10 +129,10 @@ export const authOptions: NextAuthOptions = {
     },
     async session({ session, token }) {
       if (session.user) {
-        session.user.id = token.id;
-        session.user.role = token.role;
-        session.user.status = token.status;
-        session.user.emailVerified = token.emailVerified;
+        session.user.id = token.id as string;
+        session.user.role = token.role as string;
+        session.user.status = token.status as string;
+        session.user.emailVerified = token.emailVerified as Date | null;
       }
       return session;
     }
@@ -136,5 +140,5 @@ export const authOptions: NextAuthOptions = {
 };
 
 export function validateAdmin(session: any) {
-  return session?.user?.role === 'admin' || session?.user?.role === 'SUPER_ADMIN';
+  return session?.user?.role === 'ADMIN';
 }

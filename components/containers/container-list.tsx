@@ -64,7 +64,7 @@ export function ContainerList({
             comparison = a.State.localeCompare(b.State);
             break;
           case 'created':
-            comparison = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+            comparison = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
             break;
         }
         return sortOrder === 'asc' ? comparison : -comparison;

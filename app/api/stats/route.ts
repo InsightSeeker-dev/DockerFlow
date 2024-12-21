@@ -135,37 +135,67 @@ export async function GET() {
     const memoryLimit = user.memoryLimit;
     const storageLimit = user.storageLimit;
 
+    // Calculate total image size
+    const totalImageSize = images.reduce((acc, img) => acc + (img.Size || 0), 0);
+
     // Prepare response
     const systemStats: SystemStats = {
       // Container Stats
       containers: userContainers.length,
       containersRunning: runningContainers,
       containersStopped: userContainers.length - runningContainers,
-      containersError: 0, // À implémenter si nécessaire
+      containersError: 0,
+      containerTrend: 0,
       
       // Image Stats
-      images: images.length,
+      images: {
+        total: images.length,
+        size: totalImageSize,
+        pulls: 0,
+        tags: images.map(img => ({
+          name: img.RepoTags?.[0] || 'none',
+          count: img.RepoTags?.length || 0
+        }))
+      },
       
       // User Stats
-      totalUsers: 1, // Pour les stats utilisateur, on montre juste l'utilisateur courant
+      totalUsers: 1,
       activeUsers: 1,
       newUsers: 0,
       suspendedUsers: 0,
+      userTrend: 0,
       
       // System Resources
       cpuCount: os.cpus().length,
       cpuUsage: totalCPUPercent,
-      networkIO: totalNetworkIO,
+      cpuTrend: 0,
+      
       memoryUsage: {
-        used: totalMemory,
         total: memoryLimit,
+        used: totalMemory,
+        free: memoryLimit - totalMemory,
         percentage: (totalMemory / memoryLimit) * 100
       },
+      memoryTrend: 0,
+
       diskUsage: {
-        used: totalSize,
         total: storageLimit,
+        used: totalSize,
+        free: storageLimit - totalSize,
         percentage: (totalSize / storageLimit) * 100
-      }
+      },
+
+      networkTraffic: {
+        in: totalNetworkIO / 2,
+        out: totalNetworkIO / 2
+      },
+
+      performanceHistory: [{
+        timestamp: new Date().toISOString(),
+        cpu: totalCPUPercent,
+        memory: (totalMemory / memoryLimit) * 100,
+        network: totalNetworkIO
+      }]
     };
 
     return NextResponse.json(systemStats);

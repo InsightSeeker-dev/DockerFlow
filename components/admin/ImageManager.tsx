@@ -3,6 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
+import { Trash2 } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -11,7 +14,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -22,7 +24,6 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import ImageBuilder from './ImageBuilder';
@@ -30,19 +31,11 @@ import { formatBytes, formatDate } from '@/lib/utils';
 
 interface DockerImage {
   id: string;
-  repository: string;
+  userId: string;
+  name: string;
   tag: string;
-  created: string;
-  size: string | number;
-  virtualSize: string | number;
-  digest: string;
-  labels: Record<string, string>;
-  history: Array<{
-    Created: string;
-    CreatedBy: string;
-    Comment: string;
-    EmptyLayer?: boolean;
-  }>;
+  size: number;
+  created: Date;
 }
 
 export default function ImageManager() {
@@ -93,22 +86,21 @@ export default function ImageManager() {
     }
   };
 
-  const handleDeleteImage = async (imageId: string) => {
+  const handleDeleteImage = async (id: string) => {
     try {
-      setLoading(true);
-      const response = await fetch(`/api/admin/images/${imageId}`, {
+      const response = await fetch(`/api/admin/images/${id}`, {
         method: 'DELETE',
       });
 
-      if (!response.ok) throw new Error('Failed to delete image');
-      
-      toast.success('Image deleted successfully');
+      if (!response.ok) {
+        throw new Error('Failed to delete image');
+      }
+
+      toast.success('Image supprimée avec succès');
       fetchImages();
     } catch (error) {
-      toast.error('Failed to delete image');
-      console.error(error);
-    } finally {
-      setLoading(false);
+      console.error('Error deleting image:', error);
+      toast.error('Erreur lors de la suppression de l\'image');
     }
   };
 
@@ -172,39 +164,29 @@ export default function ImageManager() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Repository</TableHead>
+              <TableHead>Name</TableHead>
               <TableHead>Tag</TableHead>
-              <TableHead>Created</TableHead>
               <TableHead>Size</TableHead>
+              <TableHead>Created</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {images.map((image) => (
               <TableRow key={image.id}>
-                <TableCell>{image.repository}</TableCell>
-                <TableCell>
-                  <Badge variant="secondary">{image.tag}</Badge>
-                </TableCell>
-                <TableCell>{formatDate(image.created)}</TableCell>
+                <TableCell className="font-medium">{image.name}</TableCell>
+                <TableCell>{image.tag}</TableCell>
                 <TableCell>{formatBytes(image.size)}</TableCell>
+                <TableCell>{new Date(image.created).toLocaleString()}</TableCell>
                 <TableCell>
-                  <div className="flex space-x-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setSelectedImage(image)}
-                    >
-                      Details
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => handleDeleteImage(image.id)}
-                    >
-                      Delete
-                    </Button>
-                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDeleteImage(image.id)}
+                    className="text-red-500"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </TableCell>
               </TableRow>
             ))}
@@ -225,38 +207,11 @@ export default function ImageManager() {
                   <Label>ID</Label>
                   <div className="font-mono text-sm">{selectedImage.id}</div>
                 </div>
-                <div>
-                  <Label>Digest</Label>
-                  <div className="font-mono text-sm">{selectedImage.digest}</div>
-                </div>
               </div>
 
               <div>
-                <Label>Labels</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {Object.entries(selectedImage.labels).map(([key, value]) => (
-                    <Badge key={key} variant="outline">
-                      {key}: {value}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <Label>History</Label>
-                <div className="max-h-60 overflow-y-auto">
-                  {selectedImage.history.map((entry, index) => (
-                    <div
-                      key={index}
-                      className="border-b py-2 last:border-b-0"
-                    >
-                      <div className="text-sm">{entry.CreatedBy}</div>
-                      <div className="text-xs text-gray-500">
-                        {formatDate(entry.Created)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <Label>Created</Label>
+                <div className="text-sm">{new Date(selectedImage.created).toLocaleString()}</div>
               </div>
             </div>
           )}

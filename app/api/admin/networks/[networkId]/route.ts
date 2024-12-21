@@ -5,9 +5,10 @@ import { authOptions } from '@/lib/auth';
 
 const docker = new Docker();
 
+// GET /api/admin/networks/[networkId]
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: { networkId: string } }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -15,22 +16,23 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const container = docker.getContainer(params.id);
-    const inspectData = await container.inspect();
+    const network = docker.getNetwork(params.networkId);
+    const networkInfo = await network.inspect();
 
-    return NextResponse.json(inspectData);
+    return NextResponse.json(networkInfo);
   } catch (error) {
-    console.error('Error getting container:', error);
+    console.error('[NETWORK_INSPECT]', error);
     return NextResponse.json(
-      { error: 'Failed to get container details' },
+      { error: 'Failed to inspect network' },
       { status: 500 }
     );
   }
 }
 
+// DELETE /api/admin/networks/[networkId]
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: { networkId: string } }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -38,22 +40,23 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const container = docker.getContainer(params.id);
-    await container.remove({ force: true });
+    const network = docker.getNetwork(params.networkId);
+    await network.remove();
 
-    return new NextResponse(null, { status: 204 });
+    return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error deleting container:', error);
+    console.error('[NETWORK_DELETE]', error);
     return NextResponse.json(
-      { error: 'Failed to delete container' },
+      { error: 'Failed to delete network' },
       { status: 500 }
     );
   }
 }
 
+// PATCH /api/admin/networks/[networkId]
 export async function PATCH(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: { networkId: string } }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -61,25 +64,15 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const container = docker.getContainer(params.id);
-    const body = await request.json();
-    const { action } = body;
+    const network = docker.getNetwork(params.networkId);
+    const { action } = await request.json();
 
     switch (action) {
-      case 'start':
-        await container.start();
+      case 'connect':
+        // Implement network connection logic
         break;
-      case 'stop':
-        await container.stop();
-        break;
-      case 'restart':
-        await container.restart();
-        break;
-      case 'pause':
-        await container.pause();
-        break;
-      case 'unpause':
-        await container.unpause();
+      case 'disconnect':
+        // Implement network disconnection logic
         break;
       default:
         return NextResponse.json(
@@ -88,11 +81,11 @@ export async function PATCH(
         );
     }
 
-    return NextResponse.json({ message: `Container ${action} successful` });
+    return NextResponse.json({ success: true });
   } catch (error) {
-    console.error(`Error performing container action:`, error);
+    console.error('[NETWORK_ACTION]', error);
     return NextResponse.json(
-      { error: 'Failed to perform container action' },
+      { error: 'Failed to perform network action' },
       { status: 500 }
     );
   }

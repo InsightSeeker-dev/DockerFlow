@@ -98,6 +98,7 @@ export class NotificationService {
       data: {
         userId,
         type,
+        title: `${type.charAt(0).toUpperCase() + type.slice(1)} Alert`,
         message,
         severity,
         status: 'pending',
@@ -120,52 +121,61 @@ export class NotificationService {
     try {
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { 
+        select: {
           email: true,
+          name: true,
           cpuThreshold: true,
           memoryThreshold: true,
           storageThreshold: true,
-        }
+        },
       });
 
-      if (!user?.email) {
-        console.error(`No email found for user ${userId}`);
+      if (!user || !user.email) {
+        console.error('User not found or no email address');
         return;
       }
 
-      const thresholds = {
-        cpu: user.cpuThreshold,
-        memory: user.memoryThreshold,
-        storage: user.storageThreshold,
-      };
+      // Déterminer le seuil approprié
+      let threshold: number;
+      switch (alert.type.toLowerCase()) {
+        case 'cpu':
+          threshold = user.cpuThreshold;
+          break;
+        case 'memory':
+          threshold = user.memoryThreshold;
+          break;
+        case 'storage':
+          threshold = user.storageThreshold;
+          break;
+        default:
+          threshold = 80; // Valeur par défaut
+      }
 
-      const threshold = thresholds[alert.type as keyof AlertThreshold] || 
-                       DEFAULT_THRESHOLDS[alert.type as keyof AlertThreshold];
-
-      const emailContent = `
+      const mailOptions = {
+        from: process.env.SMTP_FROM,
+        to: user.email,
+        subject: `DockerFlow ${severity.toUpperCase()} Alert: ${alert.type}`,
+        html: `
         <h2>DockerFlow Alert</h2>
-        <p><strong>Severity:</strong> ${severity}</p>
-        <p><strong>Type:</strong> ${alert.type}</p>
+        <p>Hello ${user.name || 'User'},</p>
+        <p>A ${severity} alert has been triggered for your ${alert.type} usage.</p>
+        <br>
         <p><strong>Message:</strong> ${alert.message}</p>
-        <p><strong>Current Value:</strong> ${currentValue}%</p>
+        <p><strong>Current Value:</strong> ${currentValue}%</p>      
         <p><strong>Threshold:</strong> ${threshold}%</p>
-        <p><strong>Time:</strong> ${alert.timestamp.toLocaleString()}</p>
+        <p><strong>Time:</strong> ${alert.createdAt.toLocaleString()}</p>
         <br>
         <p>Please check your DockerFlow dashboard for more details.</p>
         <p><a href="${process.env.NEXT_PUBLIC_APP_URL}/alerts">View Alert</a></p>
-      `;
+        <br>
+        <p>Best regards,</p>
+        <p>DockerFlow Team</p>
+        `,
+      };
 
-      await transporter.sendMail({
-        from: process.env.SMTP_FROM,
-        to: user.email,
-        subject: `DockerFlow Alert: ${severity.toUpperCase()} - ${alert.type}`,
-        html: emailContent,
-      });
-
-      console.log(`Email notification sent to ${user.email} for alert ${alert.id}`);
+      await transporter.sendMail(mailOptions);
     } catch (error) {
       console.error('Failed to send email notification:', error);
-      throw new Error(`Failed to send email notification: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 

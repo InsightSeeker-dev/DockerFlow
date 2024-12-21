@@ -136,10 +136,10 @@ export default function NetworkManager() {
     }
   };
 
-  const handleDeleteNetwork = async (networkId: string) => {
+  const handleDeleteNetwork = async (id: string) => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/admin/networks/${networkId}`, {
+      const response = await fetch(`/api/admin/networks/${id}`, {
         method: 'DELETE',
       });
 
@@ -168,13 +168,13 @@ export default function NetworkManager() {
         }),
       });
 
-      if (!response.ok) throw new Error('Failed to connect container');
+      if (!response.ok) throw new Error('Failed to connect container to network');
       
-      toast.success('Container connected successfully');
+      toast.success('Container connected to network successfully');
       setConnectDialogOpen(false);
       fetchNetworks();
     } catch (error) {
-      toast.error('Failed to connect container');
+      toast.error('Failed to connect container to network');
       console.error(error);
     } finally {
       setLoading(false);
@@ -379,49 +379,38 @@ export default function NetworkManager() {
           <TableBody>
             {networks.map((network) => (
               <TableRow key={network.id}>
-                <TableCell>{network.name}</TableCell>
+                <TableCell className="font-medium">{network.name}</TableCell>
                 <TableCell>
                   <Badge variant="secondary">{network.driver}</Badge>
                 </TableCell>
                 <TableCell>{network.scope}</TableCell>
                 <TableCell>
-                  {network.ipam.config[0]?.subnet || 'N/A'}
-                </TableCell>
-                <TableCell>
-                  <div className="flex flex-wrap gap-2">
-                    {network.containers.map((container) => (
-                      <Badge
-                        key={container.id}
-                        variant="outline"
-                        className="cursor-pointer"
-                        onClick={() =>
-                          handleDisconnectContainer(
-                            network.id,
-                            container.id
-                          )
-                        }
-                      >
-                        {container.name} ×
-                      </Badge>
-                    ))}
-                  </div>
+                  {network.ipam.config.map((config, index) => (
+                    <div key={index} className="text-sm">
+                      {config.subnet && <div>Subnet: {config.subnet}</div>}
+                      {config.gateway && <div>Gateway: {config.gateway}</div>}
+                    </div>
+                  ))}
                 </TableCell>
                 <TableCell>
                   <div className="flex space-x-2">
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setSelectedNetwork(network)}
+                      onClick={() => {
+                        setSelectedNetwork(network);
+                        setConnectDialogOpen(true);
+                      }}
                     >
-                      Détails
+                      Connect
                     </Button>
                     <Button
-                      variant="destructive"
+                      variant="ghost"
                       size="sm"
                       onClick={() => handleDeleteNetwork(network.id)}
-                      disabled={['bridge', 'host', 'none'].includes(network.name)}
+                      className="text-red-500"
                     >
-                      Supprimer
+                      Delete
                     </Button>
                   </div>
                 </TableCell>

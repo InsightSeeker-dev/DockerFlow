@@ -161,7 +161,7 @@ const AlertCenter: React.FC<AlertCenterProps> = ({ userId }) => {
                     <p className="text-sm text-gray-500">{alert.message}</p>
                     <div className="flex items-center pt-2">
                       <span className="text-xs text-gray-500">
-                        {getTimeAgo(alert.created)}
+                        {getTimeAgo(alert.createdAt)}
                       </span>
                       {!alert.acknowledged && (
                         <Button

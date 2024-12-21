@@ -53,14 +53,15 @@ import {
 interface Container {
   id: string;
   name: string;
-  image: string;
+  imageId: string;
   status: string;
-  state: string;
-  ports: string[];
-  created: string;
-  cpu: number;
-  memory: number;
-  networks: string[];
+  ports: Record<string, any>;
+  volumes: Record<string, any>;
+  env: Record<string, any>;
+  cpuLimit: number;
+  memoryLimit: number;
+  created: Date;
+  userId: string;
 }
 
 interface ContainerLogs {
@@ -79,7 +80,7 @@ export default function ContainerManager() {
   const [showNewContainer, setShowNewContainer] = useState(false);
   const [newContainer, setNewContainer] = useState({
     name: '',
-    image: '',
+    imageId: '',
     ports: '',
     env: '',
     volumes: '',
@@ -139,7 +140,7 @@ export default function ContainerManager() {
       if (response.ok) {
         toast.success('Conteneur créé avec succès');
         setShowNewContainer(false);
-        setNewContainer({ name: '', image: '', ports: '', env: '', volumes: '' });
+        setNewContainer({ name: '', imageId: '', ports: '', env: '', volumes: '' });
         fetchContainers();
       }
     } catch (error) {
@@ -164,18 +165,19 @@ export default function ContainerManager() {
 
   const handleExport = () => {
     const csvContent = [
-      ['ID', 'Nom', 'Image', 'Status', 'État', 'Ports', 'Créé le', 'CPU', 'Mémoire', 'Réseaux'],
+      ['ID', 'Nom', 'Image', 'Status', 'Ports', 'Volumes', 'Variables d\'environnement', 'CPU', 'Mémoire', 'Créé le', 'Utilisateur'],
       ...containers.map(container => [
         container.id,
         container.name,
-        container.image,
+        container.imageId,
         container.status,
-        container.state,
-        container.ports.join(', '),
-        container.created,
-        `${container.cpu}%`,
-        `${container.memory}%`,
-        container.networks.join(', ')
+        JSON.stringify(container.ports),
+        JSON.stringify(container.volumes),
+        JSON.stringify(container.env),
+        `${container.cpuLimit}%`,
+        `${container.memoryLimit}%`,
+        container.created.toISOString(),
+        container.userId
       ])
     ].map(row => row.join(',')).join('\n');
 
@@ -266,6 +268,8 @@ export default function ContainerManager() {
                 <TableHead>Image</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Ports</TableHead>
+                <TableHead>Volumes</TableHead>
+                <TableHead>Variables d'environnement</TableHead>
                 <TableHead>CPU</TableHead>
                 <TableHead>Mémoire</TableHead>
                 <TableHead>Actions</TableHead>
@@ -275,26 +279,28 @@ export default function ContainerManager() {
               {containers.map((container) => (
                 <TableRow key={container.id}>
                   <TableCell className="font-medium">{container.name}</TableCell>
-                  <TableCell>{container.image}</TableCell>
+                  <TableCell>{container.imageId}</TableCell>
                   <TableCell>
                     <Badge
                       variant={
-                        container.state === 'running'
+                        container.status === 'running'
                           ? 'default'
-                          : container.state === 'paused'
+                          : container.status === 'paused'
                           ? 'secondary'
                           : 'destructive'
                       }
                     >
-                      {container.state}
+                      {container.status}
                     </Badge>
                   </TableCell>
-                  <TableCell>{container.ports.join(', ')}</TableCell>
-                  <TableCell>{container.cpu}%</TableCell>
-                  <TableCell>{container.memory}%</TableCell>
+                  <TableCell>{JSON.stringify(container.ports)}</TableCell>
+                  <TableCell>{JSON.stringify(container.volumes)}</TableCell>
+                  <TableCell>{JSON.stringify(container.env)}</TableCell>
+                  <TableCell>{container.cpuLimit}%</TableCell>
+                  <TableCell>{container.memoryLimit}%</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      {container.state !== 'running' && (
+                      {container.status !== 'running' && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -303,7 +309,7 @@ export default function ContainerManager() {
                           <Play className="h-4 w-4" />
                         </Button>
                       )}
-                      {container.state === 'running' && (
+                      {container.status === 'running' && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -363,8 +369,8 @@ export default function ContainerManager() {
             <div className="space-y-2">
               <Label>Image Docker</Label>
               <Input
-                value={newContainer.image}
-                onChange={(e) => setNewContainer({ ...newContainer, image: e.target.value })}
+                value={newContainer.imageId}
+                onChange={(e) => setNewContainer({ ...newContainer, imageId: e.target.value })}
                 placeholder="nginx:latest"
               />
             </div>

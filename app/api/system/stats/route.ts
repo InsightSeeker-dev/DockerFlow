@@ -78,15 +78,27 @@ export async function GET() {
     // Get disk usage
     const { used: diskUsed, total: diskTotal } = await getDiskUsage();
 
+    // Calculate total image size
+    const totalImageSize = images.reduce((acc, img) => acc + (img.Size || 0), 0);
+
     const stats: SystemStats = {
       // Container Stats
       containers: containers.length,
       containersRunning: containers.filter(c => c.State === 'running').length,
       containersStopped: containers.filter(c => c.State !== 'running').length,
       containersError: containers.filter(c => !['running', 'exited'].includes(c.State)).length,
+      containerTrend: 0,
       
       // Image Stats
-      images: images.length,
+      images: {
+        total: images.length,
+        size: totalImageSize,
+        pulls: 0,
+        tags: images.map(img => ({
+          name: img.RepoTags?.[0] || 'none',
+          count: img.RepoTags?.length || 0
+        }))
+      },
       
       // User Stats
       totalUsers: await prisma.user.count(),
@@ -99,33 +111,39 @@ export async function GET() {
         }
       }),
       suspendedUsers: await prisma.user.count({ where: { status: 'suspended' } }),
+      userTrend: 0,
       
       // System Resources
-      cpuCount: os.cpus().length,
+      cpuCount: cpus.length,
       cpuUsage: cpuUsage,
-      networkIO: totalNetworkIO,
+      cpuTrend: 0,
+      
       memoryUsage: {
-        used: usedMemory,
         total: totalMemory,
+        used: usedMemory,
+        free: freeMemory,
         percentage: (usedMemory / totalMemory) * 100
       },
+      memoryTrend: 0,
+
       diskUsage: {
-        used: diskUsed,
         total: diskTotal,
+        used: diskUsed,
+        free: diskTotal - diskUsed,
         percentage: (diskUsed / diskTotal) * 100
       },
-      resourceLimits: {
-        memory: {
-          limit: user.memoryLimit || 1073741824, // 1GB default
-          available: user.memoryLimit ? user.memoryLimit - usedMemory : 1073741824 - usedMemory,
-          formatted: formatBytes(user.memoryLimit || 1073741824)
-        },
-        storage: {
-          limit: user.storageLimit || 107374182400, // 100GB default
-          available: user.storageLimit ? user.storageLimit - diskUsed : 107374182400 - diskUsed,
-          formatted: formatBytes(user.storageLimit || 107374182400)
-        }
-      }
+
+      networkTraffic: {
+        in: totalNetworkIO / 2,
+        out: totalNetworkIO / 2
+      },
+
+      performanceHistory: [{
+        timestamp: new Date().toISOString(),
+        cpu: cpuUsage,
+        memory: (usedMemory / totalMemory) * 100,
+        network: totalNetworkIO
+      }]
     };
 
     return NextResponse.json(stats);

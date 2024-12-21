@@ -43,6 +43,6 @@ export interface UserDetails {
   memoryLimit: number;
   storageLimit: number;
   emailVerified: boolean;
-  createdAt: Date;
-  updatedAt: Date;
+  created_at: Date;
+  updated_at: Date;
 }

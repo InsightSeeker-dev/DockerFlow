@@ -158,23 +158,37 @@ export default function AlertCenter() {
     window.URL.revokeObjectURL(url);
   };
 
-  const handleToggleRule = async (ruleId: string, enabled: boolean) => {
+  const handleUpdateRule = async (id: string, enabled: boolean) => {
     try {
-      const response = await fetch(`/api/admin/alert-rules/${ruleId}`, {
+      const response = await fetch(`/api/admin/alert-rules/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled })
       });
-      
+
       if (response.ok) {
-        setAlertRules(alertRules.map(rule =>
-          rule.id === ruleId ? { ...rule, enabled } : rule
-        ));
-        toast.success(`Règle ${enabled ? 'activée' : 'désactivée'}`);
+        fetchAlertRules();
+        toast.success('Règle mise à jour avec succès');
       }
     } catch (error) {
-      console.error('Error toggling rule:', error);
-      toast.error('Erreur lors de la modification de la règle');
+      console.error('Error updating rule:', error);
+      toast.error('Erreur lors de la mise à jour de la règle');
+    }
+  };
+
+  const handleDeleteRule = async (id: string) => {
+    try {
+      const response = await fetch(`/api/admin/alert-rules/${id}`, {
+        method: 'DELETE'
+      });
+
+      if (response.ok) {
+        fetchAlertRules();
+        toast.success('Règle supprimée avec succès');
+      }
+    } catch (error) {
+      console.error('Error deleting rule:', error);
+      toast.error('Erreur lors de la suppression de la règle');
     }
   };
 
@@ -368,16 +382,25 @@ export default function AlertCenter() {
             <div className="space-y-4">
               {alertRules.map((rule) => (
                 <div key={rule.id} className="flex items-center justify-between p-4 border rounded-lg">
-                  <div>
-                    <h3 className="font-medium">{rule.name}</h3>
-                    <p className="text-sm text-gray-400">
-                      {rule.type} {rule.condition} {rule.threshold}%
-                    </p>
+                  <div className="flex flex-col">
+                    <span className="font-medium">{rule.name}</span>
+                    <span className="text-sm text-gray-500">
+                      {rule.type} - {rule.condition} {rule.threshold}
+                    </span>
                   </div>
-                  <Switch
-                    checked={rule.enabled}
-                    onCheckedChange={(checked) => handleToggleRule(rule.id, checked)}
-                  />
+                  <div className="flex items-center gap-4">
+                    <Switch
+                      checked={rule.enabled}
+                      onCheckedChange={(checked) => handleUpdateRule(rule.id, checked)}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDeleteRule(rule.id)}
+                    >
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>

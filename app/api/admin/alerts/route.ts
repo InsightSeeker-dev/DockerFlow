@@ -9,10 +9,10 @@ export async function GET(request: Request) {
     const session = await getServerSession(authOptions);
     
     if (!session?.user || !['ADMIN', 'SUPER_ADMIN'].includes(session.user.role)) {
-      return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     const { searchParams } = new URL(request.url);
@@ -42,7 +42,7 @@ export async function GET(request: Request) {
 
     // Construire la requête avec les filtres
     const where: any = {
-      timestamp: {
+      createdAt: {
         gte: startDate,
       },
     };
@@ -60,18 +60,29 @@ export async function GET(request: Request) {
       orderBy: {
         createdAt: 'desc',
       },
+      include: {
+        user: {
+          select: {
+            name: true,
+            email: true,
+          },
+        },
+        acknowledgedBy: {
+          select: {
+            name: true,
+            email: true,
+          },
+        },
+      },
     });
 
-    return new NextResponse(JSON.stringify(alerts), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return NextResponse.json(alerts);
   } catch (error) {
-    console.error('Error in alerts route:', error);
-    return new NextResponse(JSON.stringify({ error: 'Internal Server Error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    console.error('[ALERTS_GET]', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch alerts' },
+      { status: 500 }
+    );
   }
 }
 
@@ -81,34 +92,38 @@ export async function POST(request: Request) {
     const session = await getServerSession(authOptions);
     
     if (!session?.user || !['ADMIN', 'SUPER_ADMIN'].includes(session.user.role)) {
-      return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
-    const body = await request.json();
-    const { type, title, message, source } = body;
-
+    const data = await request.json();
     const alert = await prisma.alert.create({
       data: {
-        type,
-        title,
-        message,
-        source,
+        type: data.type,
+        title: data.title,
+        message: data.message,
+        source: data.source,
+        severity: data.severity || 'info',
         userId: session.user.id,
+      },
+      include: {
+        user: {
+          select: {
+            name: true,
+            email: true,
+          },
+        },
       },
     });
 
-    return new NextResponse(JSON.stringify(alert), {
-      status: 201,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return NextResponse.json(alert, { status: 201 });
   } catch (error) {
-    console.error('Error creating alert:', error);
-    return new NextResponse(JSON.stringify({ error: 'Internal Server Error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    console.error('[ALERTS_POST]', error);
+    return NextResponse.json(
+      { error: 'Failed to create alert' },
+      { status: 500 }
+    );
   }
 }

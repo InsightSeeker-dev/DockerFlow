@@ -39,13 +39,26 @@ export async function listContainers(): Promise<Container[]> {
         }, {} as NetworkSettings['Ports']) || {}
       };
 
-      return {
-        ...container,
+      // Créer un nouvel objet avec les bons noms de champs
+      const containerInfo = {
+        Id: container.Id,
+        Names: container.Names,
+        Image: container.Image,
+        ImageID: container.ImageID,
+        Command: container.Command,
+        Created: container.Created,
+        State: container.State,
+        Status: container.Status,
+        Ports: container.Ports,
+        Labels: container.Labels,
+        Mounts: container.Mounts,
         NetworkSettings: networkSettings,
-        createdAt: dbContainer?.created.toISOString() || new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        userId: dbContainer?.userId || 'system'
-      } as Container;
+        created_at: dbContainer?.created.toISOString() || new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        user_id: dbContainer?.userId || 'system'
+      };
+
+      return containerInfo as Container;
     });
   } catch (error) {
     console.error('Error listing containers:', error);

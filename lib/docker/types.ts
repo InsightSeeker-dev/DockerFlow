@@ -12,9 +12,9 @@ export interface NetworkSettings {
 
 export interface Container extends Omit<ContainerInfo, 'NetworkSettings'> {
   NetworkSettings: NetworkSettings;
-  createdAt: string;
-  updatedAt: string;
-  userId: string;
+  created_at: string;
+  updated_at: string;
+  user_id: string;
 }
 
 export interface Port {

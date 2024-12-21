@@ -146,7 +146,7 @@ const ResourceMonitoring: React.FC<ResourceMonitoringProps> = ({ containerId }) 
   };
 
   const isSystemStats = (stats: ContainerStats | SystemStats): stats is SystemStats => {
-    return 'networkIO' in stats && 'cpuCount' in stats;
+    return 'networkTraffic' in stats && 'cpuCount' in stats;
   };
 
   const getCpuUsage = (stats: ContainerStats | SystemStats): number => {
@@ -173,7 +173,7 @@ const ResourceMonitoring: React.FC<ResourceMonitoringProps> = ({ containerId }) 
 
   const getNetworkUsage = (stats: ContainerStats | SystemStats): number => {
     if (isSystemStats(stats)) {
-      return stats.networkIO;
+      return stats.networkTraffic.in + stats.networkTraffic.out;
     } else {
       // ContainerStats
       const networks = stats.networks || {};

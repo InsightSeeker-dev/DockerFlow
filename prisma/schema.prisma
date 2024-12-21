@@ -57,12 +57,13 @@ model User {
   storage                UserStorage[]
   dockerImages           DockerImage[]
   resourceUsage          ResourceUsage[]
-  alerts                 Alert[]
+  alerts                 Alert[]     @relation("UserAlerts")
+  acknowledgedAlerts     Alert[]     @relation("AlertAcknowledgements")
   alertRules             AlertRule[]
   terminalSessions       TerminalSession[]
   verificationTokens     VerificationToken[]
-  createdAt              DateTime    @default(now())
-  updatedAt              DateTime    @updatedAt
+  createdAt              DateTime    @default(now()) @map("created_at")
+  updatedAt              DateTime    @updatedAt @map("updated_at")
   lastLogin              DateTime?
 
   @@map("users")
@@ -154,17 +155,24 @@ model ResourceUsage {
 }
 
 model Alert {
-  id           String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId       String   @db.ObjectId
-  type         String
-  message      String
-  severity     String   @default("info")  // info, warning, error, critical
-  status       String   @default("pending")  // pending, resolved, dismissed
-  acknowledged Boolean  @default(false)
-  timestamp    DateTime @default(now())
-  created      DateTime @default(now())
-  user         User     @relation(fields: [userId], references: [id])
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String    @db.ObjectId
+  type           String    // container, system, user
+  title          String
+  message        String
+  source         String?   // La source de l'alerte (container, system, etc.)
+  severity       String    @default("info")  // info, warning, error, critical
+  status         String    @default("pending")  // pending, resolved, dismissed
+  acknowledged   Boolean   @default(false)
+  acknowledgedById String? @db.ObjectId
+  acknowledgedAt DateTime? @map("acknowledged_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  user           User      @relation("UserAlerts", fields: [userId], references: [id])
+  acknowledgedBy User?     @relation("AlertAcknowledgements", fields: [acknowledgedById], references: [id])
 
+  @@index([userId])
+  @@index([acknowledgedById])
   @@map("alerts")
 }
 

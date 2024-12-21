@@ -3,8 +3,11 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
-// POST /api/admin/alerts/[id]/acknowledge
-export async function POST(
+// Cette route doit être dynamique car elle utilise des données de session
+export const dynamic = 'force-dynamic';
+
+// PUT /api/admin/alerts/[id]/acknowledge
+export async function PUT(
   request: Request,
   { params }: { params: { id: string } }
 ) {
@@ -12,10 +15,10 @@ export async function POST(
     const session = await getServerSession(authOptions);
     
     if (!session?.user || !['ADMIN', 'SUPER_ADMIN'].includes(session.user.role)) {
-      return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     const alert = await prisma.alert.update({
@@ -24,20 +27,33 @@ export async function POST(
       },
       data: {
         acknowledged: true,
-        acknowledgedBy: session.user.id,
-        acknowledgedAt: new Date(),
+        acknowledgedBy: {
+          connect: { id: session.user.id }
+        },
+        acknowledgedAt: new Date()
+      },
+      include: {
+        user: {
+          select: {
+            name: true,
+            email: true,
+          },
+        },
+        acknowledgedBy: {
+          select: {
+            name: true,
+            email: true,
+          },
+        },
       },
     });
 
-    return new NextResponse(JSON.stringify(alert), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return NextResponse.json(alert);
   } catch (error) {
-    console.error('Error acknowledging alert:', error);
-    return new NextResponse(JSON.stringify({ error: 'Internal Server Error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    console.error('[ALERT_ACKNOWLEDGE]', error);
+    return NextResponse.json(
+      { error: 'Failed to acknowledge alert' },
+      { status: 500 }
+    );
   }
 }

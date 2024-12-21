@@ -41,6 +41,7 @@ export async function GET(req: NextRequest) {
 
 const createAlertSchema = z.object({
   type: z.string(),
+  title: z.string(),
   message: z.string(),
   severity: z.string().optional(),
 });
@@ -56,11 +57,12 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { type, message, severity } = createAlertSchema.parse(body);
+    const { type, title, message, severity } = createAlertSchema.parse(body);
 
     const alert = await prisma.alert.create({
       data: {
         type,
+        title,
         message,
         userId: session.user.id,
         ...(severity && { severity }),

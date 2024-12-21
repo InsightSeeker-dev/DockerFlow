@@ -3,40 +3,48 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
-export async function POST(
+// PATCH /api/alerts/[id]/acknowledge
+export async function PATCH(
   request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    if (!session?.user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
-    const alert = await prisma.alert.findUnique({
-      where: { id: params.id },
-    });
-
-    if (!alert) {
-      return NextResponse.json({ error: 'Alert not found' }, { status: 404 });
-    }
-
-    if (alert.userId !== session.user.id && session.user.role !== 'admin') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    const updatedAlert = await prisma.alert.update({
+    const alert = await prisma.alert.update({
       where: { id: params.id },
       data: {
         acknowledged: true,
         acknowledgedAt: new Date(),
-        acknowledgedBy: session.user.id
+        acknowledgedById: session.user.id,
+        status: 'resolved'
+      },
+      include: {
+        user: {
+          select: {
+            name: true,
+            email: true,
+          },
+        },
+        acknowledgedBy: {
+          select: {
+            name: true,
+            email: true,
+          },
+        },
       },
     });
 
-    return NextResponse.json(updatedAlert);
+    return NextResponse.json(alert);
   } catch (error) {
-    console.error('Error acknowledging alert:', error);
+    console.error('[ALERT_ACKNOWLEDGE]', error);
     return NextResponse.json(
       { error: 'Failed to acknowledge alert' },
       { status: 500 }

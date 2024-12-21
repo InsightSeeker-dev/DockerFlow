@@ -68,8 +68,8 @@ export interface User {
   role: string;
   memoryLimit: number;
   storageLimit: number;
-  createdAt: Date;
-  updatedAt: Date;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export interface Container {

@@ -11,6 +11,37 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING
+}
+
+enum AlertType {
+  CONTAINER
+  SYSTEM
+  USER
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
+}
+
+enum AlertStatus {
+  PENDING
+  RESOLVED
+  DISMISSED
+}
+
 model AlertRule {
   id          String    @id @default(auto()) @map("_id") @db.ObjectId
   name        String
@@ -35,8 +66,8 @@ model User {
   emailVerified         DateTime?   // Pour la vérification d'email
   verificationToken     String?     // Token de vérification
   verificationTokenExpires DateTime? // Date d'expiration du token de vérification
-  role                   String      @default("admin")  // Par défaut, tous les utilisateurs sont admin
-  status                 String      @default("active") // "active", "inactive", "suspended", "pending"
+  role                   UserRole    @default(ADMIN)
+  status                 UserStatus  @default(ACTIVE)
   image                  String?
   bio                    String?     // Biographie de l'utilisateur
   defaultRegistry        String      @default("docker.io") // Registry Docker par défaut
@@ -157,19 +188,20 @@ model ResourceUsage {
 model Alert {
   id             String    @id @default(auto()) @map("_id") @db.ObjectId
   userId         String    @db.ObjectId
-  type           String    // container, system, user
+  type           AlertType
   title          String
   message        String
   source         String?   // La source de l'alerte (container, system, etc.)
-  severity       String    @default("info")  // info, warning, error, critical
-  status         String    @default("pending")  // pending, resolved, dismissed
+  severity       AlertSeverity @default(INFO)
+  status         AlertStatus   @default(PENDING)
   acknowledged   Boolean   @default(false)
-  acknowledgedById String? @db.ObjectId
+  acknowledgedById String? @db.ObjectId @map("acknowledged_by")
   acknowledgedAt DateTime? @map("acknowledged_at")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  
   user           User      @relation("UserAlerts", fields: [userId], references: [id])
-  acknowledgedBy User?     @relation("AlertAcknowledgements", fields: [acknowledgedById], references: [id])
+  acknowledgedByUser User? @relation("AlertAcknowledgements", fields: [acknowledgedById], references: [id])
 
   @@index([userId])
   @@index([acknowledgedById])

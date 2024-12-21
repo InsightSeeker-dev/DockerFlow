@@ -85,8 +85,8 @@ export async function POST(request: Request) {
         email,
         password: hashedPassword,
         verificationToken,
-        role: accountType === 'pro' ? 'admin' : 'user',
-        status: 'active',
+        role: accountType === 'pro' ? 'ADMIN' : 'USER',
+        status: 'ACTIVE',
         cpuLimit: accountType === 'pro' ? 4000 : 2000, // 4 cores pour pro, 2 pour user
         memoryLimit: accountType === 'pro' ? 8589934592 : 4294967296, // 8GB pour pro, 4GB pour user
         storageLimit: accountType === 'pro' ? 107374182400 : 53687091200, // 100GB pour pro, 50GB pour user

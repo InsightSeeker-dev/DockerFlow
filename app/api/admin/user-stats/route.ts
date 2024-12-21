@@ -19,7 +19,7 @@ export async function GET() {
     // Récupérer le nombre d'utilisateurs actifs
     const active = await prisma.user.count({
       where: {
-        status: 'active'
+        status: 'ACTIVE'
       }
     });
 
@@ -36,7 +36,7 @@ export async function GET() {
     // Récupérer le nombre d'utilisateurs suspendus
     const suspended = await prisma.user.count({
       where: {
-        status: 'suspended'
+        status: 'SUSPENDED'
       }
     });
 

@@ -4,13 +4,14 @@ export interface User {
   email: string;
   username?: string;
   role: 'ADMIN' | 'USER';
-  status: 'active' | 'inactive';
+  status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
   emailVerified?: Date | null;
   password?: string;
   image?: string | null;
-  created_at: Date;
-  updated_at: Date;
+  createdAt: Date;
+  updatedAt: Date;
+  lastLogin?: Date | null;
   isActive: boolean;
 }
 
-export type UserWithoutDates = Omit<User, 'created_at' | 'updated_at'>;
+export type UserWithoutDates = Omit<User, 'createdAt' | 'updatedAt'>;

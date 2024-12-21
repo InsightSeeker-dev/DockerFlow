@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { isAdmin } from '@/lib/utils/auth-helpers';
 
 // DELETE /api/admin/alerts/[id]
 export async function DELETE(
@@ -11,11 +12,11 @@ export async function DELETE(
   try {
     const session = await getServerSession(authOptions);
     
-    if (!session?.user || !['ADMIN', 'SUPER_ADMIN'].includes(session.user.role)) {
-      return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json' },
-      });
+    if (!isAdmin(session)) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     await prisma.alert.delete({
@@ -24,13 +25,13 @@ export async function DELETE(
       },
     });
 
-    return new NextResponse(null, { status: 204 });
+    return NextResponse.json({ message: 'Alert deleted successfully' });
   } catch (error) {
-    console.error('Error deleting alert:', error);
-    return new NextResponse(JSON.stringify({ error: 'Internal Server Error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    console.error('[ALERT_DELETE]', error);
+    return NextResponse.json(
+      { error: 'Failed to delete alert' },
+      { status: 500 }
+    );
   }
 }
 
@@ -42,11 +43,11 @@ export async function PATCH(
   try {
     const session = await getServerSession(authOptions);
     
-    if (!session?.user || !['ADMIN', 'SUPER_ADMIN'].includes(session.user.role)) {
-      return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json' },
-      });
+    if (!isAdmin(session)) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     const body = await request.json();
@@ -57,15 +58,12 @@ export async function PATCH(
       data: body,
     });
 
-    return new NextResponse(JSON.stringify(alert), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return NextResponse.json(alert);
   } catch (error) {
-    console.error('Error updating alert:', error);
-    return new NextResponse(JSON.stringify({ error: 'Internal Server Error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    console.error('[ALERT_UPDATE]', error);
+    return NextResponse.json(
+      { error: 'Failed to update alert' },
+      { status: 500 }
+    );
   }
 }

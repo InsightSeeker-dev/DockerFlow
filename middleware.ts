@@ -24,7 +24,7 @@ export async function middleware(request: NextRequest) {
 
   // Rediriger vers le dashboard approprié si déjà connecté et sur la page d'authentification
   if (token && isAuthPage) {
-    if (token.role === 'admin') {
+    if (token.role === 'ADMIN') {
       return NextResponse.redirect(new URL('/admin/dashboard', request.url));
     }
     return NextResponse.redirect(new URL('/dashboard', request.url));
@@ -37,7 +37,7 @@ export async function middleware(request: NextRequest) {
 
   // Protéger les pages admin
   if (isAdminPage) {
-    if (!token || token.role !== 'admin') {
+    if (!token || token.role !== 'ADMIN') {
       return NextResponse.redirect(new URL('/dashboard', request.url));
     }
   }

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { UserStatus } from '@prisma/client';
 import crypto from 'crypto';
 
 export async function POST(request: Request) {
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
         emailVerified: new Date(),
         verificationToken: null,
         verificationTokenExpires: null,
-        status: 'active',
+        status: UserStatus.ACTIVE,
       },
     });
 

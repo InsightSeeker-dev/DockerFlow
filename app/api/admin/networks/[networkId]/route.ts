@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
-import Docker from 'dockerode';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-
-const docker = new Docker();
+import { docker } from '@/lib/docker';
+import { isAdmin } from '@/lib/utils/auth-helpers';
 
 // GET /api/admin/networks/[networkId]
 export async function GET(
@@ -12,8 +11,12 @@ export async function GET(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || !['ADMIN', 'SUPER_ADMIN'].includes(session.user.role)) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    if (!isAdmin(session)) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     const network = docker.getNetwork(params.networkId);
@@ -36,14 +39,18 @@ export async function DELETE(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || !['ADMIN', 'SUPER_ADMIN'].includes(session.user.role)) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    if (!isAdmin(session)) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     const network = docker.getNetwork(params.networkId);
     await network.remove();
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ message: 'Network deleted successfully' });
   } catch (error) {
     console.error('[NETWORK_DELETE]', error);
     return NextResponse.json(
@@ -60,8 +67,12 @@ export async function PATCH(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || !['ADMIN', 'SUPER_ADMIN'].includes(session.user.role)) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    if (!isAdmin(session)) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     const network = docker.getNetwork(params.networkId);
@@ -81,11 +92,11 @@ export async function PATCH(
         );
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ message: 'Network updated successfully' });
   } catch (error) {
-    console.error('[NETWORK_ACTION]', error);
+    console.error('[NETWORK_UPDATE]', error);
     return NextResponse.json(
-      { error: 'Failed to perform network action' },
+      { error: 'Failed to update network' },
       { status: 500 }
     );
   }

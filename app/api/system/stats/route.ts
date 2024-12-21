@@ -7,6 +7,7 @@ import { SystemStats } from '@/types/system';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { prisma } from '@/lib/prisma';
+import { UserStatus } from '@prisma/client';
 
 const execAsync = promisify(exec);
 
@@ -102,7 +103,7 @@ export async function GET() {
       
       // User Stats
       totalUsers: await prisma.user.count(),
-      activeUsers: await prisma.user.count({ where: { status: 'active' } }),
+      activeUsers: await prisma.user.count({ where: { status: UserStatus.ACTIVE } }),
       newUsers: await prisma.user.count({
         where: {
           createdAt: {
@@ -110,7 +111,7 @@ export async function GET() {
           }
         }
       }),
-      suspendedUsers: await prisma.user.count({ where: { status: 'suspended' } }),
+      suspendedUsers: await prisma.user.count({ where: { status: UserStatus.SUSPENDED } }),
       userTrend: 0,
       
       // System Resources

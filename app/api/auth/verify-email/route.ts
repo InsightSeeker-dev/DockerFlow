@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { UserStatus } from '@prisma/client';
 
 // Fonction commune pour la vérification
 async function verifyEmail(token: string) {
@@ -18,7 +19,7 @@ async function verifyEmail(token: string) {
   }
 
   // Vérifier si l'utilisateur est déjà vérifié
-  if (user.emailVerified && user.status === 'active') {
+  if (user.emailVerified && user.status === UserStatus.ACTIVE) {
     console.log('User already verified:', user.id);
     throw new Error('Email is already verified');
   }
@@ -39,7 +40,7 @@ async function verifyEmail(token: string) {
         emailVerified: new Date(),
         verificationToken: null,
         verificationTokenExpires: null,
-        status: 'active',
+        status: UserStatus.ACTIVE,
       },
     });
 

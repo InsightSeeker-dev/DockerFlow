@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { UserStatus } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,7 +33,7 @@ export async function GET(request: Request) {
       where: { id: verificationToken.userId },
       data: {
         emailVerified: new Date(),
-        status: 'active',
+        status: UserStatus.ACTIVE,
       },
     });
 

@@ -1,38 +1,22 @@
 import { NextResponse } from 'next/server';
-import Docker from 'dockerode';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-
-const docker = new Docker();
+import { docker } from '@/lib/docker';
+import { isAdmin } from '@/lib/utils/auth-helpers';
+import { getContainerStats } from '@/lib/utils/docker-helpers';
 
 export const dynamic = 'force-dynamic';
-
-// Fonction utilitaire pour obtenir les statistiques d'un conteneur
-async function getContainerStats(container: Docker.Container) {
-  try {
-    const stats = await container.stats({ stream: false });
-    const cpuDelta = stats.cpu_stats.cpu_usage.total_usage - stats.precpu_stats.cpu_usage.total_usage;
-    const systemDelta = stats.cpu_stats.system_cpu_usage - stats.precpu_stats.system_cpu_usage;
-    const cpuUsage = (cpuDelta / systemDelta) * 100;
-    
-    const memoryUsage = (stats.memory_stats.usage / stats.memory_stats.limit) * 100;
-    
-    return {
-      cpu: parseFloat(cpuUsage.toFixed(2)),
-      memory: parseFloat(memoryUsage.toFixed(2))
-    };
-  } catch (error) {
-    console.error('Error getting container stats:', error);
-    return { cpu: 0, memory: 0 };
-  }
-}
 
 // GET /api/admin/containers
 export async function GET(request: Request) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || !['ADMIN', 'SUPER_ADMIN'].includes(session.user.role)) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    if (!isAdmin(session)) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     const { searchParams } = new URL(request.url);
@@ -52,36 +36,37 @@ export async function GET(request: Request) {
         state: container.State,
         status: container.Status,
         created: new Date(container.Created * 1000).toISOString(),
-        ports: container.Ports.map(port => 
-          `${port.PublicPort}:${port.PrivatePort}/${port.Type}`
-        ),
-        networks: Object.keys(inspectData.NetworkSettings.Networks),
-        cpu: stats.cpu,
-        memory: stats.memory
+        ports: container.Ports,
+        stats,
+        ...inspectData,
       };
 
-      // Filtrage par statut
-      if (status && status !== 'all' && container.State !== status) {
+      // Filter by status if provided
+      if (status && containerInfo.state !== status) {
         return null;
       }
 
-      // Filtrage par recherche
-      if (search && !containerInfo.name.toLowerCase().includes(search.toLowerCase()) &&
-          !containerInfo.image.toLowerCase().includes(search.toLowerCase())) {
-        return null;
+      // Filter by search term if provided
+      if (search) {
+        const searchTerm = search.toLowerCase();
+        const matchesName = containerInfo.name.toLowerCase().includes(searchTerm);
+        const matchesImage = containerInfo.image.toLowerCase().includes(searchTerm);
+        const matchesId = containerInfo.id.toLowerCase().includes(searchTerm);
+
+        if (!matchesName && !matchesImage && !matchesId) {
+          return null;
+        }
       }
 
       return containerInfo;
     });
 
-    const formattedContainers = (await Promise.all(containerPromises))
-      .filter(container => container !== null);
-
-    return NextResponse.json(formattedContainers);
+    const results = (await Promise.all(containerPromises)).filter(Boolean);
+    return NextResponse.json(results);
   } catch (error) {
-    console.error('Error fetching containers:', error);
+    console.error('[CONTAINERS_LIST]', error);
     return NextResponse.json(
-      { error: 'Failed to fetch containers' },
+      { error: 'Failed to list containers' },
       { status: 500 }
     );
   }
@@ -91,51 +76,24 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || !['ADMIN', 'SUPER_ADMIN'].includes(session.user.role)) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    if (!isAdmin(session)) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     const body = await request.json();
-    const { name, image, ports, env, volumes } = body;
-
-    // Préparer les configurations du conteneur
-    const portBindings: any = {};
-    const exposedPorts: any = {};
-    
-    if (ports) {
-      ports.split(',').forEach((port: string) => {
-        const [hostPort, containerPort] = port.trim().split(':');
-        portBindings[`${containerPort}/tcp`] = [{ HostPort: hostPort }];
-        exposedPorts[`${containerPort}/tcp`] = {};
-      });
-    }
-
-    // Préparer les variables d'environnement
-    const envArray = env ? env.split(',').map((e: string) => e.trim()) : [];
-
-    // Préparer les volumes
-    const volumeBindings = volumes ? volumes.split(',').map((v: string) => v.trim()) : [];
-
-    // Créer et démarrer le conteneur
-    const container = await docker.createContainer({
-      Image: image,
-      name: name,
-      ExposedPorts: exposedPorts,
-      HostConfig: {
-        PortBindings: portBindings,
-        Binds: volumeBindings
-      },
-      Env: envArray
-    });
-
+    const container = await docker.createContainer(body);
     await container.start();
 
-    return NextResponse.json({ 
+    return NextResponse.json({
+      id: container.id,
       message: 'Container created successfully',
-      id: container.id 
-    }, { status: 201 });
+    });
   } catch (error) {
-    console.error('Error creating container:', error);
+    console.error('[CONTAINER_CREATE]', error);
     return NextResponse.json(
       { error: 'Failed to create container' },
       { status: 500 }

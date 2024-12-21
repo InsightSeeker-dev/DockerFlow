@@ -2,13 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { Prisma } from '@prisma/client';
+import { Prisma, AlertSeverity, AlertType } from '@prisma/client';
 import { z } from 'zod';
 
 const alertQuerySchema = z.object({
   userId: z.string().optional(),
-  severity: z.string().optional(),
+  severity: z.enum(['INFO', 'WARNING', 'ERROR', 'CRITICAL']).optional(),
   limit: z.string().optional(),
+});
+
+const createAlertSchema = z.object({
+  type: z.enum(['CONTAINER', 'SYSTEM', 'USER']),
+  title: z.string(),
+  message: z.string(),
+  severity: z.enum(['INFO', 'WARNING', 'ERROR', 'CRITICAL']).optional(),
 });
 
 export async function GET(req: NextRequest) {
@@ -23,7 +30,7 @@ export async function GET(req: NextRequest) {
     const alerts = await prisma.alert.findMany({
       where: {
         userId: session.user.id,
-        ...(severity && { severity }),
+        ...(severity && { severity: severity as AlertSeverity }),
       },
       orderBy: [{ id: 'desc' }],
       take: limit ? parseInt(limit) : 50,
@@ -38,13 +45,6 @@ export async function GET(req: NextRequest) {
     );
   }
 }
-
-const createAlertSchema = z.object({
-  type: z.string(),
-  title: z.string(),
-  message: z.string(),
-  severity: z.string().optional(),
-});
 
 export async function POST(req: NextRequest) {
   try {
@@ -61,11 +61,11 @@ export async function POST(req: NextRequest) {
 
     const alert = await prisma.alert.create({
       data: {
-        type,
+        type: type as AlertType,
         title,
         message,
         userId: session.user.id,
-        ...(severity && { severity }),
+        ...(severity && { severity: severity as AlertSeverity }),
       }
     });
 

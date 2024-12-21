@@ -1,7 +1,25 @@
 import React from 'react';
 import { MetricCard } from '@/components/dashboard/MetricCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Container, Users, Activity, Cpu, HardDrive, Signal, Image, Play, Square, AlertTriangle, UserCheck, UserPlus, UserX } from 'lucide-react';
+import { 
+  Container, 
+  Users, 
+  Activity, 
+  Cpu, 
+  HardDrive, 
+  Signal, 
+  Image, 
+  Play, 
+  Square, 
+  AlertTriangle, 
+  UserCheck, 
+  UserPlus, 
+  UserX,
+  Network,
+  ArrowDown,
+  ArrowUp,
+  Percent
+} from 'lucide-react';
 import { SystemStats } from '@/types/system';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -276,6 +294,159 @@ export function DashboardOverview({ systemStats, recentActivities }: DashboardOv
                     </time>
                   </div>
                 ))}
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
+
+      {/* Disk Usage et Network Traffic */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Disk Usage */}
+        <motion.div variants={item}>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <HardDrive className="h-5 w-5 text-indigo-500" />
+                Disk Usage
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {/* Barre de progression */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-muted-foreground">Espace Utilisé</p>
+                    <p className="text-sm font-medium">
+                      {Math.round(systemStats.diskUsage.used / (1024 * 1024 * 1024))} GB
+                    </p>
+                  </div>
+                  <div className="h-2 rounded-full bg-secondary">
+                    <div
+                      className="h-2 rounded-full bg-indigo-500"
+                      style={{ width: `${systemStats.diskUsage.percentage}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>
+                      {Math.round(systemStats.diskUsage.used / (1024 * 1024 * 1024))} GB utilisés
+                    </span>
+                    <span>
+                      {Math.round(systemStats.diskUsage.total / (1024 * 1024 * 1024))} GB total
+                    </span>
+                  </div>
+                </div>
+
+                {/* Statistiques détaillées */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-full bg-green-500/10">
+                        <ArrowUp className="h-4 w-4 text-green-500" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">Disponible</p>
+                        <p className="text-xl font-bold">
+                          {Math.round((systemStats.diskUsage.total - systemStats.diskUsage.used) / (1024 * 1024 * 1024))} GB
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-full bg-blue-500/10">
+                        <Percent className="h-4 w-4 text-blue-500" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">Utilisé</p>
+                        <p className="text-xl font-bold">
+                          {systemStats.diskUsage.percentage}%
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* Network Traffic */}
+        <motion.div variants={item}>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Network className="h-5 w-5 text-cyan-500" />
+                Network Traffic
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-full bg-cyan-500/10">
+                      <ArrowDown className="h-4 w-4 text-cyan-500" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Download</p>
+                      <p className="text-xl font-bold">
+                        {(systemStats.networkTraffic.in / (1024 * 1024)).toFixed(1)} MB/s
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-full bg-emerald-500/10">
+                      <ArrowUp className="h-4 w-4 text-emerald-500" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Upload</p>
+                      <p className="text-xl font-bold">
+                        {(systemStats.networkTraffic.out / (1024 * 1024)).toFixed(1)} MB/s
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="col-span-2">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-full bg-purple-500/10">
+                        <Activity className="h-4 w-4 text-purple-500" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">Total Traffic</p>
+                        <p className="text-xl font-bold">
+                          {((systemStats.networkTraffic.in + systemStats.networkTraffic.out) / (1024 * 1024)).toFixed(1)} MB/s
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Graphique du trafic réseau */}
+                <div className="mt-4 space-y-2">
+                  <div className="h-[60px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={systemStats.performanceHistory.slice(-10)}>
+                        <Line
+                          type="monotone"
+                          dataKey="network"
+                          stroke="#0891b2"
+                          strokeWidth={2}
+                          dot={false}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>10s ago</span>
+                    <span>Now</span>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>

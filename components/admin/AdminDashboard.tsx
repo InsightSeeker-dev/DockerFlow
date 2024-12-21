@@ -56,6 +56,53 @@ export default function AdminDashboard() {
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
+  const defaultSystemStats: SystemStats = {
+    // Container Stats
+    containers: 0,
+    containersRunning: 0,
+    containersStopped: 0,
+    containersError: 0,
+    activeContainers: 0,
+    containerTrend: 0,
+    
+    // Image Stats
+    images: {
+      total: 0,
+      size: 0
+    },
+    
+    // User Stats
+    totalUsers: 0,
+    activeUsers: 0,
+    newUsers: 0,
+    suspendedUsers: 0,
+    userTrend: 0,
+    
+    // System Resources
+    cpuUsage: 0,
+    cpuCount: 0,
+    cpuTrend: 0,
+    networkIO: 0,
+    memoryUsage: {
+      used: 0,
+      total: 0,
+      percentage: 0
+    },
+    memoryTrend: 0,
+    diskUsage: {
+      used: 0,
+      total: 0,
+      percentage: 0
+    },
+    networkTraffic: {
+      in: 0,
+      out: 0
+    },
+    
+    // Performance History
+    performanceHistory: []
+  };
+
   useEffect(() => {
     const fetchSystemStats = async () => {
       try {
@@ -140,48 +187,7 @@ export default function AdminDashboard() {
 
         <TabsContent value="dashboard" className="space-y-4">
           <DashboardOverview 
-            systemStats={systemStats || {
-              // Container Stats
-              containers: 0,
-              containersRunning: 0,
-              containersStopped: 0,
-              containersError: 0,
-              activeContainers: 0,
-              containerTrend: 0,
-              
-              // Image Stats
-              images: {
-                total: 0,
-                size: 0
-              },
-              
-              // User Stats
-              totalUsers: 0,
-              activeUsers: 0,
-              newUsers: 0,
-              suspendedUsers: 0,
-              userTrend: 0,
-              
-              // System Resources
-              cpuUsage: 0,
-              cpuCount: 0,
-              cpuTrend: 0,
-              networkIO: 0,
-              memoryUsage: {
-                used: 0,
-                total: 0,
-                percentage: 0
-              },
-              memoryTrend: 0,
-              diskUsage: {
-                used: 0,
-                total: 0,
-                percentage: 0
-              },
-              
-              // Performance History
-              performanceHistory: []
-            }}
+            systemStats={systemStats || defaultSystemStats}
             recentActivities={recentActivities}
           />
         </TabsContent>

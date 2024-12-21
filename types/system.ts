@@ -36,12 +36,17 @@ export interface SystemStats {
     total: number;
     percentage: number;
   };
+  networkTraffic: {
+    in: number;
+    out: number;
+  };
   
   // Performance History
   performanceHistory: Array<{
-    time: string;
+    timestamp: string;
     cpu: number;
     memory: number;
+    network: number;
   }>;
   
   // Optional resource limits

@@ -1,7 +1,7 @@
 import React from 'react';
 import { MetricCard } from '@/components/dashboard/MetricCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Container, Users, Activity, Cpu, HardDrive, Signal, Image } from 'lucide-react';
+import { Container, Users, Activity, Cpu, HardDrive, Signal, Image, Play, Square, AlertTriangle, UserCheck, UserPlus, UserX } from 'lucide-react';
 import { SystemStats } from '@/types/system';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -50,27 +50,136 @@ export function DashboardOverview({ systemStats, recentActivities }: DashboardOv
       className="space-y-6"
     >
       {/* Métriques principales */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Container Management */}
         <motion.div variants={item}>
-          <MetricCard
-            title="Conteneurs Actifs"
-            value={systemStats.containersRunning}
-            trend={systemStats.containerTrend}
-            icon={<Container />}
-            color="blue"
-            description="dernières 24h"
-          />
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Container className="h-5 w-5 text-blue-500" />
+                Container Management
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-full bg-blue-500/10">
+                      <Container className="h-4 w-4 text-blue-500" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Total Containers</p>
+                      <p className="text-2xl font-bold">{systemStats.containers}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-full bg-green-500/10">
+                      <Play className="h-4 w-4 text-green-500" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Running</p>
+                      <p className="text-2xl font-bold">{systemStats.containersRunning}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-full bg-orange-500/10">
+                      <Square className="h-4 w-4 text-orange-500" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Stopped</p>
+                      <p className="text-2xl font-bold">{systemStats.containersStopped}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-full bg-red-500/10">
+                      <AlertTriangle className="h-4 w-4 text-red-500" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Error</p>
+                      <p className="text-2xl font-bold">{systemStats.containersError}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </motion.div>
+
+        {/* User Management */}
         <motion.div variants={item}>
-          <MetricCard
-            title="Utilisateurs Actifs"
-            value={systemStats.activeUsers}
-            trend={systemStats.userTrend}
-            icon={<Users />}
-            color="green"
-            description="cette semaine"
-          />
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5 text-green-500" />
+                User Management
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-full bg-blue-500/10">
+                      <Users className="h-4 w-4 text-blue-500" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Total Users</p>
+                      <p className="text-2xl font-bold">{systemStats.totalUsers}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-full bg-green-500/10">
+                      <UserCheck className="h-4 w-4 text-green-500" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Active Users</p>
+                      <p className="text-2xl font-bold">{systemStats.activeUsers}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-full bg-purple-500/10">
+                      <UserPlus className="h-4 w-4 text-purple-500" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">New Users</p>
+                      <p className="text-2xl font-bold">{systemStats.newUsers}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-full bg-red-500/10">
+                      <UserX className="h-4 w-4 text-red-500" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Suspended</p>
+                      <p className="text-2xl font-bold">{systemStats.suspendedUsers}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </motion.div>
+      </div>
+
+      {/* CPU et Mémoire */}
+      <div className="grid gap-4 md:grid-cols-2">
         <motion.div variants={item}>
           <MetricCard
             title="Utilisation CPU"
@@ -78,7 +187,7 @@ export function DashboardOverview({ systemStats, recentActivities }: DashboardOv
             trend={systemStats.cpuTrend}
             icon={<Cpu />}
             color="purple"
-            description="moyenne"
+            description={`${systemStats.cpuCount} cœurs`}
           />
         </motion.div>
         <motion.div variants={item}>
@@ -88,7 +197,7 @@ export function DashboardOverview({ systemStats, recentActivities }: DashboardOv
             trend={systemStats.memoryTrend}
             icon={<HardDrive />}
             color="orange"
-            description="RAM totale"
+            description={`${Math.round(systemStats.memoryUsage.used / 1024 / 1024)} MB utilisés`}
           />
         </motion.div>
       </div>

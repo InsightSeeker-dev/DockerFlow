@@ -1,5 +1,4 @@
 import React from 'react';
-import { MetricCard } from '@/components/dashboard/MetricCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
   Container, 
@@ -18,7 +17,9 @@ import {
   Network,
   ArrowDown,
   ArrowUp,
-  Percent
+  Percent,
+  Server,
+  Settings
 } from 'lucide-react';
 import { SystemStats } from '@/types/system';
 import { motion } from 'framer-motion';
@@ -31,17 +32,13 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  AreaChart,
+  Area
 } from 'recharts';
 
 interface DashboardOverviewProps {
   systemStats: SystemStats;
-  recentActivities: Array<{
-    id: string;
-    type: string;
-    action: string;
-    description: string;
-    timestamp: string;
-  }>;
+  recentActivities: any[];
 }
 
 const container = {
@@ -55,9 +52,34 @@ const container = {
 };
 
 const item = {
-  hidden: { y: 20, opacity: 0 },
-  show: { y: 0, opacity: 1 }
+  hidden: { opacity: 0, y: 20 },
+  show: { opacity: 1, y: 0 }
 };
+
+const StatCard = ({ icon: Icon, title, value, trend, color, className }: any) => (
+  <div className={cn(
+    "flex items-center gap-3 p-3 rounded-lg bg-card border shadow-sm",
+    className
+  )}>
+    <div className={cn("p-2 rounded-full", `bg-${color}-500/10`)}>
+      <Icon className={cn("h-4 w-4", `text-${color}-500`)} />
+    </div>
+    <div className="min-w-0 flex-1">
+      <p className="text-sm text-muted-foreground truncate">{title}</p>
+      <div className="flex items-center gap-2">
+        <p className="text-lg font-semibold truncate">{value}</p>
+        {trend !== undefined && (
+          <span className={cn(
+            "text-xs",
+            trend > 0 ? "text-green-500" : trend < 0 ? "text-red-500" : "text-muted-foreground"
+          )}>
+            {trend > 0 ? "↑" : trend < 0 ? "↓" : "−"} {Math.abs(trend)}%
+          </span>
+        )}
+      </div>
+    </div>
+  </div>
+);
 
 export function DashboardOverview({ systemStats, recentActivities }: DashboardOverviewProps) {
   return (
@@ -65,450 +87,265 @@ export function DashboardOverview({ systemStats, recentActivities }: DashboardOv
       variants={container}
       initial="hidden"
       animate="show"
-      className="space-y-6"
+      className="space-y-4"
     >
-      {/* Métriques principales */}
-      <div className="grid gap-4 md:grid-cols-2">
-        {/* Container Management */}
+      {/* Section Principale - Vue d'ensemble */}
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+        {/* Container Overview */}
         <motion.div variants={item}>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
+          <Card className="h-full">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg flex items-center gap-2">
                 <Container className="h-5 w-5 text-blue-500" />
-                Container Management
+                <span>Containers</span>
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="p-2 rounded-full bg-blue-500/10">
-                      <Container className="h-4 w-4 text-blue-500" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">Total Containers</p>
-                      <p className="text-2xl font-bold">{systemStats.containers}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="p-2 rounded-full bg-green-500/10">
-                      <Play className="h-4 w-4 text-green-500" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">Running</p>
-                      <p className="text-2xl font-bold">{systemStats.containersRunning}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="p-2 rounded-full bg-orange-500/10">
-                      <Square className="h-4 w-4 text-orange-500" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">Stopped</p>
-                      <p className="text-2xl font-bold">{systemStats.containersStopped}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="p-2 rounded-full bg-red-500/10">
-                      <AlertTriangle className="h-4 w-4 text-red-500" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">Error</p>
-                      <p className="text-2xl font-bold">{systemStats.containersError}</p>
-                    </div>
-                  </div>
-                </div>
+              <div className="grid grid-cols-2 gap-2">
+                <StatCard
+                  icon={Container}
+                  title="Total"
+                  value={systemStats.containers}
+                  trend={systemStats.containerTrend}
+                  color="blue"
+                />
+                <StatCard
+                  icon={Play}
+                  title="Running"
+                  value={systemStats.containersRunning}
+                  color="green"
+                />
+                <StatCard
+                  icon={Square}
+                  title="Stopped"
+                  value={systemStats.containersStopped}
+                  color="orange"
+                />
+                <StatCard
+                  icon={AlertTriangle}
+                  title="Errors"
+                  value={systemStats.containersError}
+                  color="red"
+                />
               </div>
             </CardContent>
           </Card>
         </motion.div>
 
-        {/* User Management */}
+        {/* User Overview */}
         <motion.div variants={item}>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
+          <Card className="h-full">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg flex items-center gap-2">
                 <Users className="h-5 w-5 text-green-500" />
-                User Management
+                <span>Users</span>
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="p-2 rounded-full bg-blue-500/10">
-                      <Users className="h-4 w-4 text-blue-500" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">Total Users</p>
-                      <p className="text-2xl font-bold">{systemStats.totalUsers}</p>
-                    </div>
-                  </div>
-                </div>
+              <div className="grid grid-cols-2 gap-2">
+                <StatCard
+                  icon={Users}
+                  title="Total"
+                  value={systemStats.totalUsers}
+                  trend={systemStats.userTrend}
+                  color="green"
+                />
+                <StatCard
+                  icon={UserCheck}
+                  title="Active"
+                  value={systemStats.activeUsers}
+                  color="green"
+                />
+                <StatCard
+                  icon={UserPlus}
+                  title="New"
+                  value={systemStats.newUsers}
+                  color="purple"
+                />
+                <StatCard
+                  icon={UserX}
+                  title="Suspended"
+                  value={systemStats.suspendedUsers}
+                  color="red"
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
 
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="p-2 rounded-full bg-green-500/10">
-                      <UserCheck className="h-4 w-4 text-green-500" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">Active Users</p>
-                      <p className="text-2xl font-bold">{systemStats.activeUsers}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="p-2 rounded-full bg-purple-500/10">
-                      <UserPlus className="h-4 w-4 text-purple-500" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">New Users</p>
-                      <p className="text-2xl font-bold">{systemStats.newUsers}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="p-2 rounded-full bg-red-500/10">
-                      <UserX className="h-4 w-4 text-red-500" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">Suspended</p>
-                      <p className="text-2xl font-bold">{systemStats.suspendedUsers}</p>
-                    </div>
-                  </div>
-                </div>
+        {/* System Overview */}
+        <motion.div variants={item}>
+          <Card className="h-full">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Server className="h-5 w-5 text-purple-500" />
+                <span>System</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-2">
+                <StatCard
+                  icon={Cpu}
+                  title="CPU Usage"
+                  value={`${systemStats.cpuUsage}%`}
+                  trend={systemStats.cpuTrend}
+                  color="purple"
+                />
+                <StatCard
+                  icon={HardDrive}
+                  title="Memory"
+                  value={`${systemStats.memoryUsage.percentage}%`}
+                  trend={systemStats.memoryTrend}
+                  color="blue"
+                />
+                <StatCard
+                  icon={HardDrive}
+                  title="Storage"
+                  value={`${systemStats.diskUsage.percentage}%`}
+                  color="indigo"
+                />
+                <StatCard
+                  icon={Network}
+                  title="Network"
+                  value={`${(systemStats.networkTraffic.in / (1024 * 1024)).toFixed(1)} MB/s`}
+                  color="cyan"
+                />
               </div>
             </CardContent>
           </Card>
         </motion.div>
       </div>
 
-      {/* CPU et Mémoire */}
-      <div className="grid gap-4 md:grid-cols-2">
+      {/* Section Images et Activités Récentes */}
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
+        {/* Docker Images */}
         <motion.div variants={item}>
-          <MetricCard
-            title="Utilisation CPU"
-            value={systemStats.cpuUsage}
-            trend={systemStats.cpuTrend}
-            icon={<Cpu />}
-            color="purple"
-            description={`${systemStats.cpuCount} cœurs`}
-          />
-        </motion.div>
-        <motion.div variants={item}>
-          <MetricCard
-            title="Utilisation Mémoire"
-            value={systemStats.memoryUsage.percentage}
-            trend={systemStats.memoryTrend}
-            icon={<HardDrive />}
-            color="orange"
-            description={`${Math.round(systemStats.memoryUsage.used / 1024 / 1024)} MB utilisés`}
-          />
-        </motion.div>
-      </div>
-
-      {/* Graphiques et Activités Récentes */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <motion.div variants={item}>
-          <Card>
+          <Card className="h-full">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Image className="h-5 w-5 text-purple-500" />
+                <span>Docker Images</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Image Stats */}
+              <div className="grid grid-cols-2 gap-2">
+                <StatCard
+                  icon={Image}
+                  title="Total Images"
+                  value={systemStats.images.total}
+                  color="purple"
+                />
+                <StatCard
+                  icon={HardDrive}
+                  title="Total Size"
+                  value={`${(systemStats.images.size / (1024 * 1024 * 1024)).toFixed(1)} GB`}
+                  color="indigo"
+                />
+                <StatCard
+                  icon={ArrowDown}
+                  title="Pull Count"
+                  value={systemStats.images.pulls || 0}
+                  color="cyan"
+                />
+                <StatCard
+                  icon={HardDrive}
+                  title="Avg. Size"
+                  value={`${((systemStats.images.size / systemStats.images.total) / (1024 * 1024)).toFixed(1)} MB`}
+                  color="blue"
+                />
+              </div>
+
+              {/* Storage Usage Progress */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium text-muted-foreground">Storage Usage</span>
+                  <span className="font-medium">
+                    {(systemStats.images.size / (1024 * 1024 * 1024)).toFixed(2)} GB
+                  </span>
+                </div>
+                <div className="h-2 rounded-full bg-secondary">
+                  <div
+                    className="h-2 rounded-full bg-purple-500 transition-all"
+                    style={{ width: `${(systemStats.images.size / systemStats.diskUsage.total) * 100}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Used: {(systemStats.images.size / (1024 * 1024 * 1024)).toFixed(2)} GB</span>
+                  <span>Total: {(systemStats.diskUsage.total / (1024 * 1024 * 1024)).toFixed(2)} GB</span>
+                </div>
+              </div>
+
+              {/* Tags Distribution */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium text-muted-foreground">Popular Tags</h4>
+                <div className="space-y-2">
+                  {systemStats.images.tags?.slice(0, 3).map((tag, index) => (
+                    <div key={index} className="flex items-center justify-between bg-secondary/50 rounded-lg p-2">
+                      <span className="flex items-center gap-2 text-sm">
+                        <span className="w-2 h-2 rounded-full bg-purple-500" />
+                        {tag.name}
+                      </span>
+                      <span className="text-sm text-muted-foreground">{tag.count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* Recent Activities */}
+        <motion.div variants={item}>
+          <Card className="h-full">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
                 <Activity className="h-5 w-5 text-blue-500" />
-                Performance Système
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
-                    data={systemStats.performanceHistory}
-                    margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="time" />
-                    <YAxis />
-                    <Tooltip />
-                    <Line
-                      type="monotone"
-                      dataKey="cpu"
-                      stroke="#8b5cf6"
-                      name="CPU"
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="memory"
-                      stroke="#3b82f6"
-                      name="Mémoire"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        <motion.div variants={item}>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Signal className="h-5 w-5 text-green-500" />
-                Activités Récentes
+                <span>Recent Activities</span>
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {recentActivities.slice(0, 5).map((activity) => (
+                {recentActivities.map((activity, index) => (
                   <div
-                    key={activity.id}
-                    className="flex items-center gap-4 p-2 rounded-lg hover:bg-accent/50 transition-colors"
+                    key={index}
+                    className="flex items-start gap-3 pb-4 last:pb-0 border-b last:border-0"
                   >
                     <div className={cn(
-                      "p-2 rounded-full",
-                      activity.type === 'user' && "bg-blue-500/10",
-                      activity.type === 'container' && "bg-green-500/10",
+                      "p-2 rounded-full shrink-0",
+                      activity.type === 'container' && "bg-blue-500/10",
+                      activity.type === 'image' && "bg-purple-500/10",
+                      activity.type === 'user' && "bg-green-500/10",
                       activity.type === 'system' && "bg-orange-500/10"
                     )}>
-                      {activity.type === 'user' && <Users className="h-4 w-4 text-blue-500" />}
-                      {activity.type === 'container' && <Container className="h-4 w-4 text-green-500" />}
-                      {activity.type === 'system' && <Activity className="h-4 w-4 text-orange-500" />}
+                      {activity.type === 'container' && <Container className={cn("h-4 w-4 text-blue-500")} />}
+                      {activity.type === 'image' && <Image className={cn("h-4 w-4 text-purple-500")} />}
+                      {activity.type === 'user' && <Users className={cn("h-4 w-4 text-green-500")} />}
+                      {activity.type === 'system' && <Settings className={cn("h-4 w-4 text-orange-500")} />}
                     </div>
-                    <div className="flex-1 space-y-1">
-                      <p className="text-sm font-medium">{activity.action}</p>
-                      <p className="text-xs text-muted-foreground">{activity.description}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium leading-none mb-1 truncate">
+                        {activity.description}
+                      </p>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span className="truncate">{activity.user}</span>
+                        <span>•</span>
+                        <span className="whitespace-nowrap">{activity.time}</span>
+                      </div>
                     </div>
-                    <time className="text-xs text-muted-foreground">
-                      {new Date(activity.timestamp).toLocaleTimeString()}
-                    </time>
                   </div>
                 ))}
+
+                {recentActivities.length === 0 && (
+                  <div className="text-center py-6 text-muted-foreground">
+                    <p>No recent activities</p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
         </motion.div>
       </div>
-
-      {/* Disk Usage et Network Traffic */}
-      <div className="grid gap-4 md:grid-cols-2">
-        {/* Disk Usage */}
-        <motion.div variants={item}>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <HardDrive className="h-5 w-5 text-indigo-500" />
-                Disk Usage
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {/* Barre de progression */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-muted-foreground">Espace Utilisé</p>
-                    <p className="text-sm font-medium">
-                      {Math.round(systemStats.diskUsage.used / (1024 * 1024 * 1024))} GB
-                    </p>
-                  </div>
-                  <div className="h-2 rounded-full bg-secondary">
-                    <div
-                      className="h-2 rounded-full bg-indigo-500"
-                      style={{ width: `${systemStats.diskUsage.percentage}%` }}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>
-                      {Math.round(systemStats.diskUsage.used / (1024 * 1024 * 1024))} GB utilisés
-                    </span>
-                    <span>
-                      {Math.round(systemStats.diskUsage.total / (1024 * 1024 * 1024))} GB total
-                    </span>
-                  </div>
-                </div>
-
-                {/* Statistiques détaillées */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 rounded-full bg-green-500/10">
-                        <ArrowUp className="h-4 w-4 text-green-500" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium">Disponible</p>
-                        <p className="text-xl font-bold">
-                          {Math.round((systemStats.diskUsage.total - systemStats.diskUsage.used) / (1024 * 1024 * 1024))} GB
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 rounded-full bg-blue-500/10">
-                        <Percent className="h-4 w-4 text-blue-500" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium">Utilisé</p>
-                        <p className="text-xl font-bold">
-                          {systemStats.diskUsage.percentage}%
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {/* Network Traffic */}
-        <motion.div variants={item}>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Network className="h-5 w-5 text-cyan-500" />
-                Network Traffic
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="p-2 rounded-full bg-cyan-500/10">
-                      <ArrowDown className="h-4 w-4 text-cyan-500" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">Download</p>
-                      <p className="text-xl font-bold">
-                        {(systemStats.networkTraffic.in / (1024 * 1024)).toFixed(1)} MB/s
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="p-2 rounded-full bg-emerald-500/10">
-                      <ArrowUp className="h-4 w-4 text-emerald-500" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">Upload</p>
-                      <p className="text-xl font-bold">
-                        {(systemStats.networkTraffic.out / (1024 * 1024)).toFixed(1)} MB/s
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="col-span-2">
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 rounded-full bg-purple-500/10">
-                        <Activity className="h-4 w-4 text-purple-500" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium">Total Traffic</p>
-                        <p className="text-xl font-bold">
-                          {((systemStats.networkTraffic.in + systemStats.networkTraffic.out) / (1024 * 1024)).toFixed(1)} MB/s
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Graphique du trafic réseau */}
-                <div className="mt-4 space-y-2">
-                  <div className="h-[60px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={systemStats.performanceHistory.slice(-10)}>
-                        <Line
-                          type="monotone"
-                          dataKey="network"
-                          stroke="#0891b2"
-                          strokeWidth={2}
-                          dot={false}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>10s ago</span>
-                    <span>Now</span>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      </div>
-
-      {/* Section Images */}
-      <motion.div variants={item}>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Image className="h-5 w-5 text-purple-500" />
-              Images Docker
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="p-2 rounded-full bg-purple-500/10">
-                    <Image className="h-4 w-4 text-purple-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">Images Totales</p>
-                    <p className="text-2xl font-bold">{systemStats.images.total}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="p-2 rounded-full bg-blue-500/10">
-                    <HardDrive className="h-4 w-4 text-blue-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">Espace Utilisé</p>
-                    <p className="text-2xl font-bold">
-                      {(systemStats.images.size / (1024 * 1024 * 1024)).toFixed(2)} GB
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="p-2 rounded-full bg-green-500/10">
-                    <Activity className="h-4 w-4 text-green-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">Taille Moyenne</p>
-                    <p className="text-2xl font-bold">
-                      {systemStats.images.total > 0
-                        ? ((systemStats.images.size / systemStats.images.total) / (1024 * 1024)).toFixed(0)
-                        : 0} MB
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
     </motion.div>
   );
 }

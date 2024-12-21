@@ -62,13 +62,14 @@ export default function AdminDashboard() {
     containersRunning: 0,
     containersStopped: 0,
     containersError: 0,
-    activeContainers: 0,
     containerTrend: 0,
     
     // Image Stats
     images: {
       total: 0,
-      size: 0
+      size: 0,
+      pulls: 0,
+      tags: []
     },
     
     // User Stats
@@ -86,12 +87,14 @@ export default function AdminDashboard() {
     memoryUsage: {
       used: 0,
       total: 0,
+      free: 0,
       percentage: 0
     },
     memoryTrend: 0,
     diskUsage: {
       used: 0,
       total: 0,
+      free: 0,
       percentage: 0
     },
     networkTraffic: {

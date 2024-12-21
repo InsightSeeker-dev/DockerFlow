@@ -4,14 +4,7 @@ export interface SystemStats {
   containersRunning: number;
   containersStopped: number;
   containersError: number;
-  activeContainers: number;
   containerTrend: number;
-  
-  // Image Stats
-  images: {
-    total: number;
-    size: number;
-  };
   
   // User Stats
   totalUsers: number;
@@ -24,23 +17,38 @@ export interface SystemStats {
   cpuUsage: number;
   cpuCount: number;
   cpuTrend: number;
-  networkIO: number;
+  
   memoryUsage: {
-    used: number;
     total: number;
+    used: number;
+    free: number;
     percentage: number;
   };
   memoryTrend: number;
+
   diskUsage: {
-    used: number;
     total: number;
+    used: number;
+    free: number;
     percentage: number;
   };
+
   networkTraffic: {
     in: number;
     out: number;
   };
-  
+
+  // Image Stats
+  images: {
+    total: number;
+    size: number;
+    pulls: number;
+    tags?: Array<{
+      name: string;
+      count: number;
+    }>;
+  };
+
   // Performance History
   performanceHistory: Array<{
     timestamp: string;
@@ -48,20 +56,6 @@ export interface SystemStats {
     memory: number;
     network: number;
   }>;
-  
-  // Optional resource limits
-  resourceLimits?: {
-    memory: {
-      limit: number;
-      available: number;
-      formatted: string;
-    };
-    storage: {
-      limit: number;
-      available: number;
-      formatted: string;
-    };
-  };
 }
 
 export interface User {
@@ -110,4 +104,15 @@ export interface Container {
     Source: string;
     Destination: string;
   }>;
+}
+
+export interface Activity {
+  id: string;
+  type: 'container' | 'image' | 'user' | 'system';
+  description: string;
+  user: string;
+  time: string;
+  details?: {
+    [key: string]: any;
+  };
 }

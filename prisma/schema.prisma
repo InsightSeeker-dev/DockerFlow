@@ -63,9 +63,6 @@ model User {
   username               String      @unique
   email                  String      @unique // Required
   password               String      // Required
-  emailVerified         DateTime?   // Pour la vérification d'email
-  verificationToken     String?     // Token de vérification
-  verificationTokenExpires DateTime? // Date d'expiration du token de vérification
   role                   UserRole    @default(ADMIN)
   status                 UserStatus  @default(ACTIVE)
   image                  String?

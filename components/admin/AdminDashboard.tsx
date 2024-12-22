@@ -7,7 +7,7 @@ import ContainerManager from './ContainerManager';
 import ImageManager from './ImageManager';
 import NetworkManager from './NetworkManager';
 import AlertCenter from './AlertCenter';
-import UserManager from './UserManager';
+import { UserManager } from './UserManager';
 import { useToast } from '@/components/ui/use-toast';
 import {
   Container,

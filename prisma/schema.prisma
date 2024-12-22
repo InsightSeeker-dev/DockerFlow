@@ -59,23 +59,24 @@ model AlertRule {
 
 model User {
   id                     String      @id @default(auto()) @map("_id") @db.ObjectId
-  name                   String?     // Required
+  name                   String?
   username               String      @unique
-  email                  String      @unique // Required
-  password               String      // Required
+  email                  String      @unique
+  emailVerified         DateTime?   @map("emailVerified")
+  password               String
   role                   UserRole    @default(ADMIN)
   status                 UserStatus  @default(ACTIVE)
   image                  String?
-  bio                    String?     // Biographie de l'utilisateur
-  defaultRegistry        String      @default("docker.io") // Registry Docker par défaut
-  autoUpdate            Boolean     @default(true)      // Mise à jour automatique des conteneurs
-  resourceLimits        Json?       // Limites de ressources personnalisées
-  notifications         Json?       // Préférences de notifications
+  bio                    String?
+  defaultRegistry        String      @default("docker.io")
+  autoUpdate            Boolean     @default(true)
+  resourceLimits        Json?
+  notifications         Json?
   resetToken             String?     
   resetTokenExpiry       DateTime?
-  cpuLimit               Int         @default(4000)    // 4 CPU cores par défaut pour les admins
-  memoryLimit            Int         @default(8589934592)  // 8GB default pour les admins
-  storageLimit           Int         @default(107374182400) // 100GB default pour les admins
+  cpuLimit               Int         @default(4000)
+  memoryLimit            Int         @default(8589934592)
+  storageLimit           Int         @default(107374182400)
   cpuThreshold           Int         @default(80)
   memoryThreshold        Int         @default(85)
   storageThreshold       Int         @default(90)
@@ -217,11 +218,12 @@ model TerminalSession {
 }
 
 model VerificationToken {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  token     String   @unique
-  userId    String   @db.ObjectId
-  expires   DateTime
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String   @db.ObjectId
+  token      String   @unique
+  expires    DateTime
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("verification_tokens")
 }

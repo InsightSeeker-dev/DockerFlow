@@ -19,8 +19,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -28,8 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Network, Trash2, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface NetworkContainer {
@@ -63,356 +63,165 @@ interface Container {
 
 export default function NetworkManager() {
   const [networks, setNetworks] = useState<DockerNetwork[]>([]);
-  const [containers, setContainers] = useState<Container[]>([]);
   const [loading, setLoading] = useState(true);
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [connectDialogOpen, setConnectDialogOpen] = useState(false);
-  const [selectedNetwork, setSelectedNetwork] = useState<DockerNetwork | null>(null);
-  
-  const [createForm, setCreateForm] = useState({
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [selectedNetwork, setSelectedNetwork] = useState<DockerNetwork | null>(
+    null
+  );
+  const [availableContainers, setAvailableContainers] = useState<Container[]>([]);
+  const [newNetwork, setNewNetwork] = useState({
     name: '',
     driver: 'bridge',
-    internal: false,
     subnet: '',
     gateway: '',
   });
 
-  const [connectForm, setConnectForm] = useState({
-    networkId: '',
-    containerId: '',
-    ipv4Address: '',
-    ipv6Address: '',
-  });
-
   useEffect(() => {
     fetchNetworks();
-    fetchContainers();
+    fetchAvailableContainers();
   }, []);
 
   const fetchNetworks = async () => {
     try {
       const response = await fetch('/api/admin/networks');
-      if (!response.ok) throw new Error('Failed to fetch networks');
-      const data = await response.json();
-      setNetworks(data);
+      if (response.ok) {
+        const data = await response.json();
+        setNetworks(data);
+      } else {
+        throw new Error('Failed to fetch networks');
+      }
     } catch (error) {
-      toast.error('Failed to fetch Docker networks');
-      console.error(error);
+      console.error('Failed to fetch networks:', error);
+      toast.error('Failed to fetch networks');
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchContainers = async () => {
+  const fetchAvailableContainers = async () => {
     try {
       const response = await fetch('/api/admin/containers');
-      if (!response.ok) throw new Error('Failed to fetch containers');
-      const data = await response.json();
-      setContainers(data);
+      if (response.ok) {
+        const data = await response.json();
+        setAvailableContainers(data);
+      }
     } catch (error) {
-      console.error(error);
+      console.error('Failed to fetch containers:', error);
     }
   };
 
   const handleCreateNetwork = async () => {
     try {
-      setLoading(true);
       const response = await fetch('/api/admin/networks', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(createForm),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(newNetwork),
       });
 
-      if (!response.ok) throw new Error('Failed to create network');
-      
-      toast.success('Network created successfully');
-      setCreateDialogOpen(false);
-      fetchNetworks();
+      if (response.ok) {
+        toast.success('Network created successfully');
+        setIsCreateDialogOpen(false);
+        setNewNetwork({
+          name: '',
+          driver: 'bridge',
+          subnet: '',
+          gateway: '',
+        });
+        fetchNetworks();
+      } else {
+        throw new Error('Failed to create network');
+      }
     } catch (error) {
+      console.error('Failed to create network:', error);
       toast.error('Failed to create network');
-      console.error(error);
-    } finally {
-      setLoading(false);
     }
   };
 
-  const handleDeleteNetwork = async (id: string) => {
+  const handleDeleteNetwork = async () => {
+    if (!selectedNetwork) return;
+
     try {
-      setLoading(true);
-      const response = await fetch(`/api/admin/networks/${id}`, {
+      const response = await fetch(`/api/admin/networks/${selectedNetwork.id}`, {
         method: 'DELETE',
       });
 
-      if (!response.ok) throw new Error('Failed to delete network');
-      
-      toast.success('Network deleted successfully');
-      fetchNetworks();
+      if (response.ok) {
+        toast.success('Network deleted successfully');
+        setNetworks(networks.filter((net) => net.id !== selectedNetwork.id));
+        setIsDeleteDialogOpen(false);
+        setSelectedNetwork(null);
+      } else {
+        throw new Error('Failed to delete network');
+      }
     } catch (error) {
+      console.error('Failed to delete network:', error);
       toast.error('Failed to delete network');
-      console.error(error);
-    } finally {
-      setLoading(false);
     }
   };
 
-  const handleConnectContainer = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch(`/api/admin/networks/${connectForm.networkId}/connect`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          containerId: connectForm.containerId,
-          ipv4Address: connectForm.ipv4Address,
-          ipv6Address: connectForm.ipv6Address,
-        }),
-      });
-
-      if (!response.ok) throw new Error('Failed to connect container to network');
-      
-      toast.success('Container connected to network successfully');
-      setConnectDialogOpen(false);
-      fetchNetworks();
-    } catch (error) {
-      toast.error('Failed to connect container to network');
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
+  const confirmDelete = (network: DockerNetwork) => {
+    setSelectedNetwork(network);
+    setIsDeleteDialogOpen(true);
   };
 
-  const handleDisconnectContainer = async (networkId: string, containerId: string) => {
-    try {
-      setLoading(true);
-      const response = await fetch(`/api/admin/networks/${networkId}/disconnect`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ containerId }),
-      });
-
-      if (!response.ok) throw new Error('Failed to disconnect container');
-      
-      toast.success('Container disconnected successfully');
-      fetchNetworks();
-    } catch (error) {
-      toast.error('Failed to disconnect container');
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  if (loading) {
+    return <div>Loading...</div>;
+  }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <h2 className="text-3xl font-bold">Réseaux Docker</h2>
-        <div className="space-x-4">
-          <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>Créer un réseau</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Créer un réseau Docker</DialogTitle>
-                <DialogDescription>
-                  Configurez les paramètres du nouveau réseau.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="name">Nom</Label>
-                  <Input
-                    id="name"
-                    value={createForm.name}
-                    onChange={(e) =>
-                      setCreateForm({ ...createForm, name: e.target.value })
-                    }
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="driver">Driver</Label>
-                  <Select
-                    value={createForm.driver}
-                    onValueChange={(value) =>
-                      setCreateForm({ ...createForm, driver: value })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sélectionnez un driver" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="bridge">Bridge</SelectItem>
-                      <SelectItem value="overlay">Overlay</SelectItem>
-                      <SelectItem value="macvlan">Macvlan</SelectItem>
-                      <SelectItem value="ipvlan">IPvlan</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="subnet">Subnet</Label>
-                  <Input
-                    id="subnet"
-                    value={createForm.subnet}
-                    onChange={(e) =>
-                      setCreateForm({ ...createForm, subnet: e.target.value })
-                    }
-                    placeholder="e.g., 172.20.0.0/16"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="gateway">Gateway</Label>
-                  <Input
-                    id="gateway"
-                    value={createForm.gateway}
-                    onChange={(e) =>
-                      setCreateForm({ ...createForm, gateway: e.target.value })
-                    }
-                    placeholder="e.g., 172.20.0.1"
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button
-                  type="submit"
-                  onClick={handleCreateNetwork}
-                  disabled={!createForm.name}
-                >
-                  Créer
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          <Dialog open={connectDialogOpen} onOpenChange={setConnectDialogOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline">Connecter un conteneur</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Connecter un conteneur</DialogTitle>
-                <DialogDescription>
-                  Sélectionnez le réseau et le conteneur à connecter.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="network">Réseau</Label>
-                  <Select
-                    value={connectForm.networkId}
-                    onValueChange={(value) =>
-                      setConnectForm({ ...connectForm, networkId: value })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sélectionnez un réseau" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {networks.map((network) => (
-                        <SelectItem key={network.id} value={network.id}>
-                          {network.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="container">Conteneur</Label>
-                  <Select
-                    value={connectForm.containerId}
-                    onValueChange={(value) =>
-                      setConnectForm({ ...connectForm, containerId: value })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sélectionnez un conteneur" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {containers.map((container) => (
-                        <SelectItem key={container.id} value={container.id}>
-                          {container.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="ipv4">IPv4 Address (optionnel)</Label>
-                  <Input
-                    id="ipv4"
-                    value={connectForm.ipv4Address}
-                    onChange={(e) =>
-                      setConnectForm({
-                        ...connectForm,
-                        ipv4Address: e.target.value,
-                      })
-                    }
-                    placeholder="e.g., 172.20.0.2"
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button
-                  type="submit"
-                  onClick={handleConnectContainer}
-                  disabled={!connectForm.networkId || !connectForm.containerId}
-                >
-                  Connecter
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
+        <h2 className="text-3xl font-bold tracking-tight">Network Management</h2>
+        <Button onClick={() => setIsCreateDialogOpen(true)}>
+          <Plus className="mr-2 h-4 w-4" /> Create Network
+        </Button>
       </div>
 
       <Card>
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Nom</TableHead>
+              <TableHead>Name</TableHead>
               <TableHead>Driver</TableHead>
               <TableHead>Scope</TableHead>
               <TableHead>Subnet</TableHead>
-              <TableHead>Conteneurs</TableHead>
+              <TableHead>Gateway</TableHead>
+              <TableHead>Connected Containers</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {networks.map((network) => (
               <TableRow key={network.id}>
-                <TableCell className="font-medium">{network.name}</TableCell>
-                <TableCell>
-                  <Badge variant="secondary">{network.driver}</Badge>
-                </TableCell>
+                <TableCell>{network.name}</TableCell>
+                <TableCell>{network.driver}</TableCell>
                 <TableCell>{network.scope}</TableCell>
                 <TableCell>
-                  {network.ipam.config.map((config, index) => (
-                    <div key={index} className="text-sm">
-                      {config.subnet && <div>Subnet: {config.subnet}</div>}
-                      {config.gateway && <div>Gateway: {config.gateway}</div>}
-                    </div>
-                  ))}
+                  {network.ipam.config[0]?.subnet || 'N/A'}
                 </TableCell>
                 <TableCell>
-                  <div className="flex space-x-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedNetwork(network);
-                        setConnectDialogOpen(true);
-                      }}
-                    >
-                      Connect
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDeleteNetwork(network.id)}
-                      className="text-red-500"
-                    >
-                      Delete
-                    </Button>
+                  {network.ipam.config[0]?.gateway || 'N/A'}
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-wrap gap-1">
+                    {network.containers.map((container) => (
+                      <Badge key={container.id} variant="secondary">
+                        {container.name}
+                      </Badge>
+                    ))}
                   </div>
+                </TableCell>
+                <TableCell>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => confirmDelete(network)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </TableCell>
               </TableRow>
             ))}
@@ -420,101 +229,93 @@ export default function NetworkManager() {
         </Table>
       </Card>
 
-      {/* Network Details Dialog */}
-      <Dialog open={!!selectedNetwork} onOpenChange={() => setSelectedNetwork(null)}>
-        <DialogContent className="max-w-3xl">
+      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Détails du réseau</DialogTitle>
+            <DialogTitle>Create Network</DialogTitle>
+            <DialogDescription>
+              Create a new Docker network with the specified configuration.
+            </DialogDescription>
           </DialogHeader>
-          {selectedNetwork && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>ID</Label>
-                  <div className="font-mono text-sm">{selectedNetwork.id}</div>
-                </div>
-                <div>
-                  <Label>Driver</Label>
-                  <div>{selectedNetwork.driver}</div>
-                </div>
-                <div>
-                  <Label>Scope</Label>
-                  <div>{selectedNetwork.scope}</div>
-                </div>
-                <div>
-                  <Label>Internal</Label>
-                  <div>{selectedNetwork.internal ? 'Yes' : 'No'}</div>
-                </div>
-              </div>
-
-              <div>
-                <Label>IPAM Configuration</Label>
-                <div className="space-y-2">
-                  {selectedNetwork.ipam.config.map((config, index) => (
-                    <div key={index} className="grid grid-cols-2 gap-2">
-                      {config.subnet && (
-                        <div>
-                          <span className="text-sm font-medium">Subnet:</span>{' '}
-                          {config.subnet}
-                        </div>
-                      )}
-                      {config.gateway && (
-                        <div>
-                          <span className="text-sm font-medium">Gateway:</span>{' '}
-                          {config.gateway}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <Label>Options</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {Object.entries(selectedNetwork.options).map(([key, value]) => (
-                    <Badge key={key} variant="outline">
-                      {key}: {value}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <Label>Conteneurs connectés</Label>
-                <div className="space-y-2">
-                  {selectedNetwork.containers.map((container) => (
-                    <div
-                      key={container.id}
-                      className="flex justify-between items-center border p-2 rounded"
-                    >
-                      <div>
-                        <div className="font-medium">{container.name}</div>
-                        <div className="text-sm text-gray-500">
-                          IPv4: {container.ipv4Address}
-                          {container.ipv6Address && (
-                            <>, IPv6: {container.ipv6Address}</>
-                          )}
-                        </div>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          handleDisconnectContainer(
-                            selectedNetwork.id,
-                            container.id
-                          )
-                        }
-                      >
-                        Déconnecter
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </div>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="name">Name</Label>
+              <Input
+                id="name"
+                value={newNetwork.name}
+                onChange={(e) =>
+                  setNewNetwork({ ...newNetwork, name: e.target.value })
+                }
+              />
             </div>
-          )}
+            <div className="grid gap-2">
+              <Label htmlFor="driver">Driver</Label>
+              <Select
+                value={newNetwork.driver}
+                onValueChange={(value) =>
+                  setNewNetwork({ ...newNetwork, driver: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="bridge">Bridge</SelectItem>
+                  <SelectItem value="host">Host</SelectItem>
+                  <SelectItem value="overlay">Overlay</SelectItem>
+                  <SelectItem value="macvlan">Macvlan</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="subnet">Subnet</Label>
+              <Input
+                id="subnet"
+                value={newNetwork.subnet}
+                onChange={(e) =>
+                  setNewNetwork({ ...newNetwork, subnet: e.target.value })
+                }
+                placeholder="e.g., 172.20.0.0/16"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="gateway">Gateway</Label>
+              <Input
+                id="gateway"
+                value={newNetwork.gateway}
+                onChange={(e) =>
+                  setNewNetwork({ ...newNetwork, gateway: e.target.value })
+                }
+                placeholder="e.g., 172.20.0.1"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateNetwork}>Create</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Network</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this network? This action cannot be
+              undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteNetwork}>
+              Delete
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

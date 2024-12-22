@@ -81,7 +81,7 @@ const StatCard = ({ icon: Icon, title, value, trend, color, className }: any) =>
   </div>
 );
 
-export function DashboardOverview({ systemStats, recentActivities }: DashboardOverviewProps) {
+export default function DashboardOverview({ systemStats, recentActivities }: DashboardOverviewProps) {
   return (
     <motion.div
       variants={container}

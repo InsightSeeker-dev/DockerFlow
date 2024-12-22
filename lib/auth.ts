@@ -55,10 +55,23 @@ export const authOptions: NextAuthOptions = {
 
       const dbUser = await prisma.user.findUnique({
         where: { email: user.email },
-        select: { status: true }
+        select: { 
+          status: true,
+          role: true,
+          emailVerified: true
+        }
       });
 
-      if (!dbUser || dbUser.status !== UserStatus.ACTIVE) {
+      // Vérifier si l'utilisateur existe et est actif
+      if (!dbUser) return false;
+      
+      // Les administrateurs peuvent se connecter même sans vérification
+      if (dbUser.role !== UserRole.ADMIN && !dbUser.emailVerified) {
+        return false;
+      }
+      
+      // Vérifier le statut de l'utilisateur
+      if (dbUser.status !== UserStatus.ACTIVE) {
         return false;
       }
 
@@ -213,7 +226,8 @@ export const authOptions: NextAuthOptions = {
             password: true,
             role: true,
             status: true,
-            image: true
+            image: true,
+            emailVerified: true
           }
         });
 
@@ -227,6 +241,10 @@ export const authOptions: NextAuthOptions = {
         }
 
         if (user.status !== UserStatus.ACTIVE) {
+          return null;
+        }
+
+        if (user.role !== UserRole.ADMIN && !user.emailVerified) {
           return null;
         }
 

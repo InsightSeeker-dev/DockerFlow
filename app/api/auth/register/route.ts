@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import { sendEmail } from '@/lib/email';
 import { z } from 'zod';
+import { UserRole, UserStatus } from '@prisma/client';
 
 // Schéma de validation amélioré
 const registerSchema = z.object({
@@ -85,8 +86,8 @@ export async function POST(request: Request) {
         email,
         password: hashedPassword,
         verificationToken,
-        role: accountType === 'pro' ? 'ADMIN' : 'USER',
-        status: 'ACTIVE',
+        role: accountType === 'pro' ? UserRole.ADMIN : UserRole.USER,
+        status: UserStatus.PENDING,
         cpuLimit: accountType === 'pro' ? 4000 : 2000, // 4 cores pour pro, 2 pour user
         memoryLimit: accountType === 'pro' ? 8589934592 : 4294967296, // 8GB pour pro, 4GB pour user
         storageLimit: accountType === 'pro' ? 107374182400 : 53687091200, // 100GB pour pro, 50GB pour user

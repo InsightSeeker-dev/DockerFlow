@@ -1,45 +1,47 @@
 import { getToken } from 'next-auth/jwt';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { UserStatus } from '@prisma/client';
 
 export async function middleware(request: NextRequest) {
   const token = await getToken({ req: request });
-  const isAuthPage = request.nextUrl.pathname.startsWith('/auth');
-  const isVerifyPage = request.nextUrl.pathname.startsWith('/verify-email');
-  const isVerifyRequestPage = request.nextUrl.pathname.startsWith('/verify-request');
-  const isAdminPage = request.nextUrl.pathname.startsWith('/admin') || request.nextUrl.pathname.startsWith('/dashboard/admin');
-  const isApiRoute = request.nextUrl.pathname.startsWith('/api');
+  const { pathname } = request.nextUrl;
+
+  // Définir les chemins protégés et publics
+  const isPublicPath = pathname.startsWith('/auth') || 
+                      pathname.startsWith('/verify-email') || 
+                      pathname.startsWith('/verify-request') ||
+                      pathname.startsWith('/verify-success') ||
+                      pathname.startsWith('/verify-error');
+  const isApiPath = pathname.startsWith('/api');
+  const isAdminPath = pathname.startsWith('/admin');
 
   // Permettre l'accès aux routes API sans redirection
-  if (isApiRoute) {
+  if (isApiPath) {
     return NextResponse.next();
   }
 
-  // Rediriger vers la page d'authentification si non connecté
-  if (!token && !isAuthPage && !isVerifyPage && !isVerifyRequestPage) {
+  // Si l'utilisateur n'est pas connecté et essaie d'accéder à une route protégée
+  if (!token && !isPublicPath) {
     const url = new URL('/auth', request.url);
-    url.searchParams.set('callbackUrl', request.nextUrl.pathname);
+    url.searchParams.set('callbackUrl', pathname);
     return NextResponse.redirect(url);
   }
 
-  // Rediriger vers le dashboard approprié si déjà connecté et sur la page d'authentification
-  if (token && isAuthPage) {
-    if (token.role === 'ADMIN') {
-      return NextResponse.redirect(new URL('/admin/dashboard', request.url));
-    }
-    return NextResponse.redirect(new URL('/dashboard', request.url));
-  }
-
-  // Vérifier si l'email est vérifié pour accéder au dashboard
-  if (token && !token.emailVerified && !isVerifyRequestPage && !isVerifyPage) {
+  // Si l'utilisateur est connecté mais son email n'est pas vérifié
+  if (token && !token.emailVerified && !isPublicPath) {
     return NextResponse.redirect(new URL('/verify-request', request.url));
   }
 
+  // Si l'utilisateur est connecté et essaie d'accéder à une page publique
+  if (token?.emailVerified && pathname === '/auth') {
+    const redirectUrl = token.role === 'ADMIN' ? '/admin/dashboard' : '/dashboard';
+    return NextResponse.redirect(new URL(redirectUrl, request.url));
+  }
+
   // Protéger les pages admin
-  if (isAdminPage) {
-    if (!token || token.role !== 'ADMIN') {
-      return NextResponse.redirect(new URL('/dashboard', request.url));
-    }
+  if (isAdminPath && token?.role !== 'ADMIN') {
+    return NextResponse.redirect(new URL('/dashboard', request.url));
   }
 
   return NextResponse.next();
@@ -47,11 +49,14 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
+    '/',
     '/dashboard/:path*',
     '/admin/:path*',
     '/auth/:path*',
     '/verify-email/:path*',
     '/verify-request/:path*',
+    '/verify-success/:path*',
+    '/verify-error/:path*',
     '/api/admin/:path*'
   ]
 };

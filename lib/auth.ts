@@ -6,6 +6,7 @@ import { compare } from "bcryptjs";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { Adapter } from "next-auth/adapters";
 import { PrismaUser } from "@/types/prisma";
+import { UserStatus } from "@prisma/client";
 
 declare module "next-auth" {
   interface Session {
@@ -38,6 +39,7 @@ export const authOptions: NextAuthOptions = {
   pages: {
     signIn: '/auth',
     error: '/auth?error=AuthError',
+    verifyRequest: '/verify-request',
   },
   debug: process.env.NODE_ENV === 'development',
   providers: [
@@ -88,9 +90,9 @@ export const authOptions: NextAuthOptions = {
             return null;
           }
 
-          if (user.status !== 'ACTIVE') {
+          if (user.status !== UserStatus.ACTIVE) {
             console.error('Account not active');
-            return null;
+            throw new Error('Please verify your email before logging in');
           }
 
           // Update lastLogin
@@ -101,30 +103,34 @@ export const authOptions: NextAuthOptions = {
 
           // Convert to NextAuth User type
           const { password: _, ...userWithoutPassword } = user;
-          return {
-            id: userWithoutPassword.id,
-            email: userWithoutPassword.email,
-            name: userWithoutPassword.name || '',
-            username: userWithoutPassword.username,
-            image: userWithoutPassword.image,
-            role: userWithoutPassword.role,
-            status: userWithoutPassword.status
-          } as User;
+          return userWithoutPassword as User;
         } catch (error) {
           console.error('Auth error:', error);
-          return null;
+          throw error;
         }
       }
     })
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async signIn({ user }) {
+      if (user.status !== UserStatus.ACTIVE) {
+        throw new Error('Please verify your email before logging in');
+      }
+      return true;
+    },
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         token.id = user.id;
         token.role = user.role;
         token.status = user.status;
         token.emailVerified = user.emailVerified;
       }
+
+      // Handle session update
+      if (trigger === "update" && session) {
+        return { ...token, ...session };
+      }
+
       return token;
     },
     async session({ session, token }) {
@@ -135,6 +141,13 @@ export const authOptions: NextAuthOptions = {
         session.user.emailVerified = token.emailVerified as Date | null;
       }
       return session;
+    },
+    async redirect({ url, baseUrl }) {
+      // Permet la redirection vers les URL internes
+      if (url.startsWith(baseUrl)) return url;
+      // Permet la redirection vers les URL relatives
+      if (url.startsWith("/")) return `${baseUrl}${url}`;
+      return baseUrl;
     }
   }
 };

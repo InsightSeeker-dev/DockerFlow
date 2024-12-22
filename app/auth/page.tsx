@@ -86,27 +86,14 @@ const DockerFlowAuth = () => {
         const result = await signIn('credentials', {
           email: formData.email,
           password: formData.password,
-          redirect: false,
+          redirect: false // Ne pas rediriger automatiquement
         });
 
         if (result?.error) {
-          if (result.error === 'Please verify your email first') {
-            // Rediriger vers la page de renvoi de vérification
-            router.push(`/auth/verify-request?email=${encodeURIComponent(formData.email)}`);
-            return;
-          }
           setErrors({ auth: result.error });
         } else {
-          const response = await fetch('/api/auth/session');
-          const session = await response.json();
-          
-          // Rediriger en fonction du rôle
-          if (session?.user?.role === 'ADMIN') {
-            router.push('/admin/dashboard');
-          } else {
-            router.push('/dashboard');
-          }
-          return; // Ajouter un return pour éviter toute exécution supplémentaire
+          // Laissons le middleware gérer la redirection
+          router.refresh();
         }
       } else {
         const response = await fetch('/api/auth/register', {
@@ -120,7 +107,8 @@ const DockerFlowAuth = () => {
         if (!response.ok) {
           setErrors({ auth: data.error || 'Registration failed' });
         } else {
-          router.push('/auth/verify-request');
+          setSuccessMessage('Registration successful. Please check your email to verify your account.');
+          setIsLogin(true); // Basculer vers le formulaire de connexion
         }
       }
     } catch (error) {
@@ -404,6 +392,19 @@ const DockerFlowAuth = () => {
                   <p className="text-sm text-red-400 flex items-center">
                     <AlertCircle className="mr-2" size={16} />
                     {errors.auth}
+                  </p>
+                </motion.div>
+              )}
+
+              {successMessage && (
+                <motion.div 
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-3 rounded-lg bg-green-500/10 border border-green-500/20"
+                >
+                  <p className="text-sm text-green-400 flex items-center">
+                    <AlertCircle className="mr-2" size={16} />
+                    {successMessage}
                   </p>
                 </motion.div>
               )}

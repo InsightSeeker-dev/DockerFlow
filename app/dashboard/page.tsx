@@ -14,7 +14,7 @@ export default async function DashboardPage() {
   }
 
   if (!hasValidStatus(session)) {
-    return redirect('/verify-request');
+    return redirect('/auth?error=AccountInactive');
   }
 
   // Rediriger les admins vers leur dashboard

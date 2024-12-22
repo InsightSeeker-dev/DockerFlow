@@ -19,11 +19,8 @@ import {
   AlertTriangle,
   CheckCircle,
   Info,
-  Trash2,
-  Filter,
-  Download,
-  RotateCw,
-  Settings2
+  XCircle,
+  Plus,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -49,364 +46,268 @@ interface AlertRule {
 export default function AlertCenter() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
-  const [filter, setFilter] = useState({
-    type: 'all',
-    acknowledged: 'all',
-    timeRange: '24h'
-  });
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const [showSettings, setShowSettings] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     fetchAlerts();
     fetchAlertRules();
-
-    if (autoRefresh) {
-      const interval = setInterval(fetchAlerts, 30000); // Refresh every 30 seconds
-      return () => clearInterval(interval);
-    }
-  }, [autoRefresh, filter]);
+  }, []);
 
   const fetchAlerts = async () => {
     try {
-      const response = await fetch('/api/admin/alerts?' + new URLSearchParams({
-        type: filter.type,
-        acknowledged: filter.acknowledged,
-        timeRange: filter.timeRange
-      }));
-      
+      const response = await fetch('/api/admin/alerts');
       if (response.ok) {
         const data = await response.json();
         setAlerts(data);
+      } else {
+        throw new Error('Failed to fetch alerts');
       }
     } catch (error) {
-      console.error('Error fetching alerts:', error);
-      toast.error('Erreur lors de la récupération des alertes');
+      console.error('Failed to fetch alerts:', error);
+      toast.error('Failed to fetch alerts');
+    } finally {
+      setLoading(false);
     }
   };
 
   const fetchAlertRules = async () => {
     try {
-      const response = await fetch('/api/admin/alert-rules');
+      const response = await fetch('/api/admin/alerts/rules');
       if (response.ok) {
         const data = await response.json();
         setAlertRules(data);
       }
     } catch (error) {
-      console.error('Error fetching alert rules:', error);
+      console.error('Failed to fetch alert rules:', error);
     }
   };
 
   const handleAcknowledge = async (alertId: string) => {
     try {
       const response = await fetch(`/api/admin/alerts/${alertId}/acknowledge`, {
-        method: 'POST'
+        method: 'PATCH',
       });
-      
+
       if (response.ok) {
-        setAlerts(alerts.map(alert => 
-          alert.id === alertId 
-            ? { ...alert, acknowledged: true }
-            : alert
-        ));
-        toast.success('Alerte acquittée');
+        setAlerts(
+          alerts.map((alert) =>
+            alert.id === alertId
+              ? { ...alert, acknowledged: true }
+              : alert
+          )
+        );
+        toast.success('Alert acknowledged');
+      } else {
+        throw new Error('Failed to acknowledge alert');
       }
     } catch (error) {
-      console.error('Error acknowledging alert:', error);
-      toast.error('Erreur lors de l\'acquittement de l\'alerte');
+      console.error('Failed to acknowledge alert:', error);
+      toast.error('Failed to acknowledge alert');
     }
   };
 
   const handleDeleteAlert = async (alertId: string) => {
     try {
       const response = await fetch(`/api/admin/alerts/${alertId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
       });
-      
+
       if (response.ok) {
-        setAlerts(alerts.filter(alert => alert.id !== alertId));
-        toast.success('Alerte supprimée');
+        setAlerts(alerts.filter((alert) => alert.id !== alertId));
+        toast.success('Alert deleted');
+      } else {
+        throw new Error('Failed to delete alert');
       }
     } catch (error) {
-      console.error('Error deleting alert:', error);
-      toast.error('Erreur lors de la suppression de l\'alerte');
+      console.error('Failed to delete alert:', error);
+      toast.error('Failed to delete alert');
     }
   };
 
-  const handleExport = () => {
-    const csvContent = [
-      ['ID', 'Type', 'Titre', 'Message', 'Source', 'Date', 'Acquittée'],
-      ...alerts.map(alert => [
-        alert.id,
-        alert.type,
-        alert.title,
-        alert.message,
-        alert.source,
-        alert.timestamp,
-        alert.acknowledged ? 'Oui' : 'Non'
-      ])
-    ].map(row => row.join(',')).join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `alerts-${new Date().toISOString()}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-  };
-
-  const handleUpdateRule = async (id: string, enabled: boolean) => {
+  const toggleAlertRule = async (ruleId: string, enabled: boolean) => {
     try {
-      const response = await fetch(`/api/admin/alert-rules/${id}`, {
+      const response = await fetch(`/api/admin/alerts/rules/${ruleId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled })
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ enabled }),
       });
 
       if (response.ok) {
-        fetchAlertRules();
-        toast.success('Règle mise à jour avec succès');
+        setAlertRules(
+          alertRules.map((rule) =>
+            rule.id === ruleId ? { ...rule, enabled } : rule
+          )
+        );
+        toast.success(`Alert rule ${enabled ? 'enabled' : 'disabled'}`);
+      } else {
+        throw new Error('Failed to update alert rule');
       }
     } catch (error) {
-      console.error('Error updating rule:', error);
-      toast.error('Erreur lors de la mise à jour de la règle');
+      console.error('Failed to update alert rule:', error);
+      toast.error('Failed to update alert rule');
     }
   };
 
-  const handleDeleteRule = async (id: string) => {
-    try {
-      const response = await fetch(`/api/admin/alert-rules/${id}`, {
-        method: 'DELETE'
-      });
-
-      if (response.ok) {
-        fetchAlertRules();
-        toast.success('Règle supprimée avec succès');
-      }
-    } catch (error) {
-      console.error('Error deleting rule:', error);
-      toast.error('Erreur lors de la suppression de la règle');
+  const getAlertIcon = (type: string) => {
+    switch (type) {
+      case 'error':
+        return <XCircle className="h-4 w-4 text-red-500" />;
+      case 'warning':
+        return <AlertTriangle className="h-4 w-4 text-yellow-500" />;
+      case 'success':
+        return <CheckCircle className="h-4 w-4 text-green-500" />;
+      default:
+        return <Info className="h-4 w-4 text-blue-500" />;
     }
   };
+
+  const filteredAlerts = alerts
+    .filter((alert) => {
+      if (filter === 'all') return true;
+      if (filter === 'unacknowledged') return !alert.acknowledged;
+      return alert.type === filter;
+    })
+    .filter(
+      (alert) =>
+        alert.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        alert.message.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+  if (loading) {
+    return <div>Loading...</div>;
+  }
 
   return (
-    <div className="space-y-4">
-      {/* Header with controls */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Centre d'alertes</h2>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Switch
-              checked={autoRefresh}
-              onCheckedChange={setAutoRefresh}
-            />
-            <Label>Actualisation auto</Label>
-          </div>
-          <Button variant="outline" onClick={() => setShowSettings(!showSettings)}>
-            <Settings2 className="h-4 w-4 mr-2" />
-            Paramètres
-          </Button>
-          <Button variant="outline" onClick={handleExport}>
-            <Download className="h-4 w-4 mr-2" />
-            Exporter
-          </Button>
-        </div>
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-3xl font-bold tracking-tight">Alert Center</h2>
+        <Button>
+          <Plus className="mr-2 h-4 w-4" /> Create Alert Rule
+        </Button>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Filter className="h-5 w-5" />
-              Filtres
-            </CardTitle>
-            <Button variant="outline" size="sm" onClick={fetchAlerts}>
-              <RotateCw className="h-4 w-4 mr-2" />
-              Actualiser
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <Label>Type</Label>
-              <Select
-                value={filter.type}
-                onValueChange={(value) => setFilter({ ...filter, type: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tous</SelectItem>
-                  <SelectItem value="error">Erreurs</SelectItem>
-                  <SelectItem value="warning">Avertissements</SelectItem>
-                  <SelectItem value="info">Informations</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex-1">
-              <Label>Statut</Label>
-              <Select
-                value={filter.acknowledged}
-                onValueChange={(value) => setFilter({ ...filter, acknowledged: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tous</SelectItem>
-                  <SelectItem value="false">Non acquittées</SelectItem>
-                  <SelectItem value="true">Acquittées</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex-1">
-              <Label>Période</Label>
-              <Select
-                value={filter.timeRange}
-                onValueChange={(value) => setFilter({ ...filter, timeRange: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1h">Dernière heure</SelectItem>
-                  <SelectItem value="24h">24 heures</SelectItem>
-                  <SelectItem value="7d">7 jours</SelectItem>
-                  <SelectItem value="30d">30 jours</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="flex gap-4 items-center">
+        <div className="flex-1">
+          <Input
+            placeholder="Search alerts..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+        <Select value={filter} onValueChange={setFilter}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Filter alerts" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Alerts</SelectItem>
+            <SelectItem value="unacknowledged">Unacknowledged</SelectItem>
+            <SelectItem value="error">Error</SelectItem>
+            <SelectItem value="warning">Warning</SelectItem>
+            <SelectItem value="info">Info</SelectItem>
+            <SelectItem value="success">Success</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
 
-      {/* Alert List */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Bell className="h-5 w-5" />
-            Alertes
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {alerts.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                Aucune alerte pour le moment
-              </div>
-            ) : (
-              alerts.map((alert) => (
-                <div
-                  key={alert.id}
-                  className={`p-4 border rounded-lg ${
-                    alert.type === 'error'
-                      ? 'border-red-600 bg-red-500/10'
-                      : alert.type === 'warning'
-                      ? 'border-yellow-600 bg-yellow-500/10'
-                      : alert.type === 'success'
-                      ? 'border-green-600 bg-green-500/10'
-                      : 'border-blue-600 bg-blue-500/10'
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    {alert.type === 'error' ? (
-                      <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5" />
-                    ) : alert.type === 'warning' ? (
-                      <AlertTriangle className="h-5 w-5 text-yellow-500 mt-0.5" />
-                    ) : alert.type === 'success' ? (
-                      <CheckCircle className="h-5 w-5 text-green-500 mt-0.5" />
-                    ) : (
-                      <Info className="h-5 w-5 text-blue-500 mt-0.5" />
-                    )}
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-medium">{alert.title}</h3>
-                          {alert.acknowledged && (
-                            <Badge variant="outline" className="text-green-500">
-                              Acquittée
-                            </Badge>
-                          )}
-                        </div>
-                        <span className="text-sm text-gray-400">
-                          {new Date(alert.timestamp).toLocaleString()}
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-400 mt-1">{alert.message}</p>
-                      <div className="flex items-center justify-between mt-2">
-                        <span className="text-sm text-gray-400">
-                          Source: {alert.source}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          {!alert.acknowledged && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleAcknowledge(alert.id)}
-                            >
-                              <CheckCircle className="h-4 w-4 mr-2" />
-                              Acquitter
-                            </Button>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDeleteAlert(alert.id)}
-                          >
-                            <Trash2 className="h-4 w-4 text-red-500" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Alert Rules */}
-      {showSettings && (
+      <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Règles d'alerte</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Bell className="h-5 w-5" />
+              Active Alerts
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {filteredAlerts.length === 0 ? (
+                <p className="text-muted-foreground text-center py-4">
+                  No alerts found
+                </p>
+              ) : (
+                filteredAlerts.map((alert) => (
+                  <div
+                    key={alert.id}
+                    className="flex items-start gap-4 p-4 rounded-lg border"
+                  >
+                    <div className="flex-shrink-0">
+                      {getAlertIcon(alert.type)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-semibold">{alert.title}</h4>
+                        <Badge
+                          variant={alert.acknowledged ? 'outline' : 'secondary'}
+                        >
+                          {alert.acknowledged ? 'Acknowledged' : 'New'}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {alert.message}
+                      </p>
+                      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                        <span>{alert.source}</span>
+                        <span>•</span>
+                        <span>{new Date(alert.timestamp).toLocaleString()}</span>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      {!alert.acknowledged && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleAcknowledge(alert.id)}
+                        >
+                          Acknowledge
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteAlert(alert.id)}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Alert Rules</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               {alertRules.map((rule) => (
-                <div key={rule.id} className="flex items-center justify-between p-4 border rounded-lg">
-                  <div className="flex flex-col">
-                    <span className="font-medium">{rule.name}</span>
-                    <span className="text-sm text-gray-500">
-                      {rule.type} - {rule.condition} {rule.threshold}
-                    </span>
+                <div
+                  key={rule.id}
+                  className="flex items-center justify-between p-4 rounded-lg border"
+                >
+                  <div>
+                    <h4 className="font-semibold">{rule.name}</h4>
+                    <p className="text-sm text-muted-foreground">
+                      {rule.condition} {rule.threshold}
+                    </p>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <Switch
-                      checked={rule.enabled}
-                      onCheckedChange={(checked) => handleUpdateRule(rule.id, checked)}
-                    />
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDeleteRule(rule.id)}
-                    >
-                      <Trash2 className="h-4 w-4 text-red-500" />
-                    </Button>
-                  </div>
+                  <Switch
+                    checked={rule.enabled}
+                    onCheckedChange={(checked) =>
+                      toggleAlertRule(rule.id, checked)
+                    }
+                  />
                 </div>
               ))}
             </div>
           </CardContent>
         </Card>
-      )}
+      </div>
     </div>
   );
 }

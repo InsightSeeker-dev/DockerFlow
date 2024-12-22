@@ -6,6 +6,11 @@ interface EmailOptions {
   html: string;
 }
 
+interface VerificationEmailParams {
+  email: string;
+  token: string;
+}
+
 export async function sendEmail({ to, subject, html }: EmailOptions) {
   console.log('Starting email configuration with:', {
     host: process.env.SMTP_HOST,
@@ -58,4 +63,39 @@ export async function sendEmail({ to, subject, html }: EmailOptions) {
     console.error('Failed to send email:', error);
     throw error;
   }
+}
+
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: parseInt(process.env.SMTP_PORT || '587'),
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASSWORD,
+  },
+  secure: process.env.SMTP_SECURE === 'true',
+});
+
+export async function sendVerificationEmail(email: string, token: string) {
+  const verificationUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/verify-email?token=${token}`;
+
+  const mailOptions = {
+    from: process.env.SMTP_FROM,
+    to: email,
+    subject: 'Vérifiez votre adresse email',
+    html: `
+      <div style="font-family: Arial, sans-serif; padding: 20px;">
+        <h2>Vérification de votre adresse email</h2>
+        <p>Merci de vous être inscrit ! Pour activer votre compte, veuillez cliquer sur le lien ci-dessous :</p>
+        <p>
+          <a href="${verificationUrl}" style="background-color: #0070f3; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
+            Vérifier mon email
+          </a>
+        </p>
+        <p>Ce lien expirera dans 24 heures.</p>
+        <p>Si vous n'avez pas créé de compte, vous pouvez ignorer cet email.</p>
+      </div>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
 }

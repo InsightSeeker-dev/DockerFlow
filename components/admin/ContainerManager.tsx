@@ -27,28 +27,28 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { toast } from 'sonner';
 import {
   Play,
   Square,
-  RotateCcw,
   Trash2,
+  RefreshCw,
   Plus,
   Terminal,
-  Box,
-  HardDrive,
-  Cpu,
-  Activity,
-  Search,
-  Filter,
-  RefreshCcw,
-  Settings2,
-  Download,
-  Upload,
+  Settings,
+  MoreVertical,
 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { toast } from 'sonner';
 
 interface Container {
   id: string;
@@ -72,59 +72,111 @@ interface ContainerLogs {
 
 export default function ContainerManager() {
   const [containers, setContainers] = useState<Container[]>([]);
-  const [selectedContainer, setSelectedContainer] = useState<Container | null>(null);
-  const [filter, setFilter] = useState({ status: 'all', search: '' });
-  const [showLogs, setShowLogs] = useState(false);
-  const [logs, setLogs] = useState<ContainerLogs[]>([]);
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const [showNewContainer, setShowNewContainer] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [selectedContainer, setSelectedContainer] = useState<Container | null>(
+    null
+  );
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isLogsDialogOpen, setIsLogsDialogOpen] = useState(false);
+  const [containerLogs, setContainerLogs] = useState<ContainerLogs[]>([]);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newContainer, setNewContainer] = useState({
     name: '',
-    imageId: '',
+    image: '',
     ports: '',
-    env: '',
     volumes: '',
+    env: '',
   });
 
   useEffect(() => {
     fetchContainers();
-    if (autoRefresh) {
-      const interval = setInterval(fetchContainers, 5000);
-      return () => clearInterval(interval);
-    }
-  }, [autoRefresh, filter]);
+  }, []);
 
   const fetchContainers = async () => {
     try {
-      const response = await fetch('/api/admin/containers?' + new URLSearchParams({
-        status: filter.status,
-        search: filter.search,
-      }));
-      
+      const response = await fetch('/api/admin/containers');
       if (response.ok) {
         const data = await response.json();
         setContainers(data);
+      } else {
+        throw new Error('Failed to fetch containers');
       }
     } catch (error) {
-      console.error('Error fetching containers:', error);
-      toast.error('Erreur lors de la récupération des conteneurs');
+      console.error('Failed to fetch containers:', error);
+      toast.error('Failed to fetch containers');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleContainerAction = async (containerId: string, action: string) => {
+  const handleContainerAction = async (action: string, container: Container) => {
     try {
-      const response = await fetch(`/api/admin/containers/${containerId}/${action}`, {
-        method: 'POST'
+      const response = await fetch(`/api/admin/containers/${container.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action }),
       });
-      
+
       if (response.ok) {
-        toast.success(`Action ${action} effectuée avec succès`);
+        toast.success(`Container ${action} successful`);
         fetchContainers();
+      } else {
+        throw new Error(`Failed to ${action} container`);
       }
     } catch (error) {
-      console.error(`Error ${action} container:`, error);
-      toast.error(`Erreur lors de l'action ${action}`);
+      console.error(`Failed to ${action} container:`, error);
+      toast.error(`Failed to ${action} container`);
     }
+  };
+
+  const handleDeleteContainer = async () => {
+    if (!selectedContainer) return;
+
+    try {
+      const response = await fetch(
+        `/api/admin/containers/${selectedContainer.id}`,
+        {
+          method: 'DELETE',
+        }
+      );
+
+      if (response.ok) {
+        toast.success('Container deleted successfully');
+        setContainers(
+          containers.filter((c) => c.id !== selectedContainer.id)
+        );
+        setIsDeleteDialogOpen(false);
+        setSelectedContainer(null);
+      } else {
+        throw new Error('Failed to delete container');
+      }
+    } catch (error) {
+      console.error('Failed to delete container:', error);
+      toast.error('Failed to delete container');
+    }
+  };
+
+  const fetchContainerLogs = async (containerId: string) => {
+    try {
+      const response = await fetch(`/api/admin/containers/${containerId}/logs`);
+      if (response.ok) {
+        const data = await response.json();
+        setContainerLogs(data);
+      } else {
+        throw new Error('Failed to fetch container logs');
+      }
+    } catch (error) {
+      console.error('Failed to fetch container logs:', error);
+      toast.error('Failed to fetch container logs');
+    }
+  };
+
+  const handleViewLogs = async (container: Container) => {
+    setSelectedContainer(container);
+    setIsLogsDialogOpen(true);
+    await fetchContainerLogs(container.id);
   };
 
   const handleCreateContainer = async () => {
@@ -136,301 +188,266 @@ export default function ContainerManager() {
         },
         body: JSON.stringify(newContainer),
       });
-      
+
       if (response.ok) {
-        toast.success('Conteneur créé avec succès');
-        setShowNewContainer(false);
-        setNewContainer({ name: '', imageId: '', ports: '', env: '', volumes: '' });
+        toast.success('Container created successfully');
+        setIsCreateDialogOpen(false);
+        setNewContainer({
+          name: '',
+          image: '',
+          ports: '',
+          volumes: '',
+          env: '',
+        });
         fetchContainers();
+      } else {
+        throw new Error('Failed to create container');
       }
     } catch (error) {
-      console.error('Error creating container:', error);
-      toast.error('Erreur lors de la création du conteneur');
+      console.error('Failed to create container:', error);
+      toast.error('Failed to create container');
     }
   };
 
-  const fetchContainerLogs = async (containerId: string) => {
-    try {
-      const response = await fetch(`/api/admin/containers/${containerId}/logs`);
-      if (response.ok) {
-        const data = await response.json();
-        setLogs(data);
-        setShowLogs(true);
-      }
-    } catch (error) {
-      console.error('Error fetching container logs:', error);
-      toast.error('Erreur lors de la récupération des logs');
+  const getStatusColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'running':
+        return 'bg-green-500/10 text-green-500';
+      case 'exited':
+        return 'bg-red-500/10 text-red-500';
+      case 'paused':
+        return 'bg-yellow-500/10 text-yellow-500';
+      default:
+        return 'bg-gray-500/10 text-gray-500';
     }
   };
 
-  const handleExport = () => {
-    const csvContent = [
-      ['ID', 'Nom', 'Image', 'Status', 'Ports', 'Volumes', 'Variables d\'environnement', 'CPU', 'Mémoire', 'Créé le', 'Utilisateur'],
-      ...containers.map(container => [
-        container.id,
-        container.name,
-        container.imageId,
-        container.status,
-        JSON.stringify(container.ports),
-        JSON.stringify(container.volumes),
-        JSON.stringify(container.env),
-        `${container.cpuLimit}%`,
-        `${container.memoryLimit}%`,
-        container.created.toISOString(),
-        container.userId
-      ])
-    ].map(row => row.join(',')).join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `containers-${new Date().toISOString()}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-  };
+  if (loading) {
+    return <div>Loading...</div>;
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Header with controls */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Gestion des conteneurs</h2>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setAutoRefresh(!autoRefresh)}>
-              <RefreshCcw className={`h-4 w-4 mr-2 ${autoRefresh ? 'animate-spin' : ''}`} />
-              {autoRefresh ? 'Auto' : 'Manuel'}
-            </Button>
-          </div>
-          <Button variant="outline" onClick={handleExport}>
-            <Download className="h-4 w-4 mr-2" />
-            Exporter
-          </Button>
-          <Button onClick={() => setShowNewContainer(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Nouveau conteneur
-          </Button>
-        </div>
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h2 className="text-3xl font-bold tracking-tight">
+          Container Management
+        </h2>
+        <Button onClick={() => setIsCreateDialogOpen(true)}>
+          <Plus className="mr-2 h-4 w-4" /> Create Container
+        </Button>
       </div>
 
-      {/* Filters */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Filter className="h-5 w-5" />
-            Filtres
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <Label>Status</Label>
-              <Select
-                value={filter.status}
-                onValueChange={(value) => setFilter({ ...filter, status: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tous</SelectItem>
-                  <SelectItem value="running">En cours</SelectItem>
-                  <SelectItem value="stopped">Arrêtés</SelectItem>
-                  <SelectItem value="paused">En pause</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex-1">
-              <Label>Recherche</Label>
-              <div className="relative">
-                <Search className="absolute left-2 top-3 h-4 w-4 text-gray-400" />
-                <Input
-                  className="pl-8"
-                  placeholder="Rechercher..."
-                  value={filter.search}
-                  onChange={(e) => setFilter({ ...filter, search: e.target.value })}
-                />
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Containers List */}
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nom</TableHead>
-                <TableHead>Image</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Ports</TableHead>
-                <TableHead>Volumes</TableHead>
-                <TableHead>Variables d'environnement</TableHead>
-                <TableHead>CPU</TableHead>
-                <TableHead>Mémoire</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {containers.map((container) => (
-                <TableRow key={container.id}>
-                  <TableCell className="font-medium">{container.name}</TableCell>
-                  <TableCell>{container.imageId}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={
-                        container.status === 'running'
-                          ? 'default'
-                          : container.status === 'paused'
-                          ? 'secondary'
-                          : 'destructive'
-                      }
-                    >
-                      {container.status}
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Image</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Ports</TableHead>
+              <TableHead>Created</TableHead>
+              <TableHead>Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {containers.map((container) => (
+              <TableRow key={container.id}>
+                <TableCell>{container.name}</TableCell>
+                <TableCell>{container.imageId}</TableCell>
+                <TableCell>
+                  <Badge
+                    className={getStatusColor(container.status)}
+                    variant="secondary"
+                  >
+                    {container.status}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  {Object.entries(container.ports).map(([port, target]) => (
+                    <Badge key={port} variant="outline" className="mr-1">
+                      {port}:{target}
                     </Badge>
-                  </TableCell>
-                  <TableCell>{JSON.stringify(container.ports)}</TableCell>
-                  <TableCell>{JSON.stringify(container.volumes)}</TableCell>
-                  <TableCell>{JSON.stringify(container.env)}</TableCell>
-                  <TableCell>{container.cpuLimit}%</TableCell>
-                  <TableCell>{container.memoryLimit}%</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      {container.status !== 'running' && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleContainerAction(container.id, 'start')}
-                        >
-                          <Play className="h-4 w-4" />
-                        </Button>
-                      )}
-                      {container.status === 'running' && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleContainerAction(container.id, 'stop')}
-                        >
-                          <Square className="h-4 w-4" />
-                        </Button>
-                      )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleContainerAction(container.id, 'restart')}
-                      >
-                        <RotateCcw className="h-4 w-4" />
+                  ))}
+                </TableCell>
+                <TableCell>
+                  {new Date(container.created).toLocaleDateString()}
+                </TableCell>
+                <TableCell>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon">
+                        <MoreVertical className="h-4 w-4" />
                       </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => fetchContainerLogs(container.id)}
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() =>
+                          handleContainerAction('start', container)
+                        }
                       >
-                        <Terminal className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleContainerAction(container.id, 'remove')}
+                        <Play className="mr-2 h-4 w-4" />
+                        Start
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() =>
+                          handleContainerAction('stop', container)
+                        }
                       >
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
+                        <Square className="mr-2 h-4 w-4" />
+                        Stop
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() =>
+                          handleContainerAction('restart', container)
+                        }
+                      >
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                        Restart
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => handleViewLogs(container)}
+                      >
+                        <Terminal className="mr-2 h-4 w-4" />
+                        View Logs
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setSelectedContainer(container);
+                          setIsDeleteDialogOpen(true);
+                        }}
+                        className="text-red-600"
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </Card>
 
-      {/* New Container Dialog */}
-      <Dialog open={showNewContainer} onOpenChange={setShowNewContainer}>
-        <DialogContent className="sm:max-w-[500px]">
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Créer un nouveau conteneur</DialogTitle>
+            <DialogTitle>Delete Container</DialogTitle>
             <DialogDescription>
-              Configurez les paramètres du nouveau conteneur Docker.
+              Are you sure you want to delete this container? This action cannot
+              be undone.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Nom du conteneur</Label>
-              <Input
-                value={newContainer.name}
-                onChange={(e) => setNewContainer({ ...newContainer, name: e.target.value })}
-                placeholder="mon-conteneur"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Image Docker</Label>
-              <Input
-                value={newContainer.imageId}
-                onChange={(e) => setNewContainer({ ...newContainer, imageId: e.target.value })}
-                placeholder="nginx:latest"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Ports (host:container)</Label>
-              <Input
-                value={newContainer.ports}
-                onChange={(e) => setNewContainer({ ...newContainer, ports: e.target.value })}
-                placeholder="80:80, 443:443"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Variables d'environnement</Label>
-              <Input
-                value={newContainer.env}
-                onChange={(e) => setNewContainer({ ...newContainer, env: e.target.value })}
-                placeholder="KEY=value,ANOTHER_KEY=value"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Volumes</Label>
-              <Input
-                value={newContainer.volumes}
-                onChange={(e) => setNewContainer({ ...newContainer, volumes: e.target.value })}
-                placeholder="/host/path:/container/path"
-              />
-            </div>
-          </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowNewContainer(false)}>
-              Annuler
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+              Cancel
             </Button>
-            <Button onClick={handleCreateContainer}>Créer</Button>
+            <Button variant="destructive" onClick={handleDeleteContainer}>
+              Delete
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Logs Dialog */}
-      <Dialog open={showLogs} onOpenChange={setShowLogs}>
+      <Dialog open={isLogsDialogOpen} onOpenChange={setIsLogsDialogOpen}>
         <DialogContent className="sm:max-w-[800px]">
           <DialogHeader>
-            <DialogTitle>Logs du conteneur</DialogTitle>
+            <DialogTitle>Container Logs</DialogTitle>
+            <DialogDescription>
+              Logs for container: {selectedContainer?.name}
+            </DialogDescription>
           </DialogHeader>
-          <div className="h-[400px] overflow-auto bg-black rounded-md p-4 font-mono text-sm">
-            {logs.map((log, index) => (
+          <ScrollArea className="h-[400px] w-full rounded-md border p-4">
+            {containerLogs.map((log, index) => (
               <div
                 key={index}
-                className={`${
-                  log.type === 'stderr' ? 'text-red-400' : 'text-green-400'
+                className={`font-mono text-sm ${
+                  log.type === 'stderr' ? 'text-red-500' : ''
                 }`}
               >
                 <span className="text-gray-500">{log.timestamp}</span>{' '}
                 {log.message}
               </div>
             ))}
+          </ScrollArea>
+          <DialogFooter>
+            <Button onClick={() => setIsLogsDialogOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Container</DialogTitle>
+            <DialogDescription>
+              Create a new container with the specified configuration.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="name">Name</Label>
+              <Input
+                id="name"
+                value={newContainer.name}
+                onChange={(e) =>
+                  setNewContainer({ ...newContainer, name: e.target.value })
+                }
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="image">Image</Label>
+              <Input
+                id="image"
+                value={newContainer.image}
+                onChange={(e) =>
+                  setNewContainer({ ...newContainer, image: e.target.value })
+                }
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="ports">Ports (e.g., 80:80,443:443)</Label>
+              <Input
+                id="ports"
+                value={newContainer.ports}
+                onChange={(e) =>
+                  setNewContainer({ ...newContainer, ports: e.target.value })
+                }
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="volumes">
+                Volumes (e.g., /host/path:/container/path)
+              </Label>
+              <Input
+                id="volumes"
+                value={newContainer.volumes}
+                onChange={(e) =>
+                  setNewContainer({ ...newContainer, volumes: e.target.value })
+                }
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="env">
+                Environment Variables (e.g., KEY=value,OTHER=value)
+              </Label>
+              <Input
+                id="env"
+                value={newContainer.env}
+                onChange={(e) =>
+                  setNewContainer({ ...newContainer, env: e.target.value })
+                }
+              />
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowLogs(false)}>
-              Fermer
+            <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+              Cancel
             </Button>
+            <Button onClick={handleCreateContainer}>Create</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

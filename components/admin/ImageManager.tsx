@@ -21,13 +21,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { toast } from 'sonner';
-import ImageBuilder from './ImageBuilder';
-import { formatBytes, formatDate } from '@/lib/utils';
 
 interface DockerImage {
   id: string;
@@ -41,10 +35,8 @@ interface DockerImage {
 export default function ImageManager() {
   const [images, setImages] = useState<DockerImage[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showBuilder, setShowBuilder] = useState(false);
-  const [pullDialogOpen, setPullDialogOpen] = useState(false);
-  const [pullForm, setPullForm] = useState({ repository: '', tag: 'latest' });
   const [selectedImage, setSelectedImage] = useState<DockerImage | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   useEffect(() => {
     fetchImages();
@@ -53,113 +45,63 @@ export default function ImageManager() {
   const fetchImages = async () => {
     try {
       const response = await fetch('/api/admin/images');
-      if (!response.ok) throw new Error('Failed to fetch images');
-      const data = await response.json();
-      setImages(data);
+      if (response.ok) {
+        const data = await response.json();
+        setImages(data);
+      } else {
+        throw new Error('Failed to fetch images');
+      }
     } catch (error) {
-      toast.error('Failed to fetch Docker images');
-      console.error(error);
+      console.error('Failed to fetch images:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handlePullImage = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/admin/images/pull', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(pullForm),
-      });
-
-      if (!response.ok) throw new Error('Failed to pull image');
-      
-      toast.success('Image pulled successfully');
-      setPullDialogOpen(false);
-      fetchImages();
-    } catch (error) {
-      toast.error('Failed to pull image');
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
+  const handleDeleteImage = async (image: DockerImage) => {
+    setSelectedImage(image);
+    setIsDeleteDialogOpen(true);
   };
 
-  const handleDeleteImage = async (id: string) => {
+  const confirmDelete = async () => {
+    if (!selectedImage) return;
+
     try {
-      const response = await fetch(`/api/admin/images/${id}`, {
+      const response = await fetch(`/api/admin/images/${selectedImage.id}`, {
         method: 'DELETE',
       });
 
-      if (!response.ok) {
+      if (response.ok) {
+        setImages(images.filter((img) => img.id !== selectedImage.id));
+        setIsDeleteDialogOpen(false);
+        setSelectedImage(null);
+      } else {
         throw new Error('Failed to delete image');
       }
-
-      toast.success('Image supprimée avec succès');
-      fetchImages();
     } catch (error) {
-      console.error('Error deleting image:', error);
-      toast.error('Erreur lors de la suppression de l\'image');
+      console.error('Failed to delete image:', error);
     }
   };
 
+  const formatSize = (size: number) => {
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let formattedSize = size;
+    let unitIndex = 0;
+
+    while (formattedSize >= 1024 && unitIndex < units.length - 1) {
+      formattedSize /= 1024;
+      unitIndex++;
+    }
+
+    return `${formattedSize.toFixed(2)} ${units[unitIndex]}`;
+  };
+
+  if (loading) {
+    return <div>Loading...</div>;
+  }
+
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-3xl font-bold">Images Docker</h2>
-        <div className="space-x-4">
-          <Dialog open={pullDialogOpen} onOpenChange={setPullDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>Pull Image</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Pull Docker Image</DialogTitle>
-                <DialogDescription>
-                  Enter the repository and tag of the image you want to pull.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="repository">Repository</Label>
-                  <Input
-                    id="repository"
-                    value={pullForm.repository}
-                    onChange={(e) =>
-                      setPullForm({ ...pullForm, repository: e.target.value })
-                    }
-                    placeholder="e.g., nginx"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="tag">Tag</Label>
-                  <Input
-                    id="tag"
-                    value={pullForm.tag}
-                    onChange={(e) =>
-                      setPullForm({ ...pullForm, tag: e.target.value })
-                    }
-                    placeholder="e.g., latest"
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button
-                  type="submit"
-                  onClick={handlePullImage}
-                  disabled={!pullForm.repository}
-                >
-                  Pull Image
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          <Button onClick={() => setShowBuilder(true)}>Build Image</Button>
-        </div>
-      </div>
-
+    <div className="space-y-4">
       <Card>
         <Table>
           <TableHeader>
@@ -174,16 +116,19 @@ export default function ImageManager() {
           <TableBody>
             {images.map((image) => (
               <TableRow key={image.id}>
-                <TableCell className="font-medium">{image.name}</TableCell>
-                <TableCell>{image.tag}</TableCell>
-                <TableCell>{formatBytes(image.size)}</TableCell>
-                <TableCell>{new Date(image.created).toLocaleString()}</TableCell>
+                <TableCell>{image.name}</TableCell>
+                <TableCell>
+                  <Badge variant="secondary">{image.tag}</Badge>
+                </TableCell>
+                <TableCell>{formatSize(image.size)}</TableCell>
+                <TableCell>
+                  {new Date(image.created).toLocaleDateString()}
+                </TableCell>
                 <TableCell>
                   <Button
                     variant="ghost"
-                    size="sm"
-                    onClick={() => handleDeleteImage(image.id)}
-                    className="text-red-500"
+                    size="icon"
+                    onClick={() => handleDeleteImage(image)}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -194,40 +139,23 @@ export default function ImageManager() {
         </Table>
       </Card>
 
-      {/* Image Details Dialog */}
-      <Dialog open={!!selectedImage} onOpenChange={() => setSelectedImage(null)}>
-        <DialogContent className="max-w-3xl">
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Image Details</DialogTitle>
+            <DialogTitle>Delete Image</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this image? This action cannot be
+              undone.
+            </DialogDescription>
           </DialogHeader>
-          {selectedImage && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>ID</Label>
-                  <div className="font-mono text-sm">{selectedImage.id}</div>
-                </div>
-              </div>
-
-              <div>
-                <Label>Created</Label>
-                <div className="text-sm">{new Date(selectedImage.created).toLocaleString()}</div>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Image Builder Dialog */}
-      <Dialog open={showBuilder} onOpenChange={setShowBuilder}>
-        <DialogContent className="max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>Build Docker Image</DialogTitle>
-          </DialogHeader>
-          <ImageBuilder onSuccess={() => {
-            setShowBuilder(false);
-            fetchImages();
-          }} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete}>
+              Delete
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

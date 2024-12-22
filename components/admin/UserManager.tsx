@@ -1,338 +1,188 @@
-import React, { useState, useEffect } from 'react';
-import { User, UserPlus, Trash2, Ban, CheckCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+"use client";
 
-interface UserData {
+import React, { useState, useEffect } from 'react';
+import { toast } from 'sonner';
+import { UsersTable } from './UsersTable';
+import { Button } from '@/components/ui/button';
+import { CreateUserDialog } from './create-user-dialog';
+import { Loader2, Plus, Search, RefreshCw, Users as UsersIcon } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+
+interface User {
   id: string;
-  name: string;
-  username: string;
+  name: string | null;
   email: string;
   role: string;
   status: string;
   createdAt: string;
+  emailVerified: Date | null;
+  _count: {
+    containers: number;
+  };
 }
 
-export interface UserManagerProps {
+interface UserManagerProps {
   onUserSelect: (userId: string) => void;
 }
 
-const UserManager = ({ onUserSelect }: UserManagerProps) => {
-  const [users, setUsers] = useState<UserData[]>([]);
-  const [isNewUserDialogOpen, setIsNewUserDialogOpen] = useState(false);
-  const [newUser, setNewUser] = useState({
-    name: '',
-    email: '',
-    username: '',
-    password: '',
-    role: 'user',
-  });
+export function UserManager({ onUserSelect }: UserManagerProps) {
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     fetchUsers();
-  }, []);
+  }, [refreshKey]);
 
   const fetchUsers = async () => {
     try {
-      const response = await fetch('/api/admin/users');
-      if (response.ok) {
-        const data = await response.json();
-        setUsers(data);
-      }
+      const response = await fetch('/api/users');
+      if (!response.ok) throw new Error('Failed to fetch users');
+      const data = await response.json();
+      setUsers(data);
     } catch (error) {
-      console.error('Failed to fetch users:', error);
+      toast.error('Failed to load users');
+      console.error('Error fetching users:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleCreateUser = async () => {
+  const handleUserAction = async (action: string, userId: string) => {
     try {
-      const response = await fetch('/api/admin/users', {
+      const response = await fetch(`/api/users/${userId}/${action}`, {
+        method: 'POST',
+      });
+      
+      if (!response.ok) throw new Error(`Failed to ${action} user`);
+      
+      toast.success(`User ${action}d successfully`);
+      setRefreshKey(prev => prev + 1);
+    } catch (error) {
+      toast.error(`Failed to ${action} user`);
+      console.error(`Error ${action}ing user:`, error);
+    }
+  };
+
+  const handleBulkAction = async (action: string, userIds: string[]) => {
+    try {
+      const response = await fetch('/api/users/bulk', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(newUser),
+        body: JSON.stringify({ action, userIds }),
       });
-
-      if (response.ok) {
-        setIsNewUserDialogOpen(false);
-        setNewUser({
-          name: '',
-          email: '',
-          username: '',
-          password: '',
-          role: 'user',
-        });
-        fetchUsers();
-      }
+      
+      if (!response.ok) throw new Error(`Failed to ${action} users`);
+      
+      toast.success(`Users ${action}d successfully`);
+      setRefreshKey(prev => prev + 1);
     } catch (error) {
-      console.error('Failed to create user:', error);
+      toast.error(`Failed to ${action} users`);
+      console.error(`Error ${action}ing users:`, error);
     }
   };
 
-  const handleDeleteUser = async (userId: string) => {
-    if (!confirm('Êtes-vous sûr de vouloir supprimer cet utilisateur ?')) {
-      return;
-    }
-
+  const handleCreateUser = async (userData: any) => {
     try {
-      const response = await fetch(`/api/admin/users/${userId}`, {
-        method: 'DELETE',
-      });
-
-      if (response.ok) {
-        fetchUsers();
-      }
-    } catch (error) {
-      console.error('Failed to delete user:', error);
-    }
-  };
-
-  const handleUpdateUserStatus = async (userId: string, status: string) => {
-    try {
-      const response = await fetch(`/api/admin/users/${userId}/status`, {
-        method: 'PUT',
+      const response = await fetch('/api/users', {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify(userData),
       });
 
-      if (response.ok) {
-        fetchUsers();
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to create user' }));
+        throw new Error(errorData.message || 'Failed to create user');
       }
+
+      const data = await response.json();
+      toast.success('User created successfully. A verification email has been sent.');
+      setRefreshKey(prev => prev + 1);
+      setIsCreateDialogOpen(false);
+      return data;
     } catch (error) {
-      console.error('Failed to update user status:', error);
+      const message = error instanceof Error ? error.message : 'Failed to create user';
+      toast.error(message);
+      console.error('Error creating user:', error);
+      throw error; // Propager l'erreur pour que le formulaire puisse la gérer
     }
   };
 
-  return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Gestion des utilisateurs</CardTitle>
-              <CardDescription>
-                Gérez les utilisateurs de la plateforme
-              </CardDescription>
-            </div>
-            <Dialog open={isNewUserDialogOpen} onOpenChange={setIsNewUserDialogOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <UserPlus className="mr-2 h-4 w-4" />
-                  Nouvel utilisateur
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Créer un nouvel utilisateur</DialogTitle>
-                  <DialogDescription>
-                    Remplissez les informations pour créer un nouvel utilisateur
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="name">Nom</Label>
-                    <Input
-                      id="name"
-                      value={newUser.name}
-                      onChange={(e) =>
-                        setNewUser({ ...newUser, name: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="email">Email</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={newUser.email}
-                      onChange={(e) =>
-                        setNewUser({ ...newUser, email: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="username">Nom d'utilisateur</Label>
-                    <Input
-                      id="username"
-                      value={newUser.username}
-                      onChange={(e) =>
-                        setNewUser({ ...newUser, username: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="password">Mot de passe</Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      value={newUser.password}
-                      onChange={(e) =>
-                        setNewUser({ ...newUser, password: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="role">Rôle</Label>
-                    <Select
-                      value={newUser.role}
-                      onValueChange={(value) =>
-                        setNewUser({ ...newUser, role: value })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="admin">Administrateur</SelectItem>
-                        <SelectItem value="user">Utilisateur</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsNewUserDialogOpen(false)}>
-                    Annuler
-                  </Button>
-                  <Button onClick={handleCreateUser}>Créer</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Utilisateur</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Rôle</TableHead>
-                  <TableHead>Statut</TableHead>
-                  <TableHead>Date de création</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((user) => (
-                  <TableRow key={user.id} onClick={() => onUserSelect(user.id)} className="cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800">
-                    <TableCell>
-                      <div className="flex items-center">
-                        <User className="mr-2 h-4 w-4" />
-                        <div>
-                          <div className="font-medium">{user.name}</div>
-                          <div className="text-sm text-gray-500">
-                            {user.username}
-                          </div>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>{user.email}</TableCell>
-                    <TableCell>
-                      <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                          user.role === 'admin'
-                            ? 'bg-purple-100 text-purple-800 dark:bg-purple-800 dark:text-purple-100'
-                            : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100'
-                        }`}
-                      >
-                        {user.role === 'admin' ? 'Admin' : 'User'}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                          user.status === 'active'
-                            ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100'
-                            : 'bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100'
-                        }`}
-                      >
-                        {user.status === 'active' ? 'Actif' : 'Suspendu'}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {new Date(user.createdAt).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center space-x-2">
-                        {user.status === 'active' ? (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleUpdateUserStatus(user.id, 'suspended');
-                            }}
-                          >
-                            <Ban className="h-4 w-4 text-red-500" />
-                          </Button>
-                        ) : (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleUpdateUserStatus(user.id, 'active');
-                            }}
-                          >
-                            <CheckCircle className="h-4 w-4 text-green-500" />
-                          </Button>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteUser(user.id);
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-};
+  const filteredUsers = users.filter(user => {
+    const searchTerms = searchQuery.toLowerCase();
+    return (
+      (user.name?.toLowerCase() || '').includes(searchTerms) ||
+      (user.email?.toLowerCase() || '').includes(searchTerms) ||
+      (user.role?.toLowerCase() || '').includes(searchTerms)
+    );
+  });
 
-export default UserManager;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[200px]">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-2xl font-bold flex items-center gap-2">
+            <UsersIcon className="h-6 w-6" />
+            User Management
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setRefreshKey(prev => prev + 1)}
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+            <Button onClick={() => setIsCreateDialogOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add New User
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          <div className="flex items-center gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search users..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+          </div>
+
+          <UsersTable
+            users={filteredUsers}
+            onUserAction={handleUserAction}
+            onBulkAction={handleBulkAction}
+            onUserSelect={onUserSelect}
+          />
+        </div>
+
+        <CreateUserDialog
+          open={isCreateDialogOpen}
+          onOpenChange={setIsCreateDialogOpen}
+          onSubmit={handleCreateUser}
+        />
+      </CardContent>
+    </Card>
+  );
+}

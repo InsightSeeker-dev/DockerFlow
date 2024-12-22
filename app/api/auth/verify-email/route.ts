@@ -15,24 +15,24 @@ async function verifyEmail(token: string) {
 
   if (!user) {
     console.log('No user found with token:', token);
-    throw new Error('Invalid token');
+    throw new Error('Invalid verification link. Please request a new one.');
   }
 
   // Vérifier si l'utilisateur est déjà vérifié
   if (user.emailVerified && user.status === UserStatus.ACTIVE) {
     console.log('User already verified:', user.id);
-    throw new Error('Email is already verified');
+    throw new Error('Email is already verified. You can log in to your account.');
   }
 
   // Vérifier si le token n'est pas expiré
   if (user.verificationTokenExpires && new Date(user.verificationTokenExpires) < new Date()) {
     console.log('Token expired for user:', user.id);
-    throw new Error('Verification link has expired');
+    throw new Error('Verification link has expired. Please request a new one.');
   }
 
   try {
     // Mettre à jour l'utilisateur
-    await prisma.user.update({
+    const updatedUser = await prisma.user.update({
       where: {
         id: user.id,
       },
@@ -45,10 +45,10 @@ async function verifyEmail(token: string) {
     });
 
     console.log('User verified successfully:', user.id);
-    return user;
+    return updatedUser;
   } catch (updateError) {
     console.error('Error updating user:', updateError);
-    throw new Error('Failed to verify email');
+    throw new Error('Failed to verify email. Please try again later.');
   }
 }
 
@@ -60,18 +60,18 @@ export async function GET(request: Request) {
 
     if (!token) {
       return NextResponse.redirect(
-        `${process.env.NEXT_PUBLIC_APP_URL}/auth?error=Token is required`
+        `${process.env.NEXT_PUBLIC_APP_URL}/verify-error?error=Verification token is missing`
       );
     }
 
     await verifyEmail(token);
     return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_APP_URL}/auth?success=Email verified successfully. You can now log in.`
+      `${process.env.NEXT_PUBLIC_APP_URL}/verify-success`
     );
   } catch (error) {
     console.error('Verification error:', error);
     return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_APP_URL}/auth?error=${error instanceof Error ? error.message : 'Failed to verify email'}`
+      `${process.env.NEXT_PUBLIC_APP_URL}/verify-error?error=${encodeURIComponent(error instanceof Error ? error.message : 'Failed to verify email')}`
     );
   }
 }
@@ -88,9 +88,17 @@ export async function POST(request: Request) {
       );
     }
 
-    await verifyEmail(token);
+    const user = await verifyEmail(token);
     return NextResponse.json(
-      { message: 'Email verified successfully' },
+      { 
+        message: 'Email verified successfully',
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          status: user.status
+        }
+      },
       { status: 200 }
     );
   } catch (error) {

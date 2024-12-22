@@ -101,11 +101,12 @@ const DockerFlowAuth = () => {
           const session = await response.json();
           
           // Rediriger en fonction du rôle
-          if (session?.user?.role === 'admin') {
+          if (session?.user?.role === 'ADMIN') {
             router.push('/admin/dashboard');
           } else {
             router.push('/dashboard');
           }
+          return; // Ajouter un return pour éviter toute exécution supplémentaire
         }
       } else {
         const response = await fetch('/api/auth/register', {

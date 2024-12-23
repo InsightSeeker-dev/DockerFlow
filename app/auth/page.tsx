@@ -76,26 +76,28 @@ const DockerFlowAuth = () => {
     return newErrors;
   };
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setErrors({});
+    setSuccessMessage(null);
 
     try {
       if (isLogin) {
+        // Connexion
         const result = await signIn('credentials', {
           email: formData.email,
           password: formData.password,
-          redirect: false // Ne pas rediriger automatiquement
+          redirect: false,
         });
 
         if (result?.error) {
-          setErrors({ auth: result.error });
+          setErrors({ auth: 'Invalid email or password' });
         } else {
-          // Laissons le middleware gérer la redirection
-          router.refresh();
+          router.push('/dashboard');
         }
       } else {
+        // Inscription
         const response = await fetch('/api/auth/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -105,14 +107,23 @@ const DockerFlowAuth = () => {
         const data = await response.json();
 
         if (!response.ok) {
-          setErrors({ auth: data.error || 'Registration failed' });
+          if (data.errors) {
+            setErrors(data.errors.reduce((acc: Record<string, string>, curr: { field: string, message: string }) => {
+              acc[curr.field] = curr.message;
+              return acc;
+            }, {}));
+          } else {
+            setErrors({ auth: data.error || 'Registration failed' });
+          }
         } else {
-          setSuccessMessage('Registration successful. Please check your email to verify your account.');
-          setIsLogin(true); // Basculer vers le formulaire de connexion
+          setSuccessMessage('Registration successful! Please check your email to verify your account.');
+          // Rediriger vers la page de confirmation
+          router.push('/auth/confirmation');
         }
       }
     } catch (error) {
-      setErrors({ auth: 'An unexpected error occurred' });
+      console.error('Auth error:', error);
+      setErrors({ auth: 'An error occurred. Please try again.' });
     } finally {
       setIsLoading(false);
     }

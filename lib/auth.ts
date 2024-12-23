@@ -3,16 +3,17 @@ import { Adapter } from "next-auth/adapters";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import { UserRole, UserStatus } from "@prisma/client";
+import { UserRole, UserStatus, ActivityType } from "@prisma/client";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { User } from "next-auth";
 import { JWT } from "next-auth/jwt";
+import { logActivity } from "./activity";
 
 // Types de base pour l'utilisateur
 interface BaseUser {
   id: string;
   name: string | null;
-  username: string;
+  username: string | null;
   email: string;
   role: UserRole;
   status: UserStatus;
@@ -32,6 +33,7 @@ declare module "next-auth" {
 declare module "next-auth/jwt" {
   interface JWT extends Omit<BaseUser, 'username'> {
     lastChecked?: number;
+    sessionId?: string;
   }
 }
 
@@ -39,7 +41,7 @@ export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma) as Adapter,
   session: {
     strategy: "jwt",
-    maxAge: 4 * 60 * 60, // 4 heures
+    maxAge: 2 * 60 * 60, // 2 heures
   },
   pages: {
     signIn: '/auth',
@@ -47,8 +49,7 @@ export const authOptions: NextAuthOptions = {
     signOut: '/auth',
   },
   callbacks: {
-    async signIn({ user }) {
-      // Vérifier si l'utilisateur existe et est actif
+    async signIn({ user, account }) {
       if (!user || !user.email) {
         return false;
       }
@@ -56,6 +57,7 @@ export const authOptions: NextAuthOptions = {
       const dbUser = await prisma.user.findUnique({
         where: { email: user.email },
         select: { 
+          id: true,
           status: true,
           role: true,
           emailVerified: true
@@ -75,11 +77,38 @@ export const authOptions: NextAuthOptions = {
         return false;
       }
 
+      // Enregistrer l'activité de connexion
+      await logActivity({
+        type: ActivityType.USER_LOGIN,
+        description: `User ${user.email} logged in`,
+        userId: dbUser.id,
+      });
+
+      // Si ce n'est pas un admin, vérifier et nettoyer les sessions existantes
+      if (dbUser.role !== UserRole.ADMIN) {
+        const existingSessions = await prisma.session.findMany({
+          where: {
+            userId: dbUser.id,
+            expires: { gt: new Date() }
+          },
+        });
+
+        // Si plus de 2 sessions actives, supprimer la plus ancienne
+        if (existingSessions.length >= 2) {
+          const oldestSession = existingSessions.reduce((prev, current) => 
+            prev.expires < current.expires ? prev : current
+          );
+          
+          await prisma.session.delete({
+            where: { id: oldestSession.id }
+          });
+        }
+      }
+
       return true;
     },
     async jwt({ token, user, trigger, session }) {
       try {
-        // Mise à jour du token si l'utilisateur vient de se connecter
         if (user) {
           return {
             ...token,
@@ -93,7 +122,6 @@ export const authOptions: NextAuthOptions = {
           };
         }
 
-        // Mise à jour du token si la session est mise à jour
         if (trigger === 'update' && session) {
           const updatedUser = await prisma.user.findUnique({
             where: { id: token.id },
@@ -119,16 +147,29 @@ export const authOptions: NextAuthOptions = {
           };
         }
 
-        // Vérification périodique du statut utilisateur
+        // Vérification périodique
         const lastChecked = token.lastChecked || 0;
         if (Date.now() > lastChecked + 5 * 60 * 1000) { // Vérifier toutes les 5 minutes
           const user = await prisma.user.findUnique({
             where: { id: token.id },
-            select: { status: true },
+            select: { 
+              status: true,
+              role: true,
+              sessions: {
+                where: {
+                  expires: { gt: new Date() }
+                }
+              }
+            },
           });
 
           if (!user || user.status !== UserStatus.ACTIVE) {
             throw new Error('Invalid user state');
+          }
+
+          // Pour les non-admins, vérifier le nombre de sessions
+          if (user.role !== UserRole.ADMIN && user.sessions.length > 2) {
+            throw new Error('Too many active sessions');
           }
 
           return {
@@ -139,7 +180,6 @@ export const authOptions: NextAuthOptions = {
 
         return token;
       } catch (error) {
-        // En cas d'erreur, retourner un token minimal qui forcera une déconnexion
         return {
           ...token,
           status: UserStatus.INACTIVE,
@@ -149,7 +189,6 @@ export const authOptions: NextAuthOptions = {
     },
     async session({ session, token }) {
       try {
-        // Vérification complète du token
         if (!token || !token.email || !token.role || !token.status || token.status !== UserStatus.ACTIVE) {
           return {
             ...session,
@@ -175,7 +214,6 @@ export const authOptions: NextAuthOptions = {
         };
       } catch (error) {
         console.error('Session error:', error);
-        // En cas d'erreur, retourner une session invalide mais bien typée
         return {
           ...session,
           user: {
@@ -185,79 +223,83 @@ export const authOptions: NextAuthOptions = {
         };
       }
     },
-    async redirect({ url, baseUrl }) {
-      // Si l'URL est déjà absolue et commence par le baseUrl
-      if (url.startsWith(baseUrl)) {
-        return url;
-      }
+  },
+  events: {
+    async signOut({ token }) {
+      if (token) {
+        // Enregistrer l'activité de déconnexion
+        await logActivity({
+          type: ActivityType.USER_LOGOUT,
+          description: `User logged out`,
+          userId: token.id,
+        });
 
-      // Si c'est une URL relative
-      if (url.startsWith('/')) {
-        // Ne pas rediriger vers verify-request
-        if (url.includes('verify-request')) {
-          return `${baseUrl}/auth?error=AccountInactive`;
-        }
-        return `${baseUrl}${url}`;
+        // Supprimer toutes les sessions de l'utilisateur
+        await prisma.session.deleteMany({
+          where: { userId: token.id }
+        });
       }
-
-      // Par défaut, rediriger vers la page d'accueil
-      return baseUrl;
-    },
+    }
   },
   providers: [
     CredentialsProvider({
       name: 'credentials',
       credentials: {
-        email: { label: "Email", type: "text" },
+        email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" }
       },
       async authorize(credentials): Promise<User | null> {
         if (!credentials?.email || !credentials?.password) {
-          return null;
+          throw new Error('Email and password required');
         }
 
         const user = await prisma.user.findUnique({
-          where: { email: credentials.email.toLowerCase() },
+          where: { email: credentials.email },
           select: {
             id: true,
             email: true,
             name: true,
-            username: true,
             password: true,
             role: true,
             status: true,
+            username: true,
             image: true,
-            emailVerified: true
-          }
+            emailVerified: true,
+          },
         });
 
-        if (!user || !user.password) {
-          return null;
-        }
-
-        const isValidPassword = await compare(credentials.password, user.password);
-        if (!isValidPassword) {
-          return null;
+        if (!user) {
+          throw new Error('No user found');
         }
 
         if (user.status !== UserStatus.ACTIVE) {
-          return null;
+          throw new Error('User account is not active');
         }
 
         if (user.role !== UserRole.ADMIN && !user.emailVerified) {
-          return null;
+          throw new Error('Please verify your email first');
         }
 
-        await prisma.user.update({
-          where: { id: user.id },
-          data: { lastLogin: new Date() }
-        });
+        const isValid = await compare(credentials.password, user.password);
+        if (!isValid) {
+          throw new Error('Invalid password');
+        }
 
-        const { password: _, ...userWithoutPassword } = user;
-        return userWithoutPassword as User;
-      }
+        // S'assurer que le username est toujours une chaîne
+        const username = user.username || user.email.split('@')[0];
+
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          status: user.status,
+          username: username,
+          image: user.image,
+        } as User;
+      },
     })
-  ]
+  ],
 };
 
 export function validateAdmin(session: { user?: { role?: UserRole; status?: UserStatus } } | null): boolean {

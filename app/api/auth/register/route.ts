@@ -4,7 +4,9 @@ import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import { sendEmail } from '@/lib/email';
 import { z } from 'zod';
-import { UserRole, UserStatus } from '@prisma/client';
+import { UserRole, UserStatus, ActivityType } from '@prisma/client';
+import { formatBytes } from '@/lib/utils';
+import { logActivity } from '@/lib/activity';
 
 // Schéma de validation amélioré
 const registerSchema = z.object({
@@ -75,9 +77,13 @@ export async function POST(request: Request) {
       );
     }
 
-    // Créer le token de vérification
-    const verificationToken = randomBytes(32).toString('hex');
+    // Hasher le mot de passe
     const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Calculer les limites de ressources
+    const cpuLimit = accountType === 'pro' ? 4000 : 2000;
+    const memoryLimit = accountType === 'pro' ? 8589934592 : 4294967296;
+    const storageLimit = accountType === 'pro' ? 107374182400 : 53687091200;
 
     // Créer l'utilisateur
     const user = await prisma.user.create({
@@ -85,49 +91,93 @@ export async function POST(request: Request) {
         username,
         email,
         password: hashedPassword,
-        verificationToken,
         role: accountType === 'pro' ? UserRole.ADMIN : UserRole.USER,
-        status: UserStatus.PENDING,
-        cpuLimit: accountType === 'pro' ? 4000 : 2000, // 4 cores pour pro, 2 pour user
-        memoryLimit: accountType === 'pro' ? 8589934592 : 4294967296, // 8GB pour pro, 4GB pour user
-        storageLimit: accountType === 'pro' ? 107374182400 : 53687091200, // 100GB pour pro, 50GB pour user
+        status: UserStatus.INACTIVE,
+        cpuLimit,
+        memoryLimit,
+        storageLimit,
         cpuThreshold: 80,
         memoryThreshold: 85,
         storageThreshold: 90,
       },
     });
 
-    // Envoyer l'email de vérification
-    const verificationUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/verify-email?token=${verificationToken}`;
-    
+    // Enregistrer l'activité de création de compte
+    await logActivity({
+      type: ActivityType.USER_REGISTER,
+      description: `New user registered: ${username} (${accountType} account)`,
+      userId: user.id,
+      metadata: {
+        accountType,
+        cpuLimit: `${cpuLimit / 1000} cores`,
+        memoryLimit: formatBytes(memoryLimit),
+        storageLimit: formatBytes(storageLimit),
+      },
+    });
+
+    // Créer le token de vérification
+    const token = randomBytes(32).toString('hex');
+    await prisma.verificationToken.create({
+      data: {
+        token,
+        userId: user.id,
+        expires: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 heures
+      },
+    });
+
+    // Préparer le contenu de l'email
+    const verificationUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/verify-email?token=${token}`;
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #0070f3; text-align: center;">Welcome to DockerFlow!</h1>
+        <p>Hello ${username},</p>
+        <p>Thank you for creating a DockerFlow account. Your account has been created successfully with a ${accountType} plan.</p>
+        
+        <div style="background-color: #f5f5f5; padding: 20px; border-radius: 5px; margin: 20px 0;">
+          <h2 style="color: #333; margin-top: 0;">Your Account Details</h2>
+          <ul style="list-style: none; padding: 0;">
+            <li><strong>Username:</strong> ${username}</li>
+            <li><strong>Account Type:</strong> ${accountType.toUpperCase()}</li>
+            <li><strong>Status:</strong> Pending Verification</li>
+          </ul>
+          
+          <h3 style="color: #333;">Resource Limits</h3>
+          <ul style="list-style: none; padding: 0;">
+            <li><strong>CPU:</strong> ${cpuLimit / 1000} cores</li>
+            <li><strong>Memory:</strong> ${formatBytes(memoryLimit)}</li>
+            <li><strong>Storage:</strong> ${formatBytes(storageLimit)}</li>
+          </ul>
+        </div>
+
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${verificationUrl}" 
+             style="background-color: #0070f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+            Verify Your Email
+          </a>
+        </div>
+
+        <div style="background-color: #f5f5f5; padding: 20px; border-radius: 5px; margin: 20px 0;">
+          <h3 style="color: #333; margin-top: 0;">Next Steps</h3>
+          <ol style="padding-left: 20px;">
+            <li>Click the verification button above</li>
+            <li>Once verified, you can log in to your account</li>
+            <li>Set up your profile and preferences</li>
+            <li>Start managing your containers!</li>
+          </ol>
+        </div>
+
+        <p style="color: #666; font-size: 0.9em;">
+          This verification link will expire in 24 hours. If you did not create this account, 
+          please ignore this email or contact our support team.
+        </p>
+      </div>
+    `;
+
+    // Envoyer l'email
     await sendEmail({
       to: email,
       subject: 'Welcome to DockerFlow - Verify Your Email',
-      html: `
-        <h1>Welcome to DockerFlow!</h1>
-        <p>Your account has been created successfully.</p>
-        <p>Please verify your email address by clicking the link below:</p>
-        <a href="${verificationUrl}" style="display: inline-block; padding: 10px 20px; background-color: #0070f3; color: white; text-decoration: none; border-radius: 5px;">Verify Email</a>
-        <p>Resource Limits:</p>
-        <ul>
-          <li>CPU: ${accountType === 'pro' ? '4 cores' : '2 cores'}</li>
-          <li>Memory: ${accountType === 'pro' ? '8GB' : '4GB'}</li>
-          <li>Storage: ${accountType === 'pro' ? '100GB' : '50GB'}</li>
-        </ul>
-        <p>As a ${accountType === 'pro' ? 'pro' : 'user'} user, you can:</p>
-        <ul>
-          <li>Create and manage containers</li>
-          <li>Monitor system resources</li>
-          <li>Configure system settings</li>
-        </ul>
-        <p>If you did not create this account, please ignore this email.</p>
-      `,
-    });
-
-    console.log('User created successfully:', {
-      id: user.id,
-      email: user.email,
-      role: user.role,
+      html: emailHtml,
     });
 
     return NextResponse.json({
@@ -137,13 +187,14 @@ export async function POST(request: Request) {
         username: user.username,
         email: user.email,
         role: user.role,
+        status: user.status,
       },
+      redirect: '/auth/confirmation'
     });
-
   } catch (error) {
     console.error('Registration error:', error);
     return NextResponse.json(
-      { error: 'Failed to create user' },
+      { error: 'An error occurred during registration' },
       { status: 500 }
     );
   }

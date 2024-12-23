@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { imageActivity } from '@/lib/activity';
 
 export async function GET(request: Request) {
   try {
@@ -47,6 +48,12 @@ export async function POST(request: Request) {
         size,
         userId: session.user.id,
       },
+    });
+
+    // Enregistrer l'activité
+    await imageActivity.create(session.user.id, `${name}:${tag}`, {
+      size,
+      created: new Date(),
     });
 
     return NextResponse.json(image);

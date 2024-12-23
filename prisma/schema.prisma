@@ -42,6 +42,23 @@ enum AlertStatus {
   DISMISSED
 }
 
+enum ActivityType {
+  USER_LOGIN
+  USER_LOGOUT
+  USER_REGISTER
+  USER_UPDATE
+  USER_DELETE
+  CONTAINER_CREATE
+  CONTAINER_START
+  CONTAINER_STOP
+  CONTAINER_DELETE
+  IMAGE_PULL
+  IMAGE_DELETE
+  ALERT_TRIGGERED
+  ALERT_RESOLVED
+  SYSTEM_UPDATE
+}
+
 model AlertRule {
   id          String    @id @default(auto()) @map("_id") @db.ObjectId
   name        String
@@ -91,6 +108,7 @@ model User {
   alertRules             AlertRule[]
   terminalSessions       TerminalSession[]
   verificationTokens     VerificationToken[]
+  activities             Activity[]
   createdAt              DateTime    @default(now()) @map("created_at")
   updatedAt              DateTime    @updatedAt @map("updated_at")
   lastLogin              DateTime?
@@ -204,6 +222,20 @@ model Alert {
   @@index([userId])
   @@index([acknowledgedById])
   @@map("alerts")
+}
+
+model Activity {
+  id          String      @id @default(auto()) @map("_id") @db.ObjectId
+  type        ActivityType
+  description String
+  userId      String      @db.ObjectId
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime    @default(now())
+  user        User        @relation(fields: [userId], references: [id])
+
+  @@map("activities")
 }
 
 model TerminalSession {

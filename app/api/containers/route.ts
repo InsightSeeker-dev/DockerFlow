@@ -8,6 +8,7 @@ import { checkStorageLimit, getImageSize } from '@/lib/docker/storage';
 import { pullImage } from '@/lib/docker/images';
 import { Session } from 'next-auth';
 import { Prisma } from '@prisma/client';
+import { containerActivity } from '@/lib/activity';
 
 interface ExtendedSession extends Session {
   user: {
@@ -78,7 +79,16 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { name, image, ports, useStorageImage, cpuLimit, memoryLimit, volumes, env } = createContainerSchema.parse(body);
+    const result = createContainerSchema.safeParse(body);
+    
+    if (!result.success) {
+      return NextResponse.json(
+        { error: 'Invalid request data', details: result.error.issues },
+        { status: 400 }
+      );
+    }
+
+    const { name, image, ports, volumes, env, cpuLimit, memoryLimit } = result.data;
 
     // Check storage limit before creating container
     const imageSize = await getImageSize(image);
@@ -95,7 +105,7 @@ export async function POST(request: Request) {
 
     // If using a storage image, check if it exists
     let finalImage = image;
-    if (useStorageImage) {
+    if (result.data.useStorageImage) {
       const storageImage = await prisma.dockerImage.findFirst({
         where: {
           userId: session.user.id,
@@ -180,6 +190,15 @@ export async function POST(request: Request) {
       }
     });
 
+    // Enregistrer l'activité
+    await containerActivity.create(session.user.id, name, {
+      image,
+      ports,
+      volumes,
+      cpuLimit,
+      memoryLimit,
+    });
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Container creation error:', error);
@@ -207,7 +226,16 @@ export async function PATCH(request: Request) {
     }
 
     const body = await request.json();
-    const { action, containerId } = containerActionSchema.parse(body);
+    const result = containerActionSchema.safeParse(body);
+    
+    if (!result.success) {
+      return NextResponse.json(
+        { error: 'Invalid request data' },
+        { status: 400 }
+      );
+    }
+
+    const { action, containerId } = result.data;
 
     // Verify container ownership
     const container = await prisma.container.findFirst({
@@ -234,19 +262,24 @@ export async function PATCH(request: Request) {
           where: { id: containerId },
           data: { status: 'running' }
         });
+        await containerActivity.start(session.user.id, container.name);
         break;
+
       case 'stop':
         await dockerContainer.stop();
         await prisma.container.update({
           where: { id: containerId },
           data: { status: 'exited' }
         });
+        await containerActivity.stop(session.user.id, container.name);
         break;
+
       case 'remove':
         await dockerContainer.remove({ force: true });
         await prisma.container.delete({
           where: { id: containerId }
         });
+        await containerActivity.delete(session.user.id, container.name);
         break;
     }
 

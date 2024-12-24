@@ -35,6 +35,7 @@ import {
   AreaChart,
   Area
 } from 'recharts';
+import { OverviewRecentActivities } from './overview-recent-activities';
 
 interface DashboardOverviewProps {
   systemStats: SystemStats;
@@ -92,7 +93,7 @@ export function DashboardOverview({ systemStats, recentActivities }: DashboardOv
       {/* Section Principale - Vue d'ensemble */}
       <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
         {/* Container Overview */}
-        <motion.div variants={item}>
+        <motion.div variants={item} className="lg:col-span-1">
           <Card className="h-full">
             <CardHeader className="pb-2">
               <CardTitle className="text-lg flex items-center gap-2">
@@ -133,7 +134,7 @@ export function DashboardOverview({ systemStats, recentActivities }: DashboardOv
         </motion.div>
 
         {/* User Overview */}
-        <motion.div variants={item}>
+        <motion.div variants={item} className="lg:col-span-1">
           <Card className="h-full">
             <CardHeader className="pb-2">
               <CardTitle className="text-lg flex items-center gap-2">
@@ -174,7 +175,7 @@ export function DashboardOverview({ systemStats, recentActivities }: DashboardOv
         </motion.div>
 
         {/* System Overview */}
-        <motion.div variants={item}>
+        <motion.div variants={item} className="lg:col-span-1">
           <Card className="h-full">
             <CardHeader className="pb-2">
               <CardTitle className="text-lg flex items-center gap-2">
@@ -240,55 +241,51 @@ export function DashboardOverview({ systemStats, recentActivities }: DashboardOv
                   icon={HardDrive}
                   title="Total Size"
                   value={`${(systemStats.images.size / (1024 * 1024 * 1024)).toFixed(1)} GB`}
-                  color="indigo"
+                  color="blue"
                 />
                 <StatCard
                   icon={ArrowDown}
                   title="Pull Count"
-                  value={systemStats.images.pulls || 0}
-                  color="cyan"
+                  value={systemStats.images.pulls}
+                  color="green"
                 />
                 <StatCard
-                  icon={HardDrive}
+                  icon={Image}
                   title="Avg. Size"
-                  value={`${((systemStats.images.size / systemStats.images.total) / (1024 * 1024)).toFixed(1)} MB`}
-                  color="blue"
+                  value={`${(systemStats.images.size / (systemStats.images.total || 1) / (1024 * 1024)).toFixed(1)} MB`}
+                  color="indigo"
                 />
               </div>
 
-              {/* Storage Usage Progress */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium text-muted-foreground">Storage Usage</span>
-                  <span className="font-medium">
-                    {(systemStats.images.size / (1024 * 1024 * 1024)).toFixed(2)} GB
-                  </span>
-                </div>
-                <div className="h-2 rounded-full bg-secondary">
-                  <div
-                    className="h-2 rounded-full bg-purple-500 transition-all"
-                    style={{ width: `${(systemStats.images.size / systemStats.diskUsage.total) * 100}%` }}
-                  />
-                </div>
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Used: {(systemStats.images.size / (1024 * 1024 * 1024)).toFixed(2)} GB</span>
-                  <span>Total: {(systemStats.diskUsage.total / (1024 * 1024 * 1024)).toFixed(2)} GB</span>
-                </div>
-              </div>
-
-              {/* Tags Distribution */}
+              {/* Popular Tags */}
               <div className="space-y-3">
-                <h4 className="text-sm font-medium text-muted-foreground">Popular Tags</h4>
-                <div className="space-y-2">
-                  {systemStats.images.tags?.slice(0, 3).map((tag, index) => (
-                    <div key={index} className="flex items-center justify-between bg-secondary/50 rounded-lg p-2">
-                      <span className="flex items-center gap-2 text-sm">
-                        <span className="w-2 h-2 rounded-full bg-purple-500" />
-                        {tag.name}
-                      </span>
-                      <span className="text-sm text-muted-foreground">{tag.count}</span>
+                <h3 className="text-sm font-medium mb-2">Popular Tags</h3>
+                <div className="grid gap-2">
+                  {(systemStats.images.tags || []).map((tag, index) => (
+                    <div 
+                      key={index} 
+                      className="flex items-center justify-between p-2 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 rounded-full bg-blue-500" />
+                        <span className="text-sm font-medium">{tag.name}</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs text-muted-foreground">
+                          {tag.count} {tag.count === 1 ? 'image' : 'images'}
+                        </span>
+                        <div className="px-2 py-1 rounded-full bg-blue-500/10 text-blue-500 text-xs font-medium">
+                          #{index + 1}
+                        </div>
+                      </div>
                     </div>
                   ))}
+                  {(!systemStats.images.tags || systemStats.images.tags.length === 0) && (
+                    <div className="flex flex-col items-center justify-center p-4 text-muted-foreground bg-secondary/20 rounded-lg">
+                      <Image className="h-8 w-8 mb-2 opacity-50" />
+                      <p className="text-sm">No Docker tags available</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -297,53 +294,7 @@ export function DashboardOverview({ systemStats, recentActivities }: DashboardOv
 
         {/* Recent Activities */}
         <motion.div variants={item}>
-          <Card className="h-full">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Activity className="h-5 w-5 text-blue-500" />
-                <span>Recent Activities</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {recentActivities.map((activity, index) => (
-                  <div
-                    key={index}
-                    className="flex items-start gap-3 pb-4 last:pb-0 border-b last:border-0"
-                  >
-                    <div className={cn(
-                      "p-2 rounded-full shrink-0",
-                      activity.type === 'container' && "bg-blue-500/10",
-                      activity.type === 'image' && "bg-purple-500/10",
-                      activity.type === 'user' && "bg-green-500/10",
-                      activity.type === 'system' && "bg-orange-500/10"
-                    )}>
-                      {activity.type === 'container' && <Container className={cn("h-4 w-4 text-blue-500")} />}
-                      {activity.type === 'image' && <Image className={cn("h-4 w-4 text-purple-500")} />}
-                      {activity.type === 'user' && <Users className={cn("h-4 w-4 text-green-500")} />}
-                      {activity.type === 'system' && <Settings className={cn("h-4 w-4 text-orange-500")} />}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium leading-none mb-1 truncate">
-                        {activity.description}
-                      </p>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span className="truncate">{activity.user}</span>
-                        <span>•</span>
-                        <span className="whitespace-nowrap">{activity.time}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-
-                {recentActivities.length === 0 && (
-                  <div className="text-center py-6 text-muted-foreground">
-                    <p>No recent activities</p>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+          <OverviewRecentActivities />
         </motion.div>
       </div>
     </motion.div>

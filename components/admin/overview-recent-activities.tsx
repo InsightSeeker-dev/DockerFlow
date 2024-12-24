@@ -1,11 +1,13 @@
 'use client';
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Activity, Container, User, AlertTriangle, Box, Play, Square, Trash2, Download, RefreshCw, Bell, CheckCircle } from "lucide-react";
+import { Container, User, AlertTriangle, Box, Play, Square, Trash2, Download, RefreshCw, Bell, CheckCircle, ActivityIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { formatDistanceToNow } from 'date-fns';
 import { ActivityType } from "@prisma/client";
 import { Button } from "@/components/ui/button";
+import { useSession } from "next-auth/react";
+import { Activity } from "@/types/activity";
 
 interface ActivityItem {
   id: string;
@@ -47,7 +49,7 @@ const getActivityIcon = (type: ActivityType) => {
     case 'ALERT_RESOLVED':
       return <CheckCircle className="h-4 w-4" />;
     default:
-      return <Activity className="h-4 w-4" />;
+      return <ActivityIcon className="h-4 w-4" />;
   }
 };
 
@@ -74,128 +76,132 @@ const getActivityColor = (type: ActivityType) => {
 };
 
 export function OverviewRecentActivities() {
-  const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const { data: session } = useSession();
+  const [activities, setActivities] = useState<Activity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isTestLoading, setIsTestLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(5);
+  const [total, setTotal] = useState(0);
 
   const fetchActivities = async () => {
     try {
-      console.log('Fetching activities...');
-      const response = await fetch('/api/admin/activities');
-      console.log('Response status:', response.status);
+      setIsLoading(true);
+      setError(null);
+      
+      const response = await fetch(`/api/admin/activities?page=${page}&pageSize=${pageSize}`);
+      const data = await response.json();
       
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Error response:', errorText);
-        throw new Error(`Failed to fetch activities: ${errorText}`);
+        throw new Error(data?.error || `Failed to fetch activities: ${response.status}`);
       }
-      
-      const data = await response.json();
-      console.log('Received activities:', data);
-      setActivities(data);
+
+      setActivities(data.activities || []);
+      setTotal(data.total || 0);
     } catch (err) {
-      console.error('Error in fetchActivities:', err);
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      console.error('Error fetching activities:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch activities');
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchActivities();
-    // Rafraîchir toutes les 30 secondes
-    const interval = setInterval(fetchActivities, 30000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const createTestActivities = async () => {
-    try {
-      setIsTestLoading(true);
-      const response = await fetch('/api/admin/activities/test', {
-        method: 'POST',
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to create test activities');
-      }
-      
-      await fetchActivities();
-    } catch (err) {
-      console.error('Error creating test activities:', err);
-      setError(err instanceof Error ? err.message : 'Failed to create test activities');
-    } finally {
-      setIsTestLoading(false);
+    if (session?.user?.role === 'ADMIN') {
+      fetchActivities();
     }
-  };
+  }, [session, page]);
 
   if (isLoading) {
-    console.log('Loading state:', isLoading);
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-xl font-bold">Recent Activities</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-center p-4">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
+          </div>
+        </CardContent>
+      </Card>
+    );
   }
 
   if (error) {
-    console.log('Error state:', error);
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-xl font-bold">Recent Activities</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col items-center justify-center p-4 space-y-4">
+            <AlertTriangle className="h-8 w-8 text-red-500" />
+            <p className="text-red-500">{error}</p>
+            <Button onClick={fetchActivities}>Retry</Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
   }
-
-  console.log('Current activities:', activities);
 
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-base font-semibold">Recent Activities</CardTitle>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={createTestActivities}
-          disabled={isTestLoading}
-        >
-          {isTestLoading ? (
-            <>
-              <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-              Creating...
-            </>
-          ) : (
-            <>
-              <Activity className="h-4 w-4 mr-2" />
-              Create Test Activities
-            </>
-          )}
-        </Button>
+        <CardTitle className="text-base font-semibold">
+          Recent Activities
+          {total > 0 && <span className="ml-2 text-sm text-gray-500">({total})</span>}
+        </CardTitle>
       </CardHeader>
       <CardContent>
-        {isLoading ? (
-          <div className="flex items-center justify-center py-4">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-500" />
-          </div>
-        ) : error ? (
-          <div className="text-red-500 text-center py-4">
-            <AlertTriangle className="h-4 w-4 inline-block mr-2" />
-            {error}
-          </div>
-        ) : activities.length === 0 ? (
-          <div className="text-gray-500 text-center py-4">
-            <Box className="h-4 w-4 inline-block mr-2" />
-            No recent activities
+        {activities.length === 0 ? (
+          <div className="flex flex-col items-center justify-center p-4 text-gray-500">
+            <Box className="h-8 w-8 mb-2" />
+            <p>No activities found</p>
           </div>
         ) : (
           <div className="space-y-4">
             {activities.map((activity) => (
-              <div key={activity.id} className="flex items-start space-x-3">
+              <div
+                key={activity.id}
+                className="flex items-start space-x-3 p-2 rounded-lg hover:bg-gray-50 transition-colors"
+              >
                 <div className={`mt-1 ${getActivityColor(activity.type)}`}>
                   {getActivityIcon(activity.type)}
                 </div>
                 <div className="flex-1 space-y-1">
-                  <p className="text-sm text-gray-300">{activity.description}</p>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xs text-gray-500">{activity.user.username}</span>
-                    <span className="text-xs text-gray-600">•</span>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">{activity.description}</p>
                     <span className="text-xs text-gray-500">
                       {formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}
                     </span>
                   </div>
+                  <p className="text-xs text-gray-500">
+                    by {activity.user.username} ({activity.user.email})
+                  </p>
                 </div>
               </div>
             ))}
+            
+            {total > pageSize && (
+              <div className="flex justify-center space-x-2 mt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(p => p + 1)}
+                  disabled={page * pageSize >= total}
+                >
+                  Next
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </CardContent>

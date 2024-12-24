@@ -7,49 +7,76 @@ import { UserRole, UserStatus, ActivityType } from '@prisma/client';
 export async function POST() {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || session.user.role !== UserRole.ADMIN || session.user.status !== UserStatus.ACTIVE) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    // Créer quelques activités de test
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { id: true, role: true, status: true }
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    if (user.role !== UserRole.ADMIN) {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
+    }
+
+    if (user.status !== UserStatus.ACTIVE) {
+      return NextResponse.json({ error: 'Account not active' }, { status: 403 });
+    }
+
     const testActivities = [
       {
         type: ActivityType.USER_LOGIN,
-        description: 'User logged in',
-        userId: session.user.id,
-        metadata: { browser: 'Chrome' },
+        description: 'User admin logged in',
+        metadata: { browser: 'Chrome', platform: 'Windows' }
       },
       {
         type: ActivityType.CONTAINER_CREATE,
-        description: 'Created container: test-nginx',
-        userId: session.user.id,
-        metadata: { image: 'nginx:latest' },
+        description: 'Created container: nginx-web',
+        metadata: { image: 'nginx:latest', ports: ['80:80'] }
+      },
+      {
+        type: ActivityType.CONTAINER_START,
+        description: 'Started container: nginx-web',
+        metadata: { containerId: 'test-123' }
       },
       {
         type: ActivityType.IMAGE_PULL,
-        description: 'Pulled image: redis:latest',
-        userId: session.user.id,
-        metadata: { size: '150MB' },
+        description: 'Pulled image: postgres:latest',
+        metadata: { size: '120MB', tag: 'latest' }
       },
+      {
+        type: ActivityType.ALERT_TRIGGERED,
+        description: 'High CPU usage detected',
+        metadata: { cpu: '95%', threshold: '90%' }
+      }
     ];
 
-    // Insérer les activités de test
-    await Promise.all(
+    const createdActivities = await Promise.all(
       testActivities.map(activity =>
         prisma.activity.create({
           data: {
             type: activity.type,
             description: activity.description,
-            userId: activity.userId,
+            userId: user.id,
             metadata: activity.metadata,
             ipAddress: '127.0.0.1',
-            userAgent: 'Test Agent',
-          },
+            userAgent: 'Test/1.0',
+            createdAt: new Date()
+          }
         })
       )
     );
 
-    return NextResponse.json({ success: true, message: 'Test activities created' });
+    return NextResponse.json({
+      message: 'Test activities created successfully',
+      count: createdActivities.length
+    });
   } catch (error) {
     console.error('Error creating test activities:', error);
     return NextResponse.json(

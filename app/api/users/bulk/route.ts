@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { ActivityType } from '@prisma/client';
+import { userActivity } from '@/lib/activity';
 
 export async function POST(req: Request) {
   try {
@@ -11,11 +13,27 @@ export async function POST(req: Request) {
       return new NextResponse('Unauthorized', { status: 401 });
     }
 
+    // Récupérer l'ID de l'administrateur depuis la base de données
+    const admin = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { id: true }
+    });
+
+    if (!admin) {
+      return new NextResponse('Admin not found', { status: 404 });
+    }
+
     const { action, userIds } = await req.json();
 
     if (!action || !userIds || !Array.isArray(userIds)) {
       return new NextResponse('Invalid request body', { status: 400 });
     }
+
+    // Récupérer les informations des utilisateurs avant la modification
+    const users = await prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, username: true, status: true }
+    });
 
     switch (action.toLowerCase()) {
       case 'suspend':
@@ -23,6 +41,16 @@ export async function POST(req: Request) {
           where: { id: { in: userIds } },
           data: { status: 'SUSPENDED' },
         });
+
+        // Créer une activité pour chaque utilisateur suspendu
+        await Promise.all(users.map(user => 
+          userActivity.update(admin.id, `User ${user.username} was suspended`, {
+            action: 'suspend',
+            targetUserId: user.id,
+            previousStatus: user.status,
+            newStatus: 'SUSPENDED'
+          })
+        ));
         break;
 
       case 'activate':
@@ -30,6 +58,16 @@ export async function POST(req: Request) {
           where: { id: { in: userIds } },
           data: { status: 'ACTIVE' },
         });
+
+        // Créer une activité pour chaque utilisateur activé
+        await Promise.all(users.map(user => 
+          userActivity.update(admin.id, `User ${user.username} was activated`, {
+            action: 'activate',
+            targetUserId: user.id,
+            previousStatus: user.status,
+            newStatus: 'ACTIVE'
+          })
+        ));
         break;
 
       case 'delete':
@@ -38,6 +76,15 @@ export async function POST(req: Request) {
           where: { userId: { in: userIds } },
         });
         
+        // Créer une activité pour chaque utilisateur supprimé
+        await Promise.all(users.map(user => 
+          userActivity.delete(admin.id, user.username, {
+            action: 'delete',
+            targetUserId: user.id,
+            previousStatus: user.status
+          })
+        ));
+
         // Then delete the users
         await prisma.user.deleteMany({
           where: { id: { in: userIds } },

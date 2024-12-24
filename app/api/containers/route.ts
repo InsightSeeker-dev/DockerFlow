@@ -225,73 +225,52 @@ export async function PATCH(request: Request) {
       );
     }
 
-    const body = await request.json();
-    const result = containerActionSchema.safeParse(body);
-    
-    if (!result.success) {
-      return NextResponse.json(
-        { error: 'Invalid request data' },
-        { status: 400 }
-      );
-    }
-
-    const { action, containerId } = result.data;
-
-    // Verify container ownership
-    const container = await prisma.container.findFirst({
-      where: {
-        id: containerId,
-        userId: session.user.id
-      }
-    });
-
-    if (!container) {
-      return NextResponse.json(
-        { error: 'Container not found or access denied' },
-        { status: 403 }
-      );
-    }
+    const data = await request.json();
+    const validatedData = containerActionSchema.parse(data);
+    const { action, containerId } = validatedData;
 
     const docker = getDockerClient();
-    const dockerContainer = docker.getContainer(containerId);
+    const container = docker.getContainer(containerId);
+
+    // Vérifier si le conteneur existe
+    const containerInfo = await container.inspect();
+    const containerName = containerInfo.Name.replace('/', '');
 
     switch (action) {
       case 'start':
-        await dockerContainer.start();
-        await prisma.container.update({
-          where: { id: containerId },
-          data: { status: 'running' }
+        await container.start();
+        await containerActivity.start(session.user.id, containerName, {
+          containerId,
+          status: containerInfo.State,
+          config: containerInfo.Config
         });
-        await containerActivity.start(session.user.id, container.name);
         break;
 
       case 'stop':
-        await dockerContainer.stop();
-        await prisma.container.update({
-          where: { id: containerId },
-          data: { status: 'exited' }
+        await container.stop();
+        await containerActivity.stop(session.user.id, containerName, {
+          containerId,
+          status: containerInfo.State,
+          config: containerInfo.Config
         });
-        await containerActivity.stop(session.user.id, container.name);
         break;
 
       case 'remove':
-        await dockerContainer.remove({ force: true });
-        await prisma.container.delete({
-          where: { id: containerId }
+        await container.remove({ force: true });
+        await containerActivity.delete(session.user.id, containerName, {
+          containerId,
+          status: containerInfo.State,
+          config: containerInfo.Config
         });
-        await containerActivity.delete(session.user.id, container.name);
         break;
+
+      default:
+        throw new Error('Invalid action');
     }
 
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Container action error:', error);
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Invalid input', details: error.errors },
-        { status: 400 }
-      );
-    }
     return NextResponse.json(
       { error: 'Failed to perform container action' },
       { status: 500 }

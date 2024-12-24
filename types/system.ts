@@ -38,6 +38,13 @@ export interface SystemStats {
     out: number;
   };
 
+  networkIO?: {
+    bytesPerSecond: number;
+    packetsPerSecond: number;
+  };
+
+  systemLoad?: number;
+
   // Image Stats
   images: {
     total: number;

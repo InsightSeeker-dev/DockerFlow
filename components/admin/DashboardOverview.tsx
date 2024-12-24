@@ -57,7 +57,23 @@ const item = {
   show: { opacity: 1, y: 0 }
 };
 
-const StatCard = ({ icon: Icon, title, value, trend, color, className }: any) => (
+const formatByteSize = (bytes: number, decimals = 1): string => {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(decimals))} ${sizes[i]}`;
+};
+
+const formatValue = (value: number | string, isPercentage = false): string => {
+  if (typeof value === 'string') return value;
+  if (isPercentage) {
+    return `${Math.round(value)}%`;
+  }
+  return Number.isInteger(value) ? value.toString() : value.toFixed(1);
+};
+
+const StatCard = ({ icon: Icon, title, value, trend, color, className, isPercentage = false }: any) => (
   <div className={cn(
     "flex items-center gap-3 p-3 rounded-lg bg-card border shadow-sm",
     className
@@ -68,13 +84,13 @@ const StatCard = ({ icon: Icon, title, value, trend, color, className }: any) =>
     <div className="min-w-0 flex-1">
       <p className="text-sm text-muted-foreground truncate">{title}</p>
       <div className="flex items-center gap-2">
-        <p className="text-lg font-semibold truncate">{value}</p>
+        <p className="text-lg font-semibold truncate">{formatValue(value, isPercentage)}</p>
         {trend !== undefined && (
           <span className={cn(
             "text-xs",
             trend > 0 ? "text-green-500" : trend < 0 ? "text-red-500" : "text-muted-foreground"
           )}>
-            {trend > 0 ? "↑" : trend < 0 ? "↓" : "−"} {Math.abs(trend)}%
+            {trend > 0 ? "↑" : trend < 0 ? "↓" : "−"} {Math.abs(Math.round(trend))}%
           </span>
         )}
       </div>
@@ -188,27 +204,30 @@ export function DashboardOverview({ systemStats, recentActivities }: DashboardOv
                 <StatCard
                   icon={Cpu}
                   title="CPU Usage"
-                  value={`${systemStats.cpuUsage}%`}
+                  value={systemStats.cpuUsage}
                   trend={systemStats.cpuTrend}
                   color="purple"
+                  isPercentage={true}
                 />
                 <StatCard
                   icon={HardDrive}
                   title="Memory"
-                  value={`${systemStats.memoryUsage.percentage}%`}
+                  value={systemStats.memoryUsage.percentage}
                   trend={systemStats.memoryTrend}
                   color="blue"
+                  isPercentage={true}
                 />
                 <StatCard
                   icon={HardDrive}
                   title="Storage"
-                  value={`${systemStats.diskUsage.percentage}%`}
+                  value={systemStats.diskUsage.percentage}
+                  isPercentage={true}
                   color="indigo"
                 />
                 <StatCard
                   icon={Network}
-                  title="Network"
-                  value={`${(systemStats.networkTraffic.in / (1024 * 1024)).toFixed(1)} MB/s`}
+                  title="Network I/O"
+                  value={Math.round(systemStats.networkIO?.bytesPerSecond || 0)}
                   color="cyan"
                 />
               </div>
@@ -240,7 +259,7 @@ export function DashboardOverview({ systemStats, recentActivities }: DashboardOv
                 <StatCard
                   icon={HardDrive}
                   title="Total Size"
-                  value={`${(systemStats.images.size / (1024 * 1024 * 1024)).toFixed(1)} GB`}
+                  value={formatByteSize(systemStats.images.size)}
                   color="blue"
                 />
                 <StatCard
@@ -252,7 +271,7 @@ export function DashboardOverview({ systemStats, recentActivities }: DashboardOv
                 <StatCard
                   icon={Image}
                   title="Avg. Size"
-                  value={`${(systemStats.images.size / (systemStats.images.total || 1) / (1024 * 1024)).toFixed(1)} MB`}
+                  value={formatByteSize(systemStats.images.size / (systemStats.images.total || 1))}
                   color="indigo"
                 />
               </div>

@@ -8,6 +8,7 @@ import { ActivityType } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import { useSession } from "next-auth/react";
 import { Activity } from "@/types/activity";
+import { cn } from "@/lib/utils";
 
 interface ActivityItem {
   id: string;
@@ -153,55 +154,55 @@ export function OverviewRecentActivities() {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {activities.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-4 text-gray-500">
-            <Box className="h-8 w-8 mb-2" />
-            <p>No activities found</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {activities.map((activity) => (
-              <div
-                key={activity.id}
-                className="flex items-start space-x-3 p-2 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                <div className={`mt-1 ${getActivityColor(activity.type)}`}>
-                  {getActivityIcon(activity.type)}
-                </div>
-                <div className="flex-1 space-y-1">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium">{activity.description}</p>
-                    <span className="text-xs text-gray-500">
-                      {formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-500">
-                    by {activity.user.username} ({activity.user.email})
-                  </p>
+        <div className="space-y-2">
+          {activities.map((activity) => (
+            <div
+              key={activity.id}
+              className="flex items-center gap-3 p-3 rounded-lg bg-card border shadow-sm hover:bg-accent/50 transition-colors"
+            >
+              <div className={cn(
+                "p-2 rounded-full",
+                getActivityColor(activity.type).replace('text-', 'bg-').replace('500', '500/10')
+              )}>
+                {getActivityIcon(activity.type)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium truncate">
+                  {activity.description}
+                </p>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>{activity.user.username || activity.user.email}</span>
+                  <span>•</span>
+                  <span>{formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}</span>
                 </div>
               </div>
-            ))}
-            
-            {total > pageSize && (
-              <div className="flex justify-center space-x-2 mt-4">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                >
-                  Previous
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage(p => p + 1)}
-                  disabled={page * pageSize >= total}
-                >
-                  Next
-                </Button>
-              </div>
-            )}
+            </div>
+          ))}
+          {activities.length === 0 && (
+            <div className="flex flex-col items-center justify-center p-6 text-muted-foreground bg-secondary/20 rounded-lg">
+              <ActivityIcon className="h-8 w-8 mb-2 opacity-50" />
+              <p className="text-sm">No recent activities</p>
+            </div>
+          )}
+        </div>
+        {total > pageSize && (
+          <div className="flex justify-center space-x-2 mt-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => p + 1)}
+              disabled={page * pageSize >= total}
+            >
+              Next
+            </Button>
           </div>
         )}
       </CardContent>

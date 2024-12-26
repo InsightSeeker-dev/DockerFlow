@@ -1,132 +1,137 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import Docker from 'dockerode';
+import { PassThrough } from 'stream';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { promises as fs } from 'fs';
+import { prisma } from '@/lib/prisma';
+import fs from 'fs/promises';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import { Readable } from 'stream';
 
-const docker = new Docker();
-
-// Fonction pour créer un répertoire temporaire
-async function createTempDir() {
-  const tempDir = path.join(process.cwd(), 'tmp', uuidv4());
-  await fs.mkdir(tempDir, { recursive: true });
-  return tempDir;
-}
-
-// Fonction pour nettoyer le répertoire temporaire
-async function cleanupTempDir(tempDir: string) {
+export async function POST(req: NextRequest) {
   try {
-    await fs.rm(tempDir, { recursive: true });
-  } catch (error) {
-    console.error('Error cleaning up temp directory:', error);
-  }
-}
-
-// Fonction pour sauvegarder les fichiers du contexte
-async function saveContextFiles(formData: FormData, tempDir: string) {
-  const dockerfile = formData.get('dockerfile') as Blob;
-  if (!dockerfile) {
-    throw new Error('Dockerfile is required');
-  }
-
-  // Sauvegarder le Dockerfile
-  const dockerfileContent = await dockerfile.text();
-  await fs.writeFile(path.join(tempDir, 'Dockerfile'), dockerfileContent);
-
-  // Sauvegarder les fichiers du contexte
-  const contextFiles = formData.getAll('context') as File[];
-  for (const file of contextFiles) {
-    const buffer = Buffer.from(await file.arrayBuffer());
-    await fs.writeFile(path.join(tempDir, file.name), buffer);
-  }
-}
-
-export async function POST(request: Request) {
-  let tempDir: string | null = null;
-
-  try {
+    // Vérifier l'authentification
     const session = await getServerSession(authOptions);
-    if (!session?.user || !['ADMIN', 'SUPER_ADMIN'].includes(session.user.role)) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!session?.user) {
+      return new NextResponse('Unauthorized', { status: 401 });
     }
 
-    // Créer un répertoire temporaire pour le contexte de construction
-    tempDir = await createTempDir();
-
-    // Récupérer et parser le formData
-    const formData = await request.formData();
-    const tag = formData.get('tag') as string;
-
-    if (!tag) {
-      throw new Error('Tag is required');
-    }
-
-    // Sauvegarder les fichiers dans le répertoire temporaire
-    await saveContextFiles(formData, tempDir);
-
-    // Créer un stream pour la réponse
-    const stream = new TransformStream();
-    const writer = stream.writable.getWriter();
-
-    // Démarrer la construction de l'image
-    const buildStream = await docker.buildImage({
-      context: tempDir,
-      src: await fs.readdir(tempDir),
-    }, {
-      t: tag,
-      q: false,
-      nocache: true,
-      rm: true,
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email! },
     });
 
-    // Gérer le stream de construction
-    docker.modem.followProgress(
-      buildStream,
-      async (err: Error | null) => {
-        if (err) {
-          await writer.write(
-            new TextEncoder().encode(
-              JSON.stringify({ error: err.message }) + '\n'
-            )
-          );
-        }
-        await writer.close();
-        if (tempDir) {
-          await cleanupTempDir(tempDir);
-        }
+    if (!user || user.role !== 'ADMIN') {
+      return new NextResponse('Forbidden', { status: 403 });
+    }
+
+    const { dockerfile, imageName } = await req.json();
+
+    if (!dockerfile || !imageName) {
+      return new NextResponse('Dockerfile and image name are required', { status: 400 });
+    }
+
+    // Créer un dossier temporaire pour le build
+    const buildId = uuidv4();
+    const buildDir = path.join(process.cwd(), 'tmp', buildId);
+    await fs.mkdir(buildDir, { recursive: true });
+
+    // Écrire le Dockerfile
+    const dockerfilePath = path.join(buildDir, 'Dockerfile');
+    await fs.writeFile(dockerfilePath, dockerfile);
+
+    const docker = new Docker();
+    const stream = new PassThrough();
+
+    // Créer un encodeur de texte
+    const encoder = new TextEncoder();
+    const readable = new ReadableStream({
+      start(controller) {
+        stream.on('data', (chunk) => {
+          controller.enqueue(chunk);
+        });
+        stream.on('end', () => {
+          controller.close();
+        });
+        stream.on('error', (err) => {
+          controller.error(err);
+        });
       },
-      async (event: any) => {
-        try {
-          await writer.write(
-            new TextEncoder().encode(JSON.stringify(event) + '\n')
-          );
-        } catch (error) {
-          console.error('Error writing to stream:', error);
+    });
+
+    try {
+      // Construire l'image
+      const buildStream = await docker.buildImage({
+        context: buildDir,
+        src: ['Dockerfile']
+      }, {
+        t: imageName,
+        dockerfile: 'Dockerfile',
+      });
+
+      // Suivre la progression
+      docker.modem.followProgress(
+        buildStream,
+        async (err: Error | null, output: any[]) => {
+          if (err) {
+            console.error('Build error:', err);
+            stream.write(encoder.encode(JSON.stringify({
+              error: true,
+              message: err.message
+            }) + '\n'));
+          } else {
+            stream.write(encoder.encode(JSON.stringify({
+              success: true,
+              message: 'Build completed successfully'
+            }) + '\n'));
+          }
+          stream.end();
+
+          // Nettoyer le dossier temporaire
+          try {
+            await fs.rm(buildDir, { recursive: true });
+          } catch (e) {
+            console.error('Failed to clean up build directory:', e);
+          }
+        },
+        (event: any) => {
+          if (event.stream) {
+            stream.write(encoder.encode(JSON.stringify({
+              stream: event.stream.trim()
+            }) + '\n'));
+          } else if (event.error) {
+            stream.write(encoder.encode(JSON.stringify({
+              error: true,
+              message: event.error
+            }) + '\n'));
+          }
         }
+      );
+
+      return new NextResponse(readable);
+    } catch (buildError: any) {
+      console.error('Build error:', buildError);
+      return new NextResponse(
+        JSON.stringify({
+          error: true,
+          message: buildError.message || 'Failed to build image'
+        }),
+        { 
+          status: 500,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      );
+    }
+  } catch (error: any) {
+    console.error('General error:', error);
+    return new NextResponse(
+      JSON.stringify({
+        error: true,
+        message: error.message || 'Internal Server Error'
+      }),
+      { 
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
       }
-    );
-
-    return new NextResponse(stream.readable, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      },
-    });
-  } catch (error) {
-    console.error('Error building image:', error);
-    
-    // Nettoyer le répertoire temporaire en cas d'erreur
-    if (tempDir) {
-      await cleanupTempDir(tempDir);
-    }
-
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to build image' },
-      { status: 500 }
     );
   }
 }

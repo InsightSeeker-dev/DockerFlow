@@ -47,6 +47,7 @@ import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { Shield, Wand2, Lightbulb, CheckCircle2 } from 'lucide-react';
+import { useDropzone } from 'react-dropzone';
 
 interface BuildLog {
   status: string;
@@ -90,6 +91,8 @@ export default function ImageBuilder({ onSuccess }: ImageBuilderProps) {
       recommendations: string[];
     };
   } | null>(null);
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const [contextFiles, setContextFiles] = useState<{ name: string; content: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const dockerfileTemplates = {
@@ -265,6 +268,53 @@ CMD ["nginx", "-g", "daemon off;"]`,
       );
     } finally {
       setIsBuilding(false);
+    }
+  };
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop: (acceptedFiles) => {
+      Promise.all(
+        acceptedFiles.map((file) => {
+          return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              resolve({
+                name: file.name,
+                content: reader.result as string,
+              });
+            };
+            reader.readAsText(file);
+          });
+        })
+      ).then((files: { name: string; content: string }[]) => {
+        setContextFiles((prev) => [...prev, ...files]);
+      });
+    },
+  });
+
+  const handlePreview = async () => {
+    try {
+      const response = await fetch('/api/admin/images/preview', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          dockerfile,
+          context: contextFiles,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate preview');
+      }
+
+      const data = await response.json();
+      setPreviewVisible(true);
+      // Mettre à jour la prévisualisation
+    } catch (error) {
+      console.error('Preview error:', error);
+      toast.error('Failed to generate preview');
     }
   };
 
@@ -512,46 +562,45 @@ CMD ["nginx", "-g", "daemon off;"]`,
               <div className="space-y-2">
                 <Label>Contexte de construction</Label>
                 <div className="border rounded-lg p-4 space-y-4">
-                  <div className="space-y-2">
-                    {buildContext.map((file, index) => (
-                      <div
-                        key={index}
-                        className="flex items-center justify-between p-2 bg-secondary rounded"
-                      >
-                        <div className="flex items-center">
-                          <File className="h-4 w-4 mr-2" />
-                          {file.name}
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setBuildContext((prev) =>
-                              prev.filter((_, i) => i !== index)
-                            );
-                          }}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ))}
+                  <div {...getRootProps()} className={cn(
+                    "border-2 border-dashed rounded-lg p-6 text-center cursor-pointer",
+                    isDragActive ? "border-primary" : "border-border",
+                  )}>
+                    <input {...getInputProps()} />
+                    <Upload className="mx-auto h-12 w-12 text-muted-foreground" />
+                    <p className="mt-2">
+                      {isDragActive
+                        ? "Drop the files here..."
+                        : "Drag 'n' drop some files here, or click to select files"}
+                    </p>
                   </div>
 
-                  <input
-                    type="file"
-                    multiple
-                    ref={fileInputRef}
-                    className="hidden"
-                    onChange={handleFileUpload}
-                  />
-
-                  <Button
-                    variant="outline"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <Upload className="h-4 w-4 mr-2" />
-                    Ajouter des fichiers
-                  </Button>
+                  {contextFiles.length > 0 && (
+                    <div className="space-y-2">
+                      <Label>Context Files</Label>
+                      <div className="rounded-lg border p-4">
+                        {contextFiles.map((file) => (
+                          <div key={file.name} className="flex items-center justify-between py-2">
+                            <span className="flex items-center">
+                              <File className="mr-2 h-4 w-4" />
+                              {file.name}
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setContextFiles((prev) =>
+                                  prev.filter((f) => f.name !== file.name)
+                                );
+                              }}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -573,17 +622,13 @@ CMD ["nginx", "-g", "daemon off;"]`,
             </div>
           </div>
 
-          <DialogFooter>
+          <div className="flex justify-end space-x-2">
             <Button
-              variant="default"
-              onClick={() => validateDockerfile(dockerfile)}
+              variant="outline"
+              onClick={handlePreview}
               disabled={!dockerfile || isBuilding}
             >
-              <CheckCircle2 className="h-4 w-4 mr-2" />
-              Valider
-            </Button>
-            <Button variant="outline" onClick={() => setIsBuilding(false)}>
-              Annuler
+              Preview
             </Button>
             <Button
               variant="default"
@@ -602,7 +647,7 @@ CMD ["nginx", "-g", "daemon off;"]`,
                 </>
               )}
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

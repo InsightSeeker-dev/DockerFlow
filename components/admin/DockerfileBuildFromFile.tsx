@@ -1,66 +1,96 @@
+'use client';
+
 import React, { useState, useRef } from 'react';
-import { Button, TextField, Paper, Typography, Box, IconButton, LinearProgress } from '@mui/material';
-import { Upload as UploadIcon, Build as BuildIcon, Clear as ClearIcon } from '@mui/icons-material';
-import { toast } from 'react-hot-toast';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { useToast } from '@/components/ui/use-toast';
+import { Loader2, Upload, File, X } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface DockerfileBuildFromFileProps {
-  onImageBuilt?: () => void;
+  onImageBuilt: () => void;
 }
 
 export default function DockerfileBuildFromFile({ onImageBuilt }: DockerfileBuildFromFileProps) {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [dockerfileContent, setDockerfileContent] = useState('');
-  const [imageName, setImageName] = useState('');
-  const [imageTag, setImageTag] = useState('latest');
-  const [isBuilding, setIsBuilding] = useState(false);
-  const [buildProgress, setBuildProgress] = useState<string[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [formData, setFormData] = useState({
+    name: '',
+    tag: 'latest',
+  });
 
-  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      try {
-        const content = await file.text();
-        setSelectedFile(file);
-        setDockerfileContent(content);
-      } catch (error) {
-        console.error('Error reading file:', error);
-        toast.error('Failed to read Dockerfile');
-      }
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setDragActive(true);
+    } else if (e.type === 'dragleave') {
+      setDragActive(false);
     }
   };
 
-  const handleClearFile = () => {
-    setSelectedFile(null);
-    setDockerfileContent('');
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    const file = e.dataTransfer.files?.[0];
+    if (file && (file.name === 'Dockerfile' || file.name.endsWith('.dockerfile'))) {
+      setSelectedFile(file);
+    } else {
+      toast({
+        variant: 'destructive',
+        title: 'Invalid file',
+        description: 'Please select a valid Dockerfile',
+      });
     }
   };
 
-  const handleBuild = async () => {
-    if (!dockerfileContent) {
-      toast.error('Please select a Dockerfile');
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && (file.name === 'Dockerfile' || file.name.endsWith('.dockerfile'))) {
+      setSelectedFile(file);
+    } else {
+      toast({
+        variant: 'destructive',
+        title: 'Invalid file',
+        description: 'Please select a valid Dockerfile',
+      });
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedFile || !formData.name || !formData.tag) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Please fill in all required fields and select a Dockerfile',
+      });
       return;
     }
-
-    if (!imageName) {
-      toast.error('Please enter an image name');
-      return;
-    }
-
-    setIsBuilding(true);
-    setBuildProgress([]);
 
     try {
+      setLoading(true);
+      const fileContent = await selectedFile.text();
+      
       const response = await fetch('/api/admin/images/build', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          dockerfile: dockerfileContent,
-          imageName: `${imageName}:${imageTag}`,
+          name: formData.name,
+          tag: formData.tag,
+          dockerfile: fileContent,
         }),
       });
 
@@ -68,127 +98,124 @@ export default function DockerfileBuildFromFile({ onImageBuilt }: DockerfileBuil
         throw new Error('Failed to build image');
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('No response stream');
-      }
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const text = new TextDecoder().decode(value);
-        const lines = text.split('\n').filter(line => line.trim());
-        
-        for (const line of lines) {
-          try {
-            const data = JSON.parse(line);
-            if (data.error) {
-              toast.error(data.message || 'Build failed');
-            } else if (data.stream) {
-              setBuildProgress(prev => [...prev, data.stream.trim()]);
-            }
-          } catch (e) {
-            console.error('Failed to parse build progress:', e);
-          }
-        }
-      }
-
-      toast.success('Image built successfully');
-      onImageBuilt?.();
+      toast({
+        title: 'Success',
+        description: 'Image built successfully',
+      });
+      onImageBuilt();
+      
+      // Reset form
+      setFormData({
+        name: '',
+        tag: 'latest',
+      });
+      setSelectedFile(null);
     } catch (error) {
-      console.error('Build error:', error);
-      toast.error('Failed to build image');
+      console.error('Error building image:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to build image. Please try again.',
+      });
     } finally {
-      setIsBuilding(false);
+      setLoading(false);
     }
   };
 
   return (
-    <Paper className="p-6 space-y-6">
-      <Typography variant="h6" className="mb-4">
-        Build from Dockerfile
-      </Typography>
+    <Card>
+      <CardHeader>
+        <CardTitle>Build from Dockerfile</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Image Name</Label>
+              <Input
+                id="name"
+                name="name"
+                value={formData.name}
+                onChange={handleInputChange}
+                placeholder="e.g., my-app"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tag">Tag</Label>
+              <Input
+                id="tag"
+                name="tag"
+                value={formData.tag}
+                onChange={handleInputChange}
+                placeholder="e.g., latest"
+                required
+              />
+            </div>
+          </div>
 
-      <Box className="space-y-4">
-        <Box className="flex items-center gap-4">
-          <input
-            type="file"
-            accept=".dockerfile,Dockerfile"
-            onChange={handleFileSelect}
-            className="hidden"
-            ref={fileInputRef}
-          />
-          <Button
-            variant="outlined"
-            onClick={() => fileInputRef.current?.click()}
-            startIcon={<UploadIcon />}
-            disabled={isBuilding}
-          >
-            Select Dockerfile
-          </Button>
-          {selectedFile && (
-            <>
-              <Typography variant="body2" className="flex-1">
-                {selectedFile.name}
-              </Typography>
-              <IconButton onClick={handleClearFile} size="small">
-                <ClearIcon />
-              </IconButton>
-            </>
-          )}
-        </Box>
-
-        {dockerfileContent && (
-          <Box className="bg-gray-50 p-4 rounded font-mono text-sm overflow-auto max-h-96">
-            <pre>{dockerfileContent}</pre>
-          </Box>
-        )}
-
-        <Box className="flex gap-4">
-          <TextField
-            label="Image Name"
-            value={imageName}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setImageName(e.target.value)}
-            placeholder="my-app"
-            className="flex-1"
-            disabled={isBuilding}
-          />
-          <TextField
-            label="Tag"
-            value={imageTag}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setImageTag(e.target.value)}
-            placeholder="latest"
-            className="w-32"
-            disabled={isBuilding}
-          />
-        </Box>
-
-        {isBuilding && (
-          <Box className="space-y-2">
-            <LinearProgress />
-            <Box className="bg-gray-50 p-4 rounded max-h-48 overflow-auto">
-              {buildProgress.map((line, index) => (
-                <div key={index} className="font-mono text-sm">
-                  {line}
+          <div className="space-y-2">
+            <Label>Dockerfile</Label>
+            <div
+              className={cn(
+                'border-2 border-dashed rounded-lg p-6 text-center cursor-pointer',
+                'hover:border-primary/50 transition-colors',
+                dragActive ? 'border-primary' : 'border-muted',
+                selectedFile ? 'bg-muted/50' : 'bg-background'
+              )}
+              onDragEnter={handleDrag}
+              onDragLeave={handleDrag}
+              onDragOver={handleDrag}
+              onDrop={handleDrop}
+              onClick={() => inputRef.current?.click()}
+            >
+              <input
+                ref={inputRef}
+                type="file"
+                accept=".dockerfile,Dockerfile"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              
+              {selectedFile ? (
+                <div className="flex items-center justify-center space-x-2">
+                  <File className="h-6 w-6 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">
+                    {selectedFile.name}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedFile(null);
+                    }}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
                 </div>
-              ))}
-            </Box>
-          </Box>
-        )}
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex justify-center">
+                    <Upload className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    <span className="font-medium">Click to upload</span> or drag and
+                    drop a Dockerfile
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
 
-        <Box className="flex justify-end">
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={handleBuild}
-            disabled={!dockerfileContent || !imageName || isBuilding}
-            startIcon={<BuildIcon />}
-          >
-            {isBuilding ? 'Building...' : 'Build Image'}
+          <Button type="submit" disabled={loading} className="w-full">
+            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Build Image
           </Button>
-        </Box>
-      </Box>
-    </Paper>
+        </form>
+      </CardContent>
+    </Card>
   );
 }

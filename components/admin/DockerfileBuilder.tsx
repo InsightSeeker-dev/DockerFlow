@@ -1,70 +1,92 @@
-import React, { useState } from 'react';
-import { Button, TextField, Paper, Typography, Box, IconButton, List, ListItem, ListItemText, Tooltip } from '@mui/material';
-import { Add as AddIcon, Delete as DeleteIcon, Build as BuildIcon } from '@mui/icons-material';
-import { toast } from 'react-hot-toast';
+'use client';
 
-interface DockerCommand {
-  type: 'FROM' | 'RUN' | 'COPY' | 'WORKDIR' | 'ENV' | 'EXPOSE' | 'CMD' | 'ENTRYPOINT';
-  value: string;
-}
+import React, { useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { useToast } from '@/components/ui/use-toast';
+import { Loader2 } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface DockerfileBuilderProps {
-  onImageBuilt?: () => void;
+  onImageBuilt: () => void;
 }
 
 export default function DockerfileBuilder({ onImageBuilt }: DockerfileBuilderProps) {
-  const [commands, setCommands] = useState<DockerCommand[]>([
-    { type: 'FROM', value: 'node:18-alpine' }
-  ]);
-  const [imageName, setImageName] = useState('');
-  const [imageTag, setImageTag] = useState('latest');
-  const [isBuilding, setIsBuilding] = useState(false);
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    tag: 'latest',
+    baseImage: 'node:18',
+    dockerfile: `FROM node:18
 
-  const commandTypes: DockerCommand['type'][] = [
-    'FROM', 'RUN', 'COPY', 'WORKDIR', 'ENV', 'EXPOSE', 'CMD', 'ENTRYPOINT'
+WORKDIR /app
+
+COPY package*.json ./
+
+RUN npm install
+
+COPY . .
+
+EXPOSE 3000
+
+CMD ["npm", "start"]`,
+  });
+
+  const baseImageOptions = [
+    { value: 'node:18', label: 'Node.js 18' },
+    { value: 'node:20', label: 'Node.js 20' },
+    { value: 'python:3.9', label: 'Python 3.9' },
+    { value: 'python:3.11', label: 'Python 3.11' },
+    { value: 'golang:1.21', label: 'Go 1.21' },
+    { value: 'ubuntu:22.04', label: 'Ubuntu 22.04' },
+    { value: 'alpine:3.18', label: 'Alpine 3.18' },
   ];
 
-  const addCommand = (type: DockerCommand['type']) => {
-    setCommands([...commands, { type, value: '' }]);
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const removeCommand = (index: number) => {
-    const newCommands = [...commands];
-    newCommands.splice(index, 1);
-    setCommands(newCommands);
+  const handleBaseImageChange = (value: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      baseImage: value,
+      dockerfile: `FROM ${value}\n\nWORKDIR /app\n\n# Add your commands here\n`,
+    }));
   };
 
-  const updateCommand = (index: number, value: string) => {
-    const newCommands = [...commands];
-    newCommands[index].value = value;
-    setCommands(newCommands);
-  };
-
-  const generateDockerfile = () => {
-    return commands
-      .filter(cmd => cmd.value.trim() !== '')
-      .map(cmd => `${cmd.type} ${cmd.value}`)
-      .join('\n');
-  };
-
-  const handleBuild = async () => {
-    if (!imageName) {
-      toast.error('Please enter an image name');
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.name || !formData.tag || !formData.dockerfile) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Please fill in all required fields',
+      });
       return;
     }
 
-    const dockerfile = generateDockerfile();
-    setIsBuilding(true);
-
     try {
+      setLoading(true);
       const response = await fetch('/api/admin/images/build', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          dockerfile,
-          imageName: `${imageName}:${imageTag}`,
+          name: formData.name,
+          tag: formData.tag,
+          dockerfile: formData.dockerfile,
         }),
       });
 
@@ -72,129 +94,100 @@ export default function DockerfileBuilder({ onImageBuilt }: DockerfileBuilderPro
         throw new Error('Failed to build image');
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('No response stream');
-      }
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const text = new TextDecoder().decode(value);
-        const lines = text.split('\n').filter(line => line.trim());
-        
-        for (const line of lines) {
-          try {
-            const data = JSON.parse(line);
-            if (data.error) {
-              toast.error(data.message || 'Build failed');
-            } else if (data.stream) {
-              console.log(data.stream);
-            }
-          } catch (e) {
-            console.error('Failed to parse build progress:', e);
-          }
-        }
-      }
-
-      toast.success('Image built successfully');
-      onImageBuilt?.();
+      toast({
+        title: 'Success',
+        description: 'Image built successfully',
+      });
+      onImageBuilt();
+      
+      // Reset form
+      setFormData((prev) => ({
+        ...prev,
+        name: '',
+        tag: 'latest',
+        dockerfile: `FROM ${prev.baseImage}\n\nWORKDIR /app\n\n# Add your commands here\n`,
+      }));
     } catch (error) {
-      console.error('Build error:', error);
-      toast.error('Failed to build image');
+      console.error('Error building image:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to build image. Please try again.',
+      });
     } finally {
-      setIsBuilding(false);
+      setLoading(false);
     }
   };
 
   return (
-    <Paper className="p-6 space-y-6">
-      <Typography variant="h6" className="mb-4">
-        Create Docker Image
-      </Typography>
+    <Card>
+      <CardHeader>
+        <CardTitle>Build Docker Image</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Image Name</Label>
+              <Input
+                id="name"
+                name="name"
+                value={formData.name}
+                onChange={handleInputChange}
+                placeholder="e.g., my-app"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tag">Tag</Label>
+              <Input
+                id="tag"
+                name="tag"
+                value={formData.tag}
+                onChange={handleInputChange}
+                placeholder="e.g., latest"
+                required
+              />
+            </div>
+          </div>
 
-      <Box className="flex gap-4 mb-6">
-        <TextField
-          label="Image Name"
-          value={imageName}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setImageName(e.target.value)}
-          placeholder="my-app"
-          className="flex-1"
-        />
-        <TextField
-          label="Tag"
-          value={imageTag}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setImageTag(e.target.value)}
-          placeholder="latest"
-          className="w-32"
-        />
-      </Box>
+          <div className="space-y-2">
+            <Label>Base Image</Label>
+            <Select
+              value={formData.baseImage}
+              onValueChange={handleBaseImageChange}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select base image" />
+              </SelectTrigger>
+              <SelectContent>
+                {baseImageOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-      <List className="space-y-2">
-        {commands.map((cmd, index) => (
-          <ListItem
-            key={index}
-            className="flex items-center gap-2 bg-gray-50 rounded"
-            secondaryAction={
-              <IconButton
-                edge="end"
-                onClick={() => removeCommand(index)}
-                disabled={index === 0}
-              >
-                <DeleteIcon />
-              </IconButton>
-            }
-          >
-            <ListItemText
-              primary={
-                <Box className="flex items-center gap-2">
-                  <Typography
-                    variant="body2"
-                    className="font-mono bg-blue-100 px-2 py-1 rounded"
-                  >
-                    {cmd.type}
-                  </Typography>
-                  <TextField
-                    value={cmd.value}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateCommand(index, e.target.value)}
-                    placeholder={`Enter ${cmd.type} command`}
-                    fullWidth
-                    size="small"
-                  />
-                </Box>
-              }
+          <div className="space-y-2">
+            <Label htmlFor="dockerfile">Dockerfile Content</Label>
+            <Textarea
+              id="dockerfile"
+              name="dockerfile"
+              value={formData.dockerfile}
+              onChange={handleInputChange}
+              className="font-mono h-[300px]"
+              required
             />
-          </ListItem>
-        ))}
-      </List>
+          </div>
 
-      <Box className="flex justify-between mt-4">
-        <Box className="flex gap-2">
-          {commandTypes.map((type) => (
-            <Tooltip key={type} title={`Add ${type} command`}>
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={() => addCommand(type)}
-                startIcon={<AddIcon />}
-              >
-                {type}
-              </Button>
-            </Tooltip>
-          ))}
-        </Box>
-        
-        <Button
-          variant="contained"
-          color="primary"
-          onClick={handleBuild}
-          disabled={isBuilding}
-          startIcon={<BuildIcon />}
-        >
-          {isBuilding ? 'Building...' : 'Build Image'}
-        </Button>
-      </Box>
-    </Paper>
+          <Button type="submit" disabled={loading} className="w-full">
+            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Build Image
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }

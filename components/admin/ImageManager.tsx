@@ -23,7 +23,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/components/ui/use-toast';
 import { Loader2, RefreshCcw, Trash2, Info, Copy, ExternalLink } from 'lucide-react';
 import ImagePuller from './ImagePuller';
-import { UnifiedImageBuilder } from './UnifiedImageBuilder';
+import UnifiedImageBuilder from './UnifiedImageBuilder';
 import ImageSearch from './ImageSearch';
 
 interface DockerImage {
@@ -132,13 +132,14 @@ export default function ImageManager() {
   const handleDeleteImage = async (imageId: string) => {
     try {
       setLoading(true);
-      const response = await fetch('/api/admin/images/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageId }),
+      const response = await fetch(`/api/admin/images/${imageId}`, {
+        method: 'DELETE',
       });
 
-      if (!response.ok) throw new Error('Failed to delete image');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to delete image');
+      }
       
       toast({
         title: 'Success',
@@ -150,7 +151,7 @@ export default function ImageManager() {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Failed to delete image. Please try again.',
+        description: error instanceof Error ? error.message : 'Failed to delete image. Please try again.',
       });
     } finally {
       setLoading(false);
@@ -298,6 +299,70 @@ export default function ImageManager() {
         </TabsContent>
       </Tabs>
 
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-destructive">Delete Docker Image</DialogTitle>
+            <DialogDescription className="space-y-2">
+              <p>Are you sure you want to delete this Docker image? This action cannot be undone.</p>
+              {selectedImage && (
+                <>
+                  <div className="mt-4 p-4 bg-muted/50 rounded-lg space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">Image:</span>
+                      <span>{selectedImage.RepoTags?.[0] || 'Untitled'}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">ID:</span>
+                      <code className="text-xs bg-background px-2 py-1 rounded">
+                        {selectedImage.Id.substring(7, 19)}
+                      </code>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">Size:</span>
+                      <span>{formatSize(selectedImage.Size)}</span>
+                    </div>
+                  </div>
+                  {selectedImage.RepoTags && selectedImage.RepoTags.length > 1 && (
+                    <div className="mt-2 p-2 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 rounded">
+                      <p className="text-sm">
+                        Warning: This image has multiple tags. All tags will be removed.
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteConfirm(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => selectedImage && handleDeleteImage(selectedImage.Id)}
+              disabled={loading}
+              className="gap-2"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4" />
+                  Delete Image
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={showImageInfo} onOpenChange={setShowImageInfo}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
@@ -371,40 +436,6 @@ export default function ImageManager() {
               </div>
             </ScrollArea>
           )}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirm Deletion</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete this image?
-              {selectedImage?.RepoTags?.[0] && (
-                <p className="mt-2 font-medium">{selectedImage.RepoTags[0]}</p>
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowDeleteConfirm(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => selectedImage && handleDeleteImage(selectedImage.Id)}
-              disabled={loading}
-            >
-              {loading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="mr-2 h-4 w-4" />
-              )}
-              Delete
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

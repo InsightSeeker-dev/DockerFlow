@@ -23,8 +23,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/components/ui/use-toast';
 import { Loader2, RefreshCcw, Trash2, Info, Copy, ExternalLink } from 'lucide-react';
 import ImagePuller from './ImagePuller';
-import DockerfileBuilder from './DockerfileBuilder';
-import DockerfileBuildFromFile from './DockerfileBuildFromFile';
+import { UnifiedImageBuilder } from './UnifiedImageBuilder';
 import ImageSearch from './ImageSearch';
 
 interface DockerImage {
@@ -214,7 +213,6 @@ export default function ImageManager() {
           <TabsTrigger value="images">Images</TabsTrigger>
           <TabsTrigger value="pull">Pull Image</TabsTrigger>
           <TabsTrigger value="build">Build Image</TabsTrigger>
-          <TabsTrigger value="buildfile">Build from File</TabsTrigger>
         </TabsList>
 
         <TabsContent value="images" className="space-y-4">
@@ -296,11 +294,7 @@ export default function ImageManager() {
         </TabsContent>
 
         <TabsContent value="build">
-          <DockerfileBuilder onImageBuilt={fetchImages} />
-        </TabsContent>
-
-        <TabsContent value="buildfile">
-          <DockerfileBuildFromFile onImageBuilt={fetchImages} />
+          <UnifiedImageBuilder onImageBuilt={fetchImages} />
         </TabsContent>
       </Tabs>
 

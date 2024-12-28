@@ -25,46 +25,51 @@ const validationRules: ValidationRule[] = [
     severity: 'error',
   },
 
-  // Bonnes pratiques
-  {
-    pattern: /^RUN\s+apt-get\s+(?!update)/i,
-    message: 'Il est recommandé de faire un apt-get update avant d\'installer des paquets',
-    severity: 'warning',
-    fix: (line: string) => line.replace(/^RUN\s+apt-get/, 'RUN apt-get update && apt-get'),
-  },
-  {
-    pattern: /^RUN\s+apt-get\s+.*(?<!--no-install-recommends)/i,
-    message: 'Utilisez --no-install-recommends avec apt-get install pour réduire la taille de l\'image',
-    severity: 'warning',
-    fix: (line: string) => {
-      if (line.includes('install')) {
-        return line.replace('install', 'install --no-install-recommends');
-      }
-      return line;
-    },
-  },
-  {
-    pattern: /^RUN\s+(?!.*&&).*apt-get\s+update/i,
-    message: 'Combinez apt-get update et install dans la même instruction RUN',
-    severity: 'warning',
-  },
-  {
-    pattern: /^ADD\s+/i,
-    message: 'Préférez COPY à ADD sauf si vous avez besoin de fonctionnalités spécifiques d\'ADD',
-    severity: 'warning',
-    fix: (line: string) => line.replace(/^ADD/, 'COPY'),
-  },
-
-  // Sécurité
+  // Sécurité renforcée
   {
     pattern: /^RUN\s+.*curl\s+.*\|\s*sh/i,
     message: 'Évitez d\'exécuter des scripts téléchargés directement via curl',
     severity: 'error',
   },
   {
-    pattern: /^USER\s+root\s*$/i,
-    message: 'Évitez d\'utiliser l\'utilisateur root comme utilisateur final',
+    pattern: /^RUN\s+.*wget\s+.*\|\s*sh/i,
+    message: 'Évitez d\'exécuter des scripts téléchargés directement via wget',
+    severity: 'error',
+  },
+  {
+    pattern: /^RUN\s+.*chmod\s+777/i,
+    message: 'Évitez d\'utiliser des permissions trop permissives (777)',
+    severity: 'error',
+  },
+  {
+    pattern: /^ENV\s+.*PASSWORD.*=/i,
+    message: 'Évitez de stocker des mots de passe en tant que variables d\'environnement',
+    severity: 'error',
+  },
+  {
+    pattern: /^ENV\s+.*SECRET.*=/i,
+    message: 'Évitez de stocker des secrets en tant que variables d\'environnement',
+    severity: 'error',
+  },
+
+  // Optimisation de la taille
+  {
+    pattern: /^RUN\s+apt-get\s+install\s+.*[^&]\s*$/i,
+    message: 'Combinez les commandes RUN pour réduire le nombre de couches',
     severity: 'warning',
+    fix: (line: string) => `${line} && apt-get clean && rm -rf /var/lib/apt/lists/*`,
+  },
+  {
+    pattern: /^RUN\s+npm\s+install\s+.*[^&]\s*$/i,
+    message: 'Nettoyez le cache npm après l\'installation',
+    severity: 'warning',
+    fix: (line: string) => `${line} && npm cache clean --force`,
+  },
+  {
+    pattern: /^RUN\s+pip\s+install\s+.*[^&]\s*$/i,
+    message: 'Utilisez --no-cache-dir avec pip install',
+    severity: 'warning',
+    fix: (line: string) => line.replace('pip install', 'pip install --no-cache-dir'),
   },
 
   // Multi-stage builds
@@ -73,29 +78,28 @@ const validationRules: ValidationRule[] = [
     message: 'Bonne utilisation du multi-stage build',
     severity: 'warning',
   },
-
-  // Versions spécifiques
   {
-    pattern: /^FROM\s+\S+:latest/i,
-    message: 'Évitez d\'utiliser le tag latest, préférez une version spécifique',
-    severity: 'warning',
-    fix: (line: string) => line.replace(':latest', ':stable'),
-  },
-
-  // Cache des dépendances
-  {
-    pattern: /^COPY\s+package\*.json\s+\./i,
-    message: 'Bonne pratique : copie des fichiers package.json avant les autres fichiers',
+    pattern: /^COPY\s+--from=\S+\s+/i,
+    message: 'Bonne utilisation de COPY --from dans un multi-stage build',
     severity: 'warning',
   },
 
-  // Nettoyage
+  // Bonnes pratiques
   {
-    pattern: /^RUN\s+.*apt-get\s+.*(?<!&&\s*apt-get\s+clean)/i,
-    message: 'Nettoyez le cache apt après l\'installation',
+    pattern: /^WORKDIR\s+\/app/i,
+    message: 'Bonne pratique : utilisation de /app comme répertoire de travail',
     severity: 'warning',
-    fix: (line: string) => `${line} && apt-get clean && rm -rf /var/lib/apt/lists/*`,
   },
+  {
+    pattern: /^EXPOSE\s+\d+/i,
+    message: 'Bonne pratique : exposition explicite des ports',
+    severity: 'warning',
+  },
+  {
+    pattern: /^HEALTHCHECK/i,
+    message: 'Bonne pratique : définition d\'un healthcheck',
+    severity: 'warning',
+  }
 ];
 
 export function validateDockerfile(content: string): ValidationIssue[] {
@@ -232,71 +236,54 @@ export function fixDockerfile(content: string, issues: ValidationIssue[]): strin
 }
 
 export function analyzeDockerfileSecurity(content: string): {
-  issues: ValidationIssue[];
   score: number;
   recommendations: string[];
 } {
-  const issues: ValidationIssue[] = [];
   const recommendations: string[] = [];
   let score = 100;
 
-  const securityChecks = [
-    {
-      pattern: /^USER\s+root\s*$/im,
-      message: 'Utilisation de l\'utilisateur root',
-      severity: 'warning' as const,
-      impact: -20,
-      recommendation: 'Créez et utilisez un utilisateur non-root',
-    },
-    {
-      pattern: /curl\s+.*\|\s*(?:bash|sh)/im,
-      message: 'Exécution de scripts distants via curl',
-      severity: 'error' as const,
-      impact: -30,
-      recommendation: 'Téléchargez et vérifiez les scripts avant de les exécuter',
-    },
-    {
-      pattern: /chmod\s+777/im,
-      message: 'Permissions trop permissives',
-      severity: 'warning' as const,
-      impact: -15,
-      recommendation: 'Utilisez des permissions plus restrictives',
-    },
-    {
-      pattern: /(api|access|secret).*key/im,
-      message: 'Possible exposition de clés sensibles',
-      severity: 'error' as const,
-      impact: -25,
-      recommendation: 'Utilisez des secrets Docker ou des variables d\'environnement',
-    },
-  ];
-
-  securityChecks.forEach(check => {
-    if (check.pattern.test(content)) {
-      issues.push({
-        line: content.split('\n').findIndex(line => check.pattern.test(line)) + 1,
-        message: check.message,
-        severity: check.severity,
-      });
-      score += check.impact;
-      recommendations.push(check.recommendation);
-    }
-  });
-
-  // Vérifications supplémentaires
-  if (!content.includes('USER')) {
-    score -= 10;
-    recommendations.push('Spécifiez explicitement un utilisateur non-root');
+  // Vérifications de sécurité
+  if (content.includes('USER root')) {
+    score -= 20;
+    recommendations.push('Évitez d\'utiliser l\'utilisateur root comme utilisateur final');
   }
 
+  if (!content.includes('USER')) {
+    score -= 15;
+    recommendations.push('Définissez un utilisateur non-root explicite');
+  }
+
+  if (content.match(/chmod\s+777/)) {
+    score -= 25;
+    recommendations.push('Les permissions 777 sont dangereuses, utilisez des permissions plus restrictives');
+  }
+
+  if (content.match(/ENV\s+.*PASSWORD/i) || content.match(/ENV\s+.*SECRET/i)) {
+    score -= 30;
+    recommendations.push('Ne stockez jamais de secrets ou mots de passe dans les variables d\'environnement');
+  }
+
+  if (content.match(/curl\s+.*\|\s*sh/) || content.match(/wget\s+.*\|\s*sh/)) {
+    score -= 40;
+    recommendations.push('L\'exécution de scripts téléchargés présente un risque de sécurité majeur');
+  }
+
+  // Vérifications des bonnes pratiques de sécurité
   if (!content.includes('HEALTHCHECK')) {
     score -= 5;
-    recommendations.push('Ajoutez un HEALTHCHECK pour la surveillance du conteneur');
+    recommendations.push('Ajoutez un HEALTHCHECK pour surveiller l\'état du conteneur');
   }
 
+  if (content.includes(':latest')) {
+    score -= 10;
+    recommendations.push('Utilisez des versions spécifiques des images plutôt que latest');
+  }
+
+  // Limiter le score entre 0 et 100
+  score = Math.max(0, Math.min(100, score));
+
   return {
-    issues,
-    score: Math.max(0, Math.min(100, score)),
-    recommendations: Array.from(recommendations),
+    score,
+    recommendations: Array.from(new Set(recommendations)), // Dédupliquer les recommandations
   };
 }

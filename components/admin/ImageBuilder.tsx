@@ -107,9 +107,28 @@ CMD ["npm", "start"]`,
     python: `FROM python:3.9-slim
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
+EXPOSE 5000
 CMD ["python", "app.py"]`,
+    go: `FROM golang:1.19-alpine
+WORKDIR /app
+COPY go.* ./
+RUN go mod download
+COPY . .
+RUN go build -o main .
+EXPOSE 8080
+CMD ["./main"]`,
+    java: `FROM maven:3.8.4-openjdk-17-slim AS build
+WORKDIR /app
+COPY pom.xml .
+COPY src ./src
+RUN mvn clean package -DskipTests
+
+FROM openjdk:17-slim
+COPY --from=build /app/target/*.jar app.jar
+EXPOSE 8080
+CMD ["java", "-jar", "app.jar"]`,
     nginx: `FROM nginx:alpine
 COPY . /usr/share/nginx/html
 EXPOSE 80
@@ -130,56 +149,64 @@ CMD ["nginx", "-g", "daemon off;"]`,
     try {
       const response = await fetch('/api/admin/images/validate', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dockerfile: content }),
       });
 
-      if (response.ok) {
-        const result = await response.json();
-        setValidationResult(result);
-        return result.valid;
+      if (!response.ok) throw new Error('Validation failed');
+
+      const result = await response.json();
+      setValidationResult(result);
+
+      if (!result.valid) {
+        toast({
+          variant: 'destructive',
+          description: `Found ${result.issues.length} issues in your Dockerfile`,
+        });
       }
-      return false;
+
+      return result.valid;
     } catch (error) {
       console.error('Error validating Dockerfile:', error);
-      toast.error('Erreur lors de la validation du Dockerfile');
+      toast({
+        variant: 'destructive',
+        description: 'Failed to validate Dockerfile',
+      });
       return false;
     }
   };
 
   const handleBuild = async () => {
-    if (!dockerfile || !buildTag) {
-      toast.error('Le Dockerfile et le tag sont requis');
+    if (!buildTag.trim()) {
+      toast({
+        variant: 'destructive',
+        description: 'Please provide a tag for your image',
+      });
       return;
     }
 
-    // Valider le Dockerfile avant la construction
+    // Validate Dockerfile before building
     const isValid = await validateDockerfile(dockerfile);
-    if (!isValid) {
-      toast.error('Le Dockerfile contient des erreurs. Veuillez les corriger avant de continuer.');
-      return;
-    }
+    if (!isValid) return;
 
     setIsBuilding(true);
     setBuildLogs([]);
 
     const buildId = Date.now().toString();
-    const newBuild: BuildHistory = {
+    const newBuild = {
       id: buildId,
       tag: buildTag,
-      status: 'building',
+      status: 'building' as const,
       startTime: new Date().toISOString(),
     };
 
     setBuildHistory((prev) => [newBuild, ...prev]);
 
     try {
-      // Créer un FormData avec le Dockerfile et les fichiers du contexte
       const formData = new FormData();
       formData.append('dockerfile', new Blob([dockerfile], { type: 'text/plain' }));
       formData.append('tag', buildTag);
+
       buildContext.forEach((file) => {
         formData.append('context', file);
       });
@@ -189,71 +216,39 @@ CMD ["nginx", "-g", "daemon off;"]`,
         body: formData,
       });
 
-      if (!response.ok) {
-        throw new Error('Erreur lors de la construction');
-      }
+      if (!response.ok) throw new Error('Build failed');
 
       const reader = response.body?.getReader();
-      if (!reader) return;
+      if (!reader) throw new Error('No response reader');
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        // Convertir le buffer en string et parser les logs
         const text = new TextDecoder().decode(value);
         const logs = text.split('\n')
           .filter(Boolean)
-          .map(line => {
-            try {
-              return JSON.parse(line);
-            } catch {
-              return { stream: line };
-            }
-          });
+          .map((line) => JSON.parse(line) as BuildLog);
 
         setBuildLogs((prev) => [...prev, ...logs]);
-
-        // Mettre à jour l'historique si une erreur est détectée
-        const error = logs.find(log => log.error);
-        if (error) {
-          setBuildHistory((prev) =>
-            prev.map((build) =>
-              build.id === buildId
-                ? {
-                    ...build,
-                    status: 'error',
-                    endTime: new Date().toISOString(),
-                    error: error.error,
-                  }
-                : build
-            )
-          );
-        }
       }
 
-      // Mettre à jour l'historique avec succès
       setBuildHistory((prev) =>
         prev.map((build) =>
           build.id === buildId
-            ? {
-                ...build,
-                status: 'success',
-                endTime: new Date().toISOString(),
-              }
+            ? { ...build, status: 'success', endTime: new Date().toISOString() }
             : build
         )
       );
 
-      toast.success('Image construite avec succès');
-      setIsBuilding(false);
-      setBuildContext([]);
-      setBuildTag('');
+      toast({
+        variant: 'default',
+        description: 'Image built successfully',
+      });
+
       onSuccess();
     } catch (error) {
-      console.error('Error building image:', error);
-      toast.error('Erreur lors de la construction de l\'image');
-
+      console.error('Build error:', error);
       setBuildHistory((prev) =>
         prev.map((build) =>
           build.id === buildId
@@ -266,6 +261,11 @@ CMD ["nginx", "-g", "daemon off;"]`,
             : build
         )
       );
+
+      toast({
+        variant: 'destructive',
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
     } finally {
       setIsBuilding(false);
     }
@@ -287,7 +287,7 @@ CMD ["nginx", "-g", "daemon off;"]`,
           });
         })
       ).then((files: { name: string; content: string }[]) => {
-        setContextFiles((prev) => [...prev, ...files]);
+        setContextFiles(files);
       });
     },
   });
@@ -428,6 +428,8 @@ CMD ["nginx", "-g", "daemon off;"]`,
                     <SelectItem value="custom">Personnalisé</SelectItem>
                     <SelectItem value="node">Node.js</SelectItem>
                     <SelectItem value="python">Python</SelectItem>
+                    <SelectItem value="go">Go</SelectItem>
+                    <SelectItem value="java">Java</SelectItem>
                     <SelectItem value="nginx">Nginx</SelectItem>
                   </SelectContent>
                 </Select>

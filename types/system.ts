@@ -1,48 +1,70 @@
 export interface SystemStats {
+  // Container Stats
   containers: number;
   containersRunning: number;
   containersStopped: number;
-  images: number;
+  containersError: number;
+  containerTrend: number;
+  
+  // User Stats
+  totalUsers: number;
+  activeUsers: number;
+  newUsers: number;
+  suspendedUsers: number;
+  userTrend: number;
+  
+  // System Resources
   cpuUsage: number;
+  cpuCount: number;
+  cpuTrend: number;
+  
   memoryUsage: {
-    used: number;
     total: number;
+    used: number;
+    free: number;
     percentage: number;
   };
+  memoryTrend: number;
+
   diskUsage: {
-    used: number;
     total: number;
+    used: number;
+    free: number;
     percentage: number;
   };
-  resourceLimits: {
-    memory: {
-      limit: number;
-      available: number;
-      formatted: string;
-    };
-    storage: {
-      limit: number;
-      available: number;
-      formatted: string;
-    };
+
+  networkTraffic: {
+    in: number;
+    out: number;
   };
-}
-export interface SystemStats {
-  containers: number;
-  containersRunning: number;
-  containersStopped: number;
-  images: number;
-  storage: {
-    used: number;
+
+  networkIO?: {
+    bytesPerSecond: number;
+    packetsPerSecond: number;
+  };
+
+  systemLoad?: number;
+
+  // Image Stats
+  images: {
     total: number;
-    percentage: number;
-    formatted: {
-      used: string;
-      total: string;
-      available: string;
-    }
-  }
+    size: number;
+    pulls: number;
+    tags?: Array<{
+      name: string;
+      count: number;
+    }>;
+  };
+
+  // Performance History
+  performanceHistory: Array<{
+    timestamp: string;
+    cpu: number;
+    memory: number;
+    network: number;
+  }>;
 }
+
 export interface User {
   id: string;
   name: string;
@@ -53,8 +75,8 @@ export interface User {
   role: string;
   memoryLimit: number;
   storageLimit: number;
-  createdAt: Date;
-  updatedAt: Date;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export interface Container {
@@ -89,4 +111,15 @@ export interface Container {
     Source: string;
     Destination: string;
   }>;
+}
+
+export interface Activity {
+  id: string;
+  type: 'container' | 'image' | 'user' | 'system';
+  description: string;
+  user: string;
+  time: string;
+  details?: {
+    [key: string]: any;
+  };
 }

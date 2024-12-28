@@ -1,22 +1,20 @@
-export interface Container {
-  Id: string;
-  Names: string[];
-  Image: string;
-  State: string;
-  Status: string;
-  Created: number;
-  NetworkSettings: {
-    IPAddress: string;
-    Ports: {
-      [key: string]: Array<{
-        HostIp: string;
-        HostPort: string;
-      }> | null;
-    };
+import { ContainerInfo } from 'dockerode';
+
+export interface NetworkSettings {
+  Networks: { [networkType: string]: NetworkInfo };
+  Ports: {
+    [portAndProtocol: string]: Array<{
+      HostIp: string;
+      HostPort: string;
+    }> | null;
   };
-  createdAt: string;
-  updatedAt: string;
-  userId: string;
+}
+
+export interface Container extends Omit<ContainerInfo, 'NetworkSettings'> {
+  NetworkSettings: NetworkSettings;
+  created_at: string;
+  updated_at: string;
+  user_id: string;
 }
 
 export interface Port {
@@ -32,12 +30,16 @@ export interface NetworkInfo {
 }
 
 export interface ContainerStats {
-  cpu_percent: number;
-  memory_usage: number;
-  memory_limit: number;
-  memory_percent: number;
-  network_rx_bytes: number;
-  network_tx_bytes: number;
+  cpu: number;
+  memory: {
+    usage: number;
+    limit: number;
+    percentage: number;
+  };
+  network: {
+    rx_bytes: number;
+    tx_bytes: number;
+  };
 }
 
 export interface DockerImage {

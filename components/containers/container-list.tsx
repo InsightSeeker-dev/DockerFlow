@@ -19,6 +19,7 @@ import {
   Search as SearchIcon,
   Filter as FilterIcon,
   SortAsc as SortAscIcon,
+  ExternalLink as ExternalLinkIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -63,7 +64,7 @@ export function ContainerList({
             comparison = a.State.localeCompare(b.State);
             break;
           case 'created':
-            comparison = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+            comparison = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
             break;
         }
         return sortOrder === 'asc' ? comparison : -comparison;
@@ -196,14 +197,22 @@ export function ContainerList({
               </TableCell>
               <TableCell>{container.Image}</TableCell>
               <TableCell>
-                {container.NetworkSettings?.Ports?.length > 0 && (
-                  <a 
-                    href={`http://${container.NetworkSettings.IPAddress}:${container.NetworkSettings.Ports[0].HostPort}`} 
-                    target="_blank" 
+                {container.State.toLowerCase() === 'running' &&
+                 Object.keys(container.NetworkSettings.Ports || {}).length > 0 &&
+                 Object.values(container.NetworkSettings.Networks)[0]?.IPAddress && (
+                  <a
+                    href={`http://${Object.values(container.NetworkSettings.Networks)[0].IPAddress}:${
+                      Object.values(container.NetworkSettings.Ports)[0]?.[0]?.HostPort
+                    }`}
+                    target="_blank"
                     rel="noopener noreferrer"
-                    className="text-blue-500 hover:underline"
+                    className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
                   >
-                    {container.NetworkSettings.IPAddress}:{container.NetworkSettings.Ports[0].HostPort}
+                    <span className="flex items-center gap-1">
+                      {Object.values(container.NetworkSettings.Networks)[0].IPAddress}:
+                      {Object.values(container.NetworkSettings.Ports)[0]?.[0]?.HostPort}
+                      <ExternalLinkIcon className="h-4 w-4" />
+                    </span>
                   </a>
                 )}
               </TableCell>

@@ -12,7 +12,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import {
   Form,
@@ -31,8 +30,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { useToast } from '@/components/ui/use-toast';
-import { UserPlusIcon } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
 const createUserSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -44,12 +42,13 @@ const createUserSchema = z.object({
 type FormData = z.infer<typeof createUserSchema>;
 
 interface CreateUserDialogProps {
-  onSuccess: () => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (data: FormData) => Promise<void>;
 }
 
-export function CreateUserDialog({ onSuccess }: CreateUserDialogProps) {
-  const [open, setOpen] = useState(false);
-  const { toast } = useToast();
+export function CreateUserDialog({ open, onOpenChange, onSubmit }: CreateUserDialogProps) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const form = useForm<FormData>({
     resolver: zodResolver(createUserSchema),
     defaultValues: {
@@ -60,44 +59,23 @@ export function CreateUserDialog({ onSuccess }: CreateUserDialogProps) {
     },
   });
 
-  async function onSubmit(data: FormData) {
+  async function handleSubmit(data: FormData) {
     try {
-      const response = await fetch('/api/admin/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to create user');
-      }
-
-      toast({
-        title: 'Success',
-        description: 'User created successfully',
-      });
-
+      setIsSubmitting(true);
+      await onSubmit(data);
       form.reset();
-      setOpen(false);
-      onSuccess();
+      onOpenChange(false);  // Fermer le dialogue après succès
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'An error occurred',
-        variant: 'destructive',
-      });
+      console.error('Error in form submission:', error);
+      // Ne pas réinitialiser le formulaire en cas d'erreur
+      // L'erreur sera affichée par le composant parent via toast
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button>
-          <UserPlusIcon className="mr-2 h-4 w-4" />
-          Create User
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Create User</DialogTitle>
@@ -107,7 +85,7 @@ export function CreateUserDialog({ onSuccess }: CreateUserDialogProps) {
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
             <FormField
               control={form.control}
               name="name"
@@ -145,6 +123,9 @@ export function CreateUserDialog({ onSuccess }: CreateUserDialogProps) {
                   <FormControl>
                     <Input type="password" {...field} />
                   </FormControl>
+                  <FormDescription>
+                    At least 8 characters long
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -179,11 +160,21 @@ export function CreateUserDialog({ onSuccess }: CreateUserDialogProps) {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setOpen(false)}
+                onClick={() => onOpenChange(false)}
+                disabled={isSubmitting}
               >
                 Cancel
               </Button>
-              <Button type="submit">Create</Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  'Create User'
+                )}
+              </Button>
             </DialogFooter>
           </form>
         </Form>

@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { getDockerClient } from '@/lib/docker/client';
 import { Prisma } from '@prisma/client';
+import { imageActivity } from '@/lib/activity';
 
 interface ExtendedSession extends Session {
   user: {
@@ -102,25 +103,62 @@ export async function POST(request: Request) {
       }
 
       // Save image to user's storage
-      const savedImage = await prisma.userStorage.create({
+      const savedImage = await prisma.dockerImage.create({
         data: {
-          name: tag ? `${name}:${tag}` : name,
+          name,
+          tag: tag || 'latest',
+          size: imageSize,
+          userId: session.user.id,
+        },
+      });
+
+      // Also track the storage usage
+      await prisma.userStorage.create({
+        data: {
           path: `/docker/images/${name}`,
           size: imageSize,
-          type: 'docker-image',
-          isDockerImage: true,
-          dockerImageTag: tag || 'latest',
-          dockerImageId: image.Id,
           userId: session.user.id,
         },
       });
 
       return NextResponse.json({ success: true, image: savedImage });
     } catch (error) {
-      return NextResponse.json(
-        { error: 'Image not found locally. Please pull the image first.' },
-        { status: 404 }
-      );
+      // Pull image from Docker Hub
+      const { image, tag = 'latest' } = await request.json();
+      const imageName = `${image}:${tag}`;
+
+      const stream = await docker.pull(imageName);
+      await new Promise((resolve, reject) => {
+        docker.modem.followProgress(stream, (err: any, res: any) => err ? reject(err) : resolve(res));
+      });
+
+      // Enregistrer l'activité
+      await imageActivity.pull(session.user.id, imageName, {
+        tag,
+        repository: image,
+        timestamp: new Date().toISOString()
+      });
+
+      // Save image to user's storage
+      const savedImage = await prisma.dockerImage.create({
+        data: {
+          name,
+          tag: tag || 'latest',
+          size: await getImageSize(imageName),
+          userId: session.user.id,
+        },
+      });
+
+      // Also track the storage usage
+      await prisma.userStorage.create({
+        data: {
+          path: `/docker/images/${name}`,
+          size: await getImageSize(imageName),
+          userId: session.user.id,
+        },
+      });
+
+      return NextResponse.json({ success: true, image: savedImage });
     }
   } catch (error) {
     console.error('Save image error:', error);

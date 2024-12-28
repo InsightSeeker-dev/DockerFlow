@@ -5,8 +5,9 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatDate(timestamp: number): string {
-  return new Date(timestamp).toLocaleDateString(undefined, {
+export function formatDate(timestamp: number | string): string {
+  const date = typeof timestamp === 'string' ? new Date(timestamp) : new Date(timestamp);
+  return date.toLocaleDateString(undefined, {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
@@ -15,15 +16,12 @@ export function formatDate(timestamp: number): string {
   });
 }
 
-export function formatBytes(bytes: number): string {
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let value = bytes;
-  let unitIndex = 0;
-
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex++;
-  }
-
-  return `${value.toFixed(2)} ${units[unitIndex]}`;
+export function formatBytes(bytes: number | string): string {
+  const numBytes = typeof bytes === 'string' ? parseInt(bytes) : bytes;
+  if (isNaN(numBytes)) return '0 Bytes';
+  
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  if (numBytes === 0) return '0 Bytes';
+  const i = Math.floor(Math.log(numBytes) / Math.log(1024));
+  return `${(numBytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
 }

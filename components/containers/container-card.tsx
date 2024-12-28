@@ -67,23 +67,48 @@ export function ContainerCard({ container, onStatusChange }: ContainerCardProps)
       }));
     });
 
-  // Fetch container stats
-  const fetchStats = async () => {
-    if (!showStats || container.State.toLowerCase() !== 'running') return;
-    try {
-      const response = await fetch(`/api/containers/${container.Id}/stats`);
-      if (!response.ok) throw new Error('Failed to fetch stats');
-      const data = await response.json();
-      setStats(data);
-    } catch (error) {
-      console.error('Failed to fetch container stats:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to fetch container statistics',
-        variant: 'destructive',
-      });
+  useEffect(() => {
+    let mounted = true;
+
+    const fetchStats = async () => {
+      if (!showStats) return;
+      
+      try {
+        const response = await fetch(`/api/containers/${container.Id}/stats`);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        if (mounted) {
+          setStats(data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch container stats:', error);
+        toast({
+          title: "Error",
+          description: "Failed to fetch container statistics",
+          variant: "destructive",
+        });
+        if (mounted) {
+          setShowStats(false);
+        }
+      }
+    };
+
+    if (showStats) {
+      fetchStats();
+      const interval = setInterval(fetchStats, 2000);
+      setStatsInterval(interval);
     }
-  };
+
+    return () => {
+      mounted = false;
+      if (statsInterval) {
+        clearInterval(statsInterval);
+        setStatsInterval(null);
+      }
+    };
+  }, [showStats, container.Id, toast]);
 
   // Handle container actions
   const handleAction = async (action: 'start' | 'stop' | 'remove') => {
@@ -114,21 +139,6 @@ export function ContainerCard({ container, onStatusChange }: ContainerCardProps)
       setIsLoading(false);
     }
   };
-
-  // Setup and cleanup stats polling
-  useEffect(() => {
-    if (showStats && container.State.toLowerCase() === 'running') {
-      fetchStats();
-      const interval = setInterval(fetchStats, 2000);
-      setStatsInterval(interval);
-      return () => clearInterval(interval);
-    } else {
-      if (statsInterval) {
-        clearInterval(statsInterval);
-        setStatsInterval(null);
-      }
-    }
-  }, [showStats, container.State]);
 
   return (
     <Card className={cn('overflow-hidden transition-all duration-200', {
@@ -174,25 +184,33 @@ export function ContainerCard({ container, onStatusChange }: ContainerCardProps)
         </div>
 
         {/* Container Stats */}
-        {showStats && stats && container.State.toLowerCase() === 'running' && (
-          <div className="space-y-2 rounded-md bg-gray-50 p-2 dark:bg-gray-900">
-            <div className="space-y-1">
+        {showStats && stats && (
+          <div className="mt-4 space-y-4">
+            <div className="space-y-2">
               <div className="flex items-center justify-between text-xs">
                 <span>CPU Usage</span>
-                <span>{stats.cpu_percent.toFixed(1)}%</span>
+                <span>{stats.cpu.toFixed(1)}%</span>
               </div>
-              <Progress value={stats.cpu_percent} className="h-1" />
+              <Progress value={stats.cpu} className="h-1" />
             </div>
-            <div className="space-y-1">
+
+            <div className="space-y-2">
               <div className="flex items-center justify-between text-xs">
                 <span>Memory Usage</span>
-                <span>{Math.round(stats.memory_percent)}%</span>
+                <span>
+                  {formatBytes(stats.memory.usage)} / {formatBytes(stats.memory.limit)} ({stats.memory.percentage.toFixed(1)}%)
+                </span>
               </div>
-              <Progress value={stats.memory_percent} className="h-1" />
+              <Progress value={stats.memory.percentage} className="h-1" />
             </div>
-            <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-              <div>Network IN: {formatBytes(stats.network_rx_bytes)}</div>
-              <div>Network OUT: {formatBytes(stats.network_tx_bytes)}</div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span>Network I/O</span>
+                <span>
+                  ↓ {formatBytes(stats.network.rx_bytes)}/s ↑ {formatBytes(stats.network.tx_bytes)}/s
+                </span>
+              </div>
             </div>
           </div>
         )}

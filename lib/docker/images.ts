@@ -1,42 +1,47 @@
 import { getDockerClient } from './client';
+import { DockerImage } from './types';
 import { prisma } from '@/lib/prisma';
+import { ImageInfo } from 'dockerode';
 
-interface DockerImage {
-  id: string;
-  name: string;
-  size: number;
-  created: number;
-  tags: string[];
+function transformImageInfo(image: ImageInfo): DockerImage {
+  return {
+    ...image,
+    RepoTags: image.RepoTags || [],
+    RepoDigests: image.RepoDigests || []
+  };
 }
 
-export async function getUserImages(userId: string): Promise<DockerImage[]> {
+export async function listImages(): Promise<DockerImage[]> {
+  const docker = getDockerClient();
+  try {
+    const images = await docker.listImages();
+    return images.map(transformImageInfo);
+  } catch (error) {
+    console.error('Error listing images:', error);
+    throw new Error('Failed to list images');
+  }
+}
+
+export async function listUserImages(userId: string): Promise<DockerImage[]> {
   const docker = getDockerClient();
   const userContainers = await prisma.container.findMany({
     where: { userId },
-    select: { image: true }
+    select: { imageId: true }
   });
 
   const images = await docker.listImages();
-  const userImages = images
-    .filter(img => img.RepoTags && img.RepoTags.length > 0)
-    .map(img => ({
-      id: img.Id,
-      name: img.RepoTags![0],
-      size: img.Size,
-      created: img.Created,
-      tags: img.RepoTags || []
-    }))
-    .filter(img => 
-      userContainers.some(container => container.image === img.name) ||
-      img.tags.some(tag => tag.startsWith(`user_${userId}/`))
-    );
+  const userImageIds = new Set(userContainers.map(c => c.imageId));
 
-  return userImages;
+  return images
+    .filter(image => 
+      image.RepoTags?.some(tag => userImageIds.has(tag)) ||
+      userImageIds.has(image.Id)
+    )
+    .map(transformImageInfo);
 }
 
-export async function pullImage(userId: string, imageName: string): Promise<void> {
+export async function pullImage(imageName: string, userId: string): Promise<void> {
   const docker = getDockerClient();
-  
   try {
     await docker.pull(imageName);
     // Tag image with user ID for tracking
@@ -46,28 +51,19 @@ export async function pullImage(userId: string, imageName: string): Promise<void
       tag: 'latest'
     });
   } catch (error) {
-    console.error('Failed to pull image:', error);
-    throw new Error('Failed to pull Docker image');
+    console.error('Error pulling image:', error);
+    throw new Error('Failed to pull image');
   }
 }
 
 export async function removeImage(userId: string, imageId: string): Promise<void> {
   const docker = getDockerClient();
-  
   try {
-    // Verify image belongs to user
-    const userImages = await getUserImages(userId);
-    const imageToRemove = userImages.find(img => img.id === imageId);
-    
-    if (!imageToRemove) {
-      throw new Error('Image not found or access denied');
-    }
-
-    // Check if image is in use
+    // Vérifier si l'image est utilisée
     const containers = await prisma.container.findMany({
       where: { 
         userId,
-        image: imageToRemove.name
+        imageId
       }
     });
 
@@ -75,11 +71,11 @@ export async function removeImage(userId: string, imageId: string): Promise<void
       throw new Error('Cannot remove image: it is being used by containers');
     }
 
-    // Remove image
+    // Supprimer l'image
     const image = docker.getImage(imageId);
     await image.remove();
   } catch (error) {
-    console.error('Failed to remove image:', error);
-    throw error;
+    console.error('Error removing image:', error);
+    throw new Error('Failed to remove image');
   }
 }

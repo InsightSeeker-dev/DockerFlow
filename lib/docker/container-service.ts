@@ -1,10 +1,65 @@
 import { getDockerClient } from './client';
-import type { Container, ContainerStats } from './types';
+import type { Container, ContainerStats, NetworkSettings } from './types';
+import type { ContainerInfo } from 'dockerode';
+import { prisma } from '@/lib/prisma';
 
 export async function listContainers(): Promise<Container[]> {
   const docker = getDockerClient();
   try {
-    return await docker.listContainers({ all: true });
+    const containers = await docker.listContainers({ all: true });
+    const containerNames = containers.map(c => c.Names[0].replace(/^\//, ''));
+    
+    // Récupérer les informations supplémentaires de la base de données
+    const dbContainers = await prisma.container.findMany({
+      where: {
+        name: {
+          in: containerNames
+        }
+      }
+    });
+
+    // Créer une map pour un accès rapide aux données de la base
+    const dbContainersMap = new Map(dbContainers.map(c => [c.name, c]));
+
+    // Combiner les informations Docker avec celles de la base de données
+    return containers.map(container => {
+      const containerName = container.Names[0].replace(/^\//, '');
+      const dbContainer = dbContainersMap.get(containerName);
+      
+      // Convertir NetworkSettings au format attendu
+      const networkSettings: NetworkSettings = {
+        Networks: container.NetworkSettings?.Networks || {},
+        Ports: container.Ports?.reduce((acc, port) => {
+          const key = `${port.PrivatePort}/${port.Type}`;
+          acc[key] = port.PublicPort ? [{
+            HostIp: port.IP || '0.0.0.0',
+            HostPort: port.PublicPort.toString()
+          }] : null;
+          return acc;
+        }, {} as NetworkSettings['Ports']) || {}
+      };
+
+      // Créer un nouvel objet avec les bons noms de champs
+      const containerInfo = {
+        Id: container.Id,
+        Names: container.Names,
+        Image: container.Image,
+        ImageID: container.ImageID,
+        Command: container.Command,
+        Created: container.Created,
+        State: container.State,
+        Status: container.Status,
+        Ports: container.Ports,
+        Labels: container.Labels,
+        Mounts: container.Mounts,
+        NetworkSettings: networkSettings,
+        created_at: dbContainer?.created.toISOString() || new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        user_id: dbContainer?.userId || 'system'
+      };
+
+      return containerInfo as Container;
+    });
   } catch (error) {
     console.error('Error listing containers:', error);
     throw new Error('Failed to list containers');

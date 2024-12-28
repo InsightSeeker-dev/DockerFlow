@@ -1,60 +1,261 @@
-datasource db {
-  provider = "mongodb"
-  url      = env("DATABASE_URL")
-}
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
   provider = "prisma-client-js"
   previewFeatures = ["mongodb"]
 }
 
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING
+}
+
+enum AlertType {
+  CONTAINER
+  SYSTEM
+  USER
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
+}
+
+enum AlertStatus {
+  PENDING
+  RESOLVED
+  DISMISSED
+}
+
+enum ActivityType {
+  USER_LOGIN
+  USER_LOGOUT
+  USER_REGISTER
+  USER_UPDATE
+  USER_DELETE
+  CONTAINER_CREATE
+  CONTAINER_START
+  CONTAINER_STOP
+  CONTAINER_DELETE
+  IMAGE_PULL
+  IMAGE_DELETE
+  ALERT_TRIGGERED
+  ALERT_RESOLVED
+  SYSTEM_UPDATE
+}
+
+model AlertRule {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  description String?
+  type        String    // container, system, user
+  condition   Json      // Conditions de déclenchement
+  action      Json      // Actions à effectuer
+  enabled     Boolean   @default(true)
+  severity    String    @default("info") // info, warning, error, critical
+  createdBy   String    @db.ObjectId
+  user        User      @relation(fields: [createdBy], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
 model User {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  name            String
-  email           String   @unique
-  password        String
-  avatar          String?
-  bio             String?
-  role            String   @default("USER")
-  memoryLimit     Int      @default(1073741824)  // 1GB in bytes
-  storageLimit    Int      @default(5368709120)  // 5GB in bytes
-  containers      Container[]
-  storage         UserStorage[]
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                     String      @id @default(auto()) @map("_id") @db.ObjectId
+  name                   String?
+  username               String      @unique
+  email                  String      @unique
+  emailVerified         DateTime?   @map("emailVerified")
+  password               String
+  role                   UserRole    @default(ADMIN)
+  status                 UserStatus  @default(ACTIVE)
+  image                  String?
+  bio                    String?
+  defaultRegistry        String      @default("docker.io")
+  autoUpdate            Boolean     @default(true)
+  resourceLimits        Json?
+  notifications         Json?
+  resetToken             String?     
+  resetTokenExpiry       DateTime?
+  cpuLimit               Int         @default(4000)
+  memoryLimit            Int         @default(8589934592)
+  storageLimit           Int         @default(107374182400)
+  cpuThreshold           Int         @default(80)
+  memoryThreshold        Int         @default(85)
+  storageThreshold       Int         @default(90)
+  accounts               Account[]
+  sessions               Session[]
+  containers             Container[]
+  storage                UserStorage[]
+  dockerImages           DockerImage[]
+  resourceUsage          ResourceUsage[]
+  alerts                 Alert[]     @relation("UserAlerts")
+  acknowledgedAlerts     Alert[]     @relation("AlertAcknowledgements")
+  alertRules             AlertRule[]
+  terminalSessions       TerminalSession[]
+  verificationTokens     VerificationToken[]
+  activities             Activity[]
+  createdAt              DateTime    @default(now()) @map("created_at")
+  updatedAt              DateTime    @updatedAt @map("updated_at")
+  lastLogin              DateTime?
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(auto()) @map("_id") @db.ObjectId
+  userId            String  @db.ObjectId
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.String
+  access_token      String? @db.String
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.String
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  sessionToken String   @unique
+  userId       String   @db.ObjectId
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
 }
 
 model Container {
-  id          String   @id @map("_id")
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
   name        String
-  image       String
-  status      String   @default("stopped")
-  port        Int?
-  url         String?
-  dockerfile  String?
-  memory      Int      @default(268435456)  // 256MB default
-  storage     Int      @default(1073741824) // 1GB default
+  imageId     String
+  status      String
+  ports       Json?
+  volumes     Json?
+  env         Json?
+  cpuLimit    Int
+  memoryLimit Int
+  created     DateTime @default(now())
   userId      String   @db.ObjectId
-  user        User     @relation(fields: [userId], references: [id])
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resourceUsage ResourceUsage[]
+
+  @@map("containers")
 }
 
 model UserStorage {
-  id            String    @id @default(auto()) @map("_id") @db.ObjectId
-  name          String
-  path          String
-  size          Int
-  type          String
-  userId        String    @db.ObjectId
-  user          User      @relation(fields: [userId], references: [id])
-  parentId      String?   @db.ObjectId
-  parent        UserStorage?  @relation("StorageHierarchy", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  children      UserStorage[] @relation("StorageHierarchy")
-  isDirectory   Boolean   @default(false)
-  isDockerImage Boolean   @default(false)
-  dockerImageTag String?
-  dockerImageId  String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  path      String
+  size      Int
+  created   DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_storage")
+}
+
+model DockerImage {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  name      String
+  tag       String
+  size      Int
+  created   DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("docker_images")
+}
+
+model ResourceUsage {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId
+  user        User     @relation(fields: [userId], references: [id])
+  containerId String?  @db.ObjectId
+  container   Container? @relation(fields: [containerId], references: [id])
+  cpuUsage    Float
+  memoryUsage Float
+  networkIO   Float
+  timestamp   DateTime @default(now())
+
+  @@map("resource_usage")
+}
+
+model Alert {
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String    @db.ObjectId
+  type           AlertType
+  title          String
+  message        String
+  source         String?   // La source de l'alerte (container, system, etc.)
+  severity       AlertSeverity @default(INFO)
+  status         AlertStatus   @default(PENDING)
+  acknowledged   Boolean   @default(false)
+  acknowledgedById String? @db.ObjectId @map("acknowledged_by")
+  acknowledgedAt DateTime? @map("acknowledged_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  
+  user           User      @relation("UserAlerts", fields: [userId], references: [id])
+  acknowledgedByUser User? @relation("AlertAcknowledgements", fields: [acknowledgedById], references: [id])
+
+  @@index([userId])
+  @@index([acknowledgedById])
+  @@map("alerts")
+}
+
+model Activity {
+  id          String      @id @default(auto()) @map("_id") @db.ObjectId
+  type        ActivityType
+  description String
+  userId      String      @db.ObjectId
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime    @default(now())
+  user        User        @relation(fields: [userId], references: [id])
+
+  @@map("activities")
+}
+
+model TerminalSession {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  containerId String
+  status    String
+  created   DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("terminal_sessions")
+}
+
+model VerificationToken {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String   @db.ObjectId
+  token      String   @unique
+  expires    DateTime
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("verification_tokens")
 }

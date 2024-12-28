@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '../../auth/[...nextauth]/route';
-import { db } from '@/lib/db';
+import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 import { hash, compare } from 'bcryptjs';
 
 export async function PUT(request: Request) {
@@ -20,13 +20,38 @@ export async function PUT(request: Request) {
       if (value) updates[field] = value;
     });
 
+    // Handle Docker settings
+    const defaultRegistry = formData.get('defaultRegistry');
+    const autoUpdate = formData.get('autoUpdate');
+    const resourceLimits = formData.get('resourceLimits');
+
+    if (defaultRegistry) updates.defaultRegistry = defaultRegistry;
+    if (autoUpdate) updates.autoUpdate = autoUpdate === 'true';
+    if (resourceLimits) {
+      try {
+        updates.resourceLimits = JSON.parse(resourceLimits as string);
+      } catch (e) {
+        console.error('Failed to parse resource limits:', e);
+      }
+    }
+
+    // Handle notification settings
+    const notifications = formData.get('notifications');
+    if (notifications) {
+      try {
+        updates.notifications = JSON.parse(notifications as string);
+      } catch (e) {
+        console.error('Failed to parse notifications:', e);
+      }
+    }
+
     // Handle password change
     const currentPassword = formData.get('currentPassword');
     const newPassword = formData.get('newPassword');
     const confirmPassword = formData.get('confirmPassword');
 
     if (currentPassword && newPassword && confirmPassword) {
-      const user = await db.user.findUnique({
+      const user = await prisma.user.findUnique({
         where: { id: session.user.id as string },
         select: { password: true },
       });
@@ -54,7 +79,7 @@ export async function PUT(request: Request) {
     }
 
     // Update user in database
-    const updatedUser = await db.user.update({
+    const updatedUser = await prisma.user.update({
       where: { id: session.user.id as string },
       data: updates,
     });

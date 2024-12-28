@@ -1,213 +1,465 @@
 'use client';
-
+import { Lock, User, Mail, Container, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
-import { Lock, User, Mail, Container } from 'lucide-react';
 import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { useToast } from '@/components/ui/use-toast';
+import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
-import dynamic from 'next/dynamic';
 
-const LoadingSpinner = dynamic(() => import('@/components/LoadingSpinner'), { ssr: false });
-
-const AuthPage = () => {
+const DockerFlowAuth = () => {
   const router = useRouter();
-  const { toast } = useToast();
-  const [mounted, setMounted] = useState(false);
+  const [isClient, setIsClient] = useState(false);
   const [isLogin, setIsLogin] = useState(true);
-  const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
     password: '',
-    username: ''
+    username: '',
+    accountType: 'user'
   });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
+    setIsClient(true);
   }, []);
 
-  if (!mounted) {
-    return null;
+  if (!isClient) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md">
+          <h2 className="text-center text-3xl font-extrabold text-gray-900">
+            Loading...
+          </h2>
+        </div>
+      </div>
+    );
   }
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const clearError = (field: string) => {
+    setErrors(prev => {
+      const newErrors = { ...prev };
+      delete newErrors[field];
+      return newErrors;
+    });
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+    clearError(name); // Efface l'erreur quand l'utilisateur commence à modifier le champ
+  };
+
+  const handleAccountTypeChange = (type: string) => {
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      accountType: type
     }));
   };
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const validateForm = () => {
+    const newErrors: any = {};
+    if (!formData.email) {
+      newErrors.email = 'Email is required';
+    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+      newErrors.email = 'Email is invalid';
+    }
+    if (!formData.password) {
+      newErrors.password = 'Password is required';
+    } else if (formData.password.length < 6) {
+      newErrors.password = 'Password must be at least 6 characters';
+    }
+    if (!isLogin && !formData.username) {
+      newErrors.username = 'Username is required';
+    }
+    return newErrors;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setErrors({});
+    setSuccessMessage(null);
 
     try {
       if (isLogin) {
-        const res = await signIn('credentials', {
+        // Connexion
+        const result = await signIn('credentials', {
           email: formData.email,
           password: formData.password,
           redirect: false,
         });
 
-        if (res?.error) {
-          toast({
-            title: 'Error',
-            description: 'Invalid credentials',
-            variant: 'destructive',
-          });
-          return;
+        if (result?.error) {
+          setErrors({ auth: 'Invalid email or password' });
+        } else {
+          router.push('/dashboard');
         }
-
-        toast({
-          title: 'Success',
-          description: 'Welcome back!',
-        });
-
-        router.push('/dashboard');
-        router.refresh();
       } else {
-        // Register new user
-        const res = await fetch('/api/auth/register', {
+        // Inscription
+        const response = await fetch('/api/auth/register', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            name: formData.username,
-            email: formData.email,
-            password: formData.password,
-          }),
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
         });
 
-        const data = await res.json();
+        const data = await response.json();
 
-        if (!res.ok) {
-          throw new Error(data.error || 'Registration failed');
+        if (!response.ok) {
+          if (data.errors) {
+            setErrors(data.errors.reduce((acc: Record<string, string>, curr: { field: string, message: string }) => {
+              acc[curr.field] = curr.message;
+              return acc;
+            }, {}));
+          } else {
+            setErrors({ auth: data.error || 'Registration failed' });
+          }
+        } else {
+          setSuccessMessage('Registration successful! Please check your email to verify your account.');
+          // Rediriger vers la page de confirmation
+          router.push('/auth/confirmation');
         }
-
-        toast({
-          title: 'Success',
-          description: 'Account created successfully! Please login.',
-        });
-        setIsLogin(true);
       }
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'An error occurred',
-        variant: 'destructive',
-      });
+      console.error('Auth error:', error);
+      setErrors({ auth: 'An error occurred. Please try again.' });
     } finally {
       setIsLoading(false);
     }
   };
 
+  const formVariants = {
+    hidden: { opacity: 0, x: -20 },
+    visible: { opacity: 1, x: 0 }
+  };
+
+  const inputVariants = {
+    rest: { 
+      scale: 1,
+      borderColor: "rgba(75, 85, 99, 0.6)"
+    },
+    focus: { 
+      scale: 1.01,
+      borderColor: "#3b82f6",
+      transition: {
+        duration: 0.2
+      }
+    }
+  };
+
   return (
-    <div className="min-h-screen dark:bg-gray-950 bg-gray-50 flex items-center justify-center p-4" suppressHydrationWarning>
-      <div className="w-full max-w-md dark:bg-gray-900 bg-white rounded-xl shadow-2xl overflow-hidden">
-        <div className="px-8 pt-6 pb-4 dark:bg-gray-800 bg-gray-100">
-          <div className="flex items-center justify-center mb-4">
-            <Container className="mr-3 dark:text-blue-400 text-blue-600" size={48} />
-            <h1 className="text-3xl font-bold dark:text-blue-400 text-blue-600">DockerFlow</h1>
+    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-gray-700 via-gray-900 to-black flex items-center justify-center p-6">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-md bg-black/40 backdrop-blur-xl rounded-2xl border border-gray-800"
+      >
+        <div className="p-8">
+          <motion.div 
+            className="flex items-center justify-center mb-8"
+            whileHover={{ scale: 1.05 }}
+          >
+            <Container className="text-blue-500 mr-3" size={40} />
+            <h1 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-blue-600">
+              DockerFlow
+            </h1>
+          </motion.div>
+
+          <div className="flex mb-8 bg-gray-800/30 rounded-lg p-1">
+            {['Login', 'Register'].map((type) => (
+              <button
+                key={type}
+                onClick={() => setIsLogin(type === 'Login')}
+                className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all duration-200 ${
+                  (isLogin && type === 'Login') || (!isLogin && type === 'Register')
+                    ? 'text-white bg-blue-500/20 text-blue-400'
+                    : 'text-gray-400 hover:text-gray-300'
+                }`}
+              >
+                {type}
+              </button>
+            ))}
           </div>
-          <div className="flex border-b dark:border-gray-700 border-gray-300 mb-6">
-            <button 
-              type="button"
-              onClick={() => setIsLogin(true)}
-              className={`w-1/2 py-3 text-lg font-semibold ${isLogin ? 'dark:text-blue-400 text-blue-600 dark:border-blue-400 border-blue-600 border-b-2' : 'dark:text-gray-400 text-gray-600'}`}
+
+          <AnimatePresence mode="wait">
+            <motion.form
+              key={isLogin ? 'login' : 'register'}
+              initial={{ opacity: 0, x: isLogin ? -20 : 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: isLogin ? 20 : -20 }}
+              onSubmit={handleSubmit}
+              className="space-y-5"
             >
-              Login
-            </button>
-            <button 
-              type="button"
-              onClick={() => setIsLogin(false)}
-              className={`w-1/2 py-3 text-lg font-semibold ${!isLogin ? 'dark:text-blue-400 text-blue-600 dark:border-blue-400 border-blue-600 border-b-2' : 'dark:text-gray-400 text-gray-600'}`}
-            >
-              Register
-            </button>
-          </div>
-        </div>
-        <form onSubmit={handleSubmit} className="px-8 pt-6 pb-8">
-          {!isLogin && (
-            <div className="mb-4">
-              <label className="block dark:text-gray-300 text-gray-700 text-sm font-bold mb-2" htmlFor="username">
-                <User className="inline-block mr-2 mb-1" size={20} />
-                Username
-              </label>
-              <input
-                type="text"
-                id="username"
-                name="username"
-                value={formData.username}
-                onChange={handleChange}
-                className="shadow appearance-none border rounded w-full py-2 px-3 dark:bg-gray-800 bg-gray-50 dark:text-gray-200 text-gray-900 dark:border-gray-700 border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Choose a username"
-                required={!isLogin}
-                disabled={isLoading}
-              />
-            </div>
-          )}
-          <div className="mb-4">
-            <label className="block dark:text-gray-300 text-gray-700 text-sm font-bold mb-2" htmlFor="email">
-              <Mail className="inline-block mr-2 mb-1" size={20} />
-              Email
-            </label>
-            <input
-              type="email"
-              id="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              className="shadow appearance-none border rounded w-full py-2 px-3 dark:bg-gray-800 bg-gray-50 dark:text-gray-200 text-gray-900 dark:border-gray-700 border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Enter your email"
-              required
-              disabled={isLoading}
-            />
-          </div>
-          <div className="mb-6">
-            <label className="block dark:text-gray-300 text-gray-700 text-sm font-bold mb-2" htmlFor="password">
-              <Lock className="inline-block mr-2 mb-1" size={20} />
-              Password
-            </label>
-            <input
-              type="password"
-              id="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              className="shadow appearance-none border rounded w-full py-2 px-3 dark:bg-gray-800 bg-gray-50 dark:text-gray-200 text-gray-900 dark:border-gray-700 border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Enter your password"
-              required
-              disabled={isLoading}
-            />
-          </div>
-          <div className="flex items-center justify-between">
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full bg-blue-600 hover:bg-blue-700 dark:text-white text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading && mounted && (
-                <span className="flex items-center justify-center">
-                  <LoadingSpinner />
-                  Processing...
-                </span>
+              {isLogin ? (
+                // Formulaire de connexion
+                <div className="space-y-4">
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                    <input
+                      type="email"
+                      name="email"
+                      placeholder="Email"
+                      className="pl-10 pr-4 py-3 w-full border border-gray-700/50 rounded-lg bg-gray-800/30 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200"
+                      value={formData.email}
+                      onChange={handleChange}
+                      onFocus={() => clearError('email')}
+                      disabled={isLoading}
+                    />
+                    {errors.email && (
+                      <motion.p 
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mt-1 text-sm text-red-400 flex items-center"
+                      >
+                        <AlertCircle className="mr-1" size={12} />
+                        {errors.email}
+                      </motion.p>
+                    )}
+                  </div>
+
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      name="password"
+                      placeholder="Password"
+                      className="pl-10 pr-12 py-3 w-full border border-gray-700/50 rounded-lg bg-gray-800/30 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200"
+                      value={formData.password}
+                      onChange={handleChange}
+                      onFocus={() => clearError('password')}
+                      disabled={isLoading}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300 transition-colors focus:outline-none"
+                    >
+                      {showPassword ? (
+                        <EyeOff size={20} />
+                      ) : (
+                        <Eye size={20} />
+                      )}
+                    </button>
+                    {errors.password && (
+                      <motion.p 
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mt-1 text-sm text-red-400 flex items-center"
+                      >
+                        <AlertCircle className="mr-1" size={12} />
+                        {errors.password}
+                      </motion.p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                // Formulaire d'inscription
+                <div className="space-y-4">
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                    <input
+                      type="text"
+                      name="username"
+                      placeholder="Username"
+                      className="pl-10 pr-4 py-3 w-full border border-gray-700/50 rounded-lg bg-gray-800/30 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200"
+                      value={formData.username}
+                      onChange={handleChange}
+                      onFocus={() => clearError('username')}
+                      disabled={isLoading}
+                    />
+                    {errors.username && (
+                      <motion.p 
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mt-1 text-sm text-red-400 flex items-center"
+                      >
+                        <AlertCircle className="mr-1" size={12} />
+                        {errors.username}
+                      </motion.p>
+                    )}
+                  </div>
+
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                    <input
+                      type="email"
+                      name="email"
+                      placeholder="Email"
+                      className="pl-10 pr-4 py-3 w-full border border-gray-700/50 rounded-lg bg-gray-800/30 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200"
+                      value={formData.email}
+                      onChange={handleChange}
+                      onFocus={() => clearError('email')}
+                      disabled={isLoading}
+                    />
+                    {errors.email && (
+                      <motion.p 
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mt-1 text-sm text-red-400 flex items-center"
+                      >
+                        <AlertCircle className="mr-1" size={12} />
+                        {errors.email}
+                      </motion.p>
+                    )}
+                  </div>
+
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      name="password"
+                      placeholder="Password"
+                      className="pl-10 pr-12 py-3 w-full border border-gray-700/50 rounded-lg bg-gray-800/30 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200"
+                      value={formData.password}
+                      onChange={handleChange}
+                      onFocus={() => clearError('password')}
+                      disabled={isLoading}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300 transition-colors focus:outline-none"
+                    >
+                      {showPassword ? (
+                        <EyeOff size={20} />
+                      ) : (
+                        <Eye size={20} />
+                      )}
+                    </button>
+                    {errors.password && (
+                      <motion.p 
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mt-1 text-sm text-red-400 flex items-center"
+                      >
+                        <AlertCircle className="mr-1" size={12} />
+                        {errors.password}
+                      </motion.p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm text-gray-400">Account Type</label>
+                    <div className="grid grid-cols-2 gap-4">
+                      <button
+                        type="button"
+                        onClick={() => handleAccountTypeChange('user')}
+                        className={`p-4 rounded-lg border ${
+                          formData.accountType === 'user'
+                            ? 'border-blue-500 bg-blue-500/10'
+                            : 'border-gray-700/50 bg-gray-800/30'
+                        } transition-all duration-200 hover:border-blue-500/50`}
+                      >
+                        <div className="flex flex-col items-center space-y-2">
+                          <User className={`${
+                            formData.accountType === 'user' ? 'text-blue-500' : 'text-gray-400'
+                          }`} size={24} />
+                          <span className={`text-sm font-medium ${
+                            formData.accountType === 'user' ? 'text-blue-500' : 'text-gray-400'
+                          }`}>
+                            User
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            Basic features
+                          </span>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleAccountTypeChange('pro')}
+                        className={`p-4 rounded-lg border ${
+                          formData.accountType === 'pro'
+                            ? 'border-blue-500 bg-blue-500/10'
+                            : 'border-gray-700/50 bg-gray-800/30'
+                        } transition-all duration-200 hover:border-blue-500/50`}
+                      >
+                        <div className="flex flex-col items-center space-y-2">
+                          <Container className={`${
+                            formData.accountType === 'pro' ? 'text-blue-500' : 'text-gray-400'
+                          }`} size={24} />
+                          <span className={`text-sm font-medium ${
+                            formData.accountType === 'pro' ? 'text-blue-500' : 'text-gray-400'
+                          }`}>
+                            Pro
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            Advanced features
+                          </span>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                </div>
               )}
-              {!isLoading && (isLogin ? 'Sign In' : 'Create Account')}
-            </button>
-          </div>
-          {isLogin && (
-            <div className="text-center mt-4">
-              <Link href="/auth/reset-password" className="text-sm dark:text-blue-400 text-blue-600 hover:dark:text-blue-300 hover:text-blue-500 transition duration-300">
-                Forgot Password?
-              </Link>
-            </div>
-          )}
-        </form>
-      </div>
+
+              {errors.auth && (
+                <motion.div 
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-3 rounded-lg bg-red-500/10 border border-red-500/20"
+                >
+                  <p className="text-sm text-red-400 flex items-center">
+                    <AlertCircle className="mr-2" size={16} />
+                    {errors.auth}
+                  </p>
+                </motion.div>
+              )}
+
+              {successMessage && (
+                <motion.div 
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-3 rounded-lg bg-green-500/10 border border-green-500/20"
+                >
+                  <p className="text-sm text-green-400 flex items-center">
+                    <AlertCircle className="mr-2" size={16} />
+                    {successMessage}
+                  </p>
+                </motion.div>
+              )}
+
+              <motion.button
+                type="submit"
+                disabled={isLoading}
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.99 }}
+                className={`w-full py-3 px-4 rounded-lg text-white font-medium transition-all duration-200 ${
+                  isLoading
+                    ? 'bg-blue-500/50 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-lg shadow-blue-500/20'
+                }`}
+              >
+                {isLoading ? (
+                  <div className="flex items-center justify-center">
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Please wait...
+                  </div>
+                ) : (
+                  isLogin ? 'Sign In' : 'Create Account'
+                )}
+              </motion.button>
+
+              {isLogin && (
+                <div className="mt-4 text-center">
+                  <Link
+                    href="/forgot-password"
+                    className="text-sm text-gray-400 hover:text-blue-400 transition-colors duration-200"
+                  >
+                    Forgot your password?
+                  </Link>
+                </div>
+              )}
+            </motion.form>
+          </AnimatePresence>
+        </div>
+      </motion.div>
     </div>
   );
 };
 
-export default AuthPage;
+export default DockerFlowAuth;

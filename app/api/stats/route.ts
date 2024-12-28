@@ -3,12 +3,14 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getDockerClient } from '@/lib/docker/client';
 import { prisma } from '@/lib/prisma';
+import os from 'os';
 import { Container as DockerContainer, ContainerInspectInfo } from 'dockerode';
-import * as os from 'os';
 import { SystemStats } from '@/types/system';
 import { Prisma, User } from '@prisma/client';
 import { Session } from 'next-auth';
 import { getUserStorageUsage } from '@/lib/docker/storage';
+
+export const dynamic = 'force-dynamic';
 
 // Types
 interface ContainerStats {
@@ -28,6 +30,12 @@ interface ContainerStats {
     };
     system_cpu_usage: number;
   };
+  networks?: {
+    [key: string]: {
+      rx_bytes: number;
+      tx_bytes: number;
+    };
+  };
 }
 
 // Utility functions
@@ -44,14 +52,15 @@ function calculateCPUPercentage(stats: ContainerStats): number {
   const systemDelta = stats.cpu_stats.system_cpu_usage - stats.precpu_stats.system_cpu_usage;
   return (cpuDelta / systemDelta) * 100;
 }
+
 // Add session type
 interface ExtendedSession extends Session {
   user: {
     id: string;
     email: string;
-    role: string;
   } & Session['user']
 }
+
 // Main API handler
 export async function GET() {
   try {
@@ -69,7 +78,6 @@ export async function GET() {
       where: { id: session.user.id },
       select: {
         id: true,
-        role: true,
         memoryLimit: true,
         storageLimit: true
       }
@@ -94,6 +102,7 @@ export async function GET() {
     let totalCPUPercent = 0;
     let runningContainers = 0;
     let totalSize = 0;
+    let totalNetworkIO = 0;
 
     // Collect container stats
     for (const container of userContainers) {
@@ -106,6 +115,13 @@ export async function GET() {
           runningContainers++;
           totalMemory += stats.memory_stats.usage || 0;
           totalCPUPercent += calculateCPUPercentage(stats);
+          
+          // Calculate network I/O from stats
+          if (stats.networks) {
+            Object.values(stats.networks).forEach(network => {
+              totalNetworkIO += network.rx_bytes + network.tx_bytes;
+            });
+          }
         }
 
         totalSize += (info as any).SizeRw || 0;
@@ -116,49 +132,70 @@ export async function GET() {
     }
 
     // Determine resource limits based on user role
-    const isAdmin = user.role === 'ADMIN';
-    const memoryLimit = isAdmin ? os.totalmem() : user.memoryLimit;
-    const storageLimit = isAdmin ? os.totalmem() : user.storageLimit;
+    const memoryLimit = user.memoryLimit;
+    const storageLimit = user.storageLimit;
+
+    // Calculate total image size
+    const totalImageSize = images.reduce((acc, img) => acc + (img.Size || 0), 0);
 
     // Prepare response
     const systemStats: SystemStats = {
+      // Container Stats
       containers: userContainers.length,
       containersRunning: runningContainers,
       containersStopped: userContainers.length - runningContainers,
-      images: images.length,
+      containersError: 0,
+      containerTrend: 0,
+      
+      // Image Stats
+      images: {
+        total: images.length,
+        size: totalImageSize,
+        pulls: 0,
+        tags: images.map(img => ({
+          name: img.RepoTags?.[0] || 'none',
+          count: img.RepoTags?.length || 0
+        }))
+      },
+      
+      // User Stats
+      totalUsers: 1,
+      activeUsers: 1,
+      newUsers: 0,
+      suspendedUsers: 0,
+      userTrend: 0,
+      
+      // System Resources
+      cpuCount: os.cpus().length,
       cpuUsage: totalCPUPercent,
+      cpuTrend: 0,
+      
       memoryUsage: {
-        used: totalMemory,
         total: memoryLimit,
+        used: totalMemory,
+        free: memoryLimit - totalMemory,
         percentage: (totalMemory / memoryLimit) * 100
       },
+      memoryTrend: 0,
+
       diskUsage: {
-        used: totalSize,
         total: storageLimit,
+        used: totalSize,
+        free: storageLimit - totalSize,
         percentage: (totalSize / storageLimit) * 100
       },
-      resourceLimits: {
-        memory: {
-          limit: memoryLimit,
-          available: Math.max(0, memoryLimit - totalMemory),
-          formatted: formatBytes(memoryLimit)
-        },
-        storage: {
-          limit: storageLimit,
-          available: Math.max(0, storageLimit - totalSize),
-          formatted: formatBytes(storageLimit)
-        }
+
+      networkTraffic: {
+        in: totalNetworkIO / 2,
+        out: totalNetworkIO / 2
       },
-      storage: {
-        used: 0,
-        total: 0,
-        percentage: 0,
-        formatted: {
-          used: '',
-          total: '',
-          available: ''
-        }
-      }
+
+      performanceHistory: [{
+        timestamp: new Date().toISOString(),
+        cpu: totalCPUPercent,
+        memory: (totalMemory / memoryLimit) * 100,
+        network: totalNetworkIO
+      }]
     };
 
     return NextResponse.json(systemStats);

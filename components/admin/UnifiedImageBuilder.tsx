@@ -45,25 +45,35 @@ import { cn } from "@/lib/utils";
 import { DockerTemplate, dockerTemplates } from "@/lib/dockerTemplates";
 import {
   AlertCircle,
+  CheckCircle,
+  File,
   FileText,
   FolderOpen,
-  Save,
-  Settings,
-  Upload,
-  Download,
-  File,
-  RefreshCw,
   HardDrive,
   Database,
   Lightbulb,
-  Shield,
-  Undo2,
+  Loader2,
   Plus,
+  RefreshCw,
+  Save,
+  Settings,
+  Shield,
   Trash2,
+  Undo2,
+  Upload,
+  Download,
   Clock,
   Cpu,
-  Loader2,
+  X,
+  Pencil
 } from "lucide-react";
+
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 // Utility function to determine file type
 const getFileType = (fileName: string): 'dockerfile' | 'file' => {
@@ -81,31 +91,17 @@ interface FileEntry {
 interface BuildConfig {
   imageName: string;
   tag: string;
-  platform: string;
   projectFiles: {
     dockerfile: FileEntry | null;
     additionalFiles: FileEntry[];
   };
   buildArgs: Record<string, string>;
-  healthcheck: boolean;
-  optimizations: {
-    compress: boolean;
-    cache: boolean;
-    multiStage: boolean;
-  };
-  resources: {
-    memory: string;
-    cpu: string;
-  };
 }
 
 interface BuildProgress {
   status: string;
-  details?: string;
   error?: string;
   logs: string[];
-  percentage?: number;
-  missingFiles?: string[];
 }
 
 interface UnifiedImageBuilderProps {
@@ -132,26 +128,56 @@ const importFile = async (file: File): Promise<{ success: boolean; file?: FileEn
   });
 };
 
+// Fonction de build d'image
+const buildImage = async (
+  files: { dockerfile: FileEntry; additionalFiles: FileEntry[] },
+  config: BuildConfig,
+  updateLogs: (log: string) => void
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    updateLogs("Démarrage du build...");
+
+    const formData = new FormData();
+    formData.append('imageName', config.imageName);
+    formData.append('tag', config.tag);
+
+    const dockerfileBlob = new Blob([files.dockerfile.content], { type: 'text/plain' });
+    formData.append('dockerfile', dockerfileBlob, 'Dockerfile');
+
+    files.additionalFiles.forEach(file => {
+      const blob = new Blob([file.content], { type: 'text/plain' });
+      formData.append('files', blob, file.name);
+    });
+
+    const response = await fetch('/api/admin/images/build', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+
+    updateLogs("Build terminé avec succès");
+    return { success: true };
+  } catch (error) {
+    updateLogs(`Erreur: ${error instanceof Error ? error.message : "Erreur inconnue"}`);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Une erreur inconnue est survenue"
+    };
+  }
+};
+
 export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilderProps) {
   const [buildConfig, setBuildConfig] = useState<BuildConfig>({
     imageName: '',
     tag: 'latest',
-    platform: 'linux/amd64',
     projectFiles: {
       dockerfile: null,
       additionalFiles: []
     },
-    buildArgs: {},
-    healthcheck: true,
-    optimizations: {
-      compress: true,
-      cache: true,
-      multiStage: false
-    },
-    resources: {
-      memory: '2g',
-      cpu: '2'
-    }
+    buildArgs: {}
   });
 
   const [activeFile, setActiveFile] = useState<FileEntry | null>(null);
@@ -161,6 +187,13 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
   const [isBuilding, setIsBuilding] = useState(false);
   const [showBuildLogs, setShowBuildLogs] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<DockerTemplate | null>(null);
+
+  const [selectedFile, setSelectedFile] = useState<{
+    type: 'dockerfile' | 'additional';
+    index?: number;
+    content: string;
+    name: string;
+  } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
@@ -213,28 +246,6 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
   const handleTemplateSelect = async (template: DockerTemplate) => {
     setSelectedTemplate(template);
 
-    // Mettre à jour les ressources recommandées
-    if (template.recommendations) {
-      setBuildConfig(prev => ({
-        ...prev,
-        resources: {
-          memory: template.recommendations?.memory.toLowerCase().replace('mb', 'm').replace('gb', 'g') || prev.resources.memory,
-          cpu: template.recommendations?.cpu.split(' ')[0] || prev.resources.cpu
-        }
-      }));
-    }
-
-    // Configurer le multi-stage build si nécessaire
-    const isMultiStage = template.dockerfile.includes('AS ') || template.dockerfile.includes('FROM ') && template.dockerfile.split('FROM ').length > 2;
-    setBuildConfig(prev => ({
-      ...prev,
-      optimizations: {
-        ...prev.optimizations,
-        multiStage: isMultiStage
-      }
-    }));
-
-    // Créer le Dockerfile avec les propriétés requises
     const dockerfile: FileEntry = {
       id: Math.random().toString(36).substring(2),
       name: 'Dockerfile',
@@ -243,7 +254,6 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
       lastModified: new Date()
     };
 
-    // Créer tous les fichiers par défaut avec les propriétés requises
     const additionalFiles: FileEntry[] = template.defaultFiles.map(file => ({
       id: Math.random().toString(36).substring(2),
       name: file.name,
@@ -252,7 +262,6 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
       lastModified: new Date()
     }));
 
-    // Mettre à jour la configuration
     setBuildConfig(prev => ({
       ...prev,
       projectFiles: {
@@ -261,28 +270,8 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
       }
     }));
 
-    // Configurer les variables d'environnement requises
-    const requiredEnvVars = template.environmentVariables
-      .filter(env => env.required)
-      .reduce((acc, env) => ({
-        ...acc,
-        [env.name]: env.defaultValue || ''
-      }), {});
-
-    if (Object.keys(requiredEnvVars).length > 0) {
-      setBuildConfig(prev => ({
-        ...prev,
-        buildArgs: {
-          ...prev.buildArgs,
-          ...requiredEnvVars
-        }
-      }));
-    }
-
-    // Fermer le dialog
     setShowTemplateDialog(false);
 
-    // Notification de succès
     toast({
       title: 'Template appliqué',
       description: `Le template ${template.name} a été appliqué avec succès.`,
@@ -351,177 +340,205 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
     }
   };
 
+  const handleFileEdit = (type: 'dockerfile' | 'additional', index?: number) => {
+    if (type === 'dockerfile' && buildConfig.projectFiles.dockerfile) {
+      setSelectedFile({
+        type,
+        content: buildConfig.projectFiles.dockerfile.content,
+        name: 'Dockerfile'
+      });
+    } else if (type === 'additional' && typeof index === 'number') {
+      const file = buildConfig.projectFiles.additionalFiles[index];
+      setSelectedFile({
+        type,
+        index,
+        content: file.content,
+        name: file.name
+      });
+    }
+  };
+
+  const handleFileContentSave = (content: string) => {
+    if (!selectedFile) return;
+
+    if (selectedFile.type === 'dockerfile') {
+      setBuildConfig(prev => ({
+        ...prev,
+        projectFiles: {
+          ...prev.projectFiles,
+          dockerfile: {
+            ...prev.projectFiles.dockerfile!,
+            content,
+            lastModified: new Date()
+          }
+        }
+      }));
+    } else {
+      setBuildConfig(prev => ({
+        ...prev,
+        projectFiles: {
+          ...prev.projectFiles,
+          additionalFiles: prev.projectFiles.additionalFiles.map((file, idx) =>
+            idx === selectedFile.index
+              ? { ...file, content, lastModified: new Date() }
+              : file
+          )
+        }
+      }));
+    }
+  };
+
+  const handleFileRename = (newName: string) => {
+    if (!selectedFile) return;
+
+    if (selectedFile.type === 'additional' && typeof selectedFile.index === 'number') {
+      setBuildConfig(prev => ({
+        ...prev,
+        projectFiles: {
+          ...prev.projectFiles,
+          additionalFiles: prev.projectFiles.additionalFiles.map((file, idx) =>
+            idx === selectedFile.index
+              ? { ...file, name: newName }
+              : file
+          )
+        }
+      }));
+    }
+  };
+
   const handleBuild = async () => {
     if (!buildConfig.projectFiles.dockerfile) {
       toast({
-        title: 'Error',
-        description: 'No Dockerfile selected',
-        variant: 'destructive',
+        title: "Erreur",
+        description: "Veuillez d'abord sélectionner ou créer un Dockerfile",
+        variant: "destructive",
       });
       return;
     }
 
-    if (!buildConfig.imageName || !buildConfig.tag) {
+    if (!buildConfig.imageName) {
       toast({
-        title: 'Error',
-        description: 'Image name and tag are required',
-        variant: 'destructive',
+        title: "Erreur",
+        description: "Le nom de l'image est requis",
+        variant: "destructive",
       });
       return;
     }
 
     setIsBuilding(true);
-    setBuildProgress({ 
-      status: 'Preparing build context...',
-      logs: [],
-      percentage: 0
+    setBuildProgress({
+      status: 'Construction en cours...',
+      logs: [
+        '🚀 Démarrage du processus de build...',
+        '📦 Préparation des fichiers...'
+      ]
     });
 
     try {
-      // Vérifier les fichiers manquants
-      const missingFiles = findMissingFiles(buildConfig.projectFiles.dockerfile.content, buildConfig.projectFiles.additionalFiles);
-      if (missingFiles.length > 0) {
-        setBuildProgress(prev => ({
-          ...prev!,
-          status: 'Missing files detected',
-          error: `Missing files referenced in Dockerfile: ${missingFiles.join(', ')}`,
-          missingFiles,
-          percentage: 0
-        }));
-        throw new Error(`Missing files referenced in Dockerfile: ${missingFiles.join(', ')}`);
-      }
-
-      // Préparation du build context
+      // Préparation des fichiers
+      const formData = new FormData();
+      
+      // Ajout des informations de base
+      formData.append('hasDockerfile', 'true');
+      formData.append('tag', buildConfig.tag || 'latest');
+      formData.append('imageName', buildConfig.imageName);
+      
       setBuildProgress(prev => ({
         ...prev!,
-        status: 'Preparing files...',
-        logs: [...prev!.logs, 'Preparing files for build...'],
-        percentage: 10
+        logs: [...prev!.logs, '📝 Configuration du build...']
       }));
 
-      const formData = new FormData();
-      formData.append('imageName', buildConfig.imageName);
-      formData.append('tag', buildConfig.tag);
-      formData.append('platform', buildConfig.platform);
-
-      // Ajouter le Dockerfile
+      // Ajout du Dockerfile
       const dockerfileBlob = new Blob([buildConfig.projectFiles.dockerfile.content], { type: 'text/plain' });
       formData.append('dockerfile', dockerfileBlob, 'Dockerfile');
 
-      // Ajouter les fichiers additionnels
-      buildConfig.projectFiles.additionalFiles.forEach(file => {
-        const blob = new Blob([file.content], { type: 'text/plain' });
-        formData.append('context', blob, file.name);
-      });
+      setBuildProgress(prev => ({
+        ...prev!,
+        logs: [...prev!.logs, '📄 Dockerfile ajouté au contexte']
+      }));
+
+      // Ajout des fichiers additionnels
+      if (buildConfig.projectFiles.additionalFiles.length > 0) {
+        setBuildProgress(prev => ({
+          ...prev!,
+          logs: [...prev!.logs, '📁 Ajout des fichiers additionnels...']
+        }));
+
+        buildConfig.projectFiles.additionalFiles.forEach(file => {
+          const blob = new Blob([file.content], { type: 'text/plain' });
+          formData.append('files', blob, file.name);
+          setBuildProgress(prev => ({
+            ...prev!,
+            logs: [...prev!.logs, `  ↳ ${file.name} ajouté`]
+          }));
+        });
+      }
+
+      // Ajout du nombre de fichiers
+      formData.append('contextFilesCount', buildConfig.projectFiles.additionalFiles.length.toString());
 
       setBuildProgress(prev => ({
         ...prev!,
-        status: 'Sending build request...',
-        logs: [...prev!.logs, 'Sending files to server...'],
-        percentage: 20
+        logs: [...prev!.logs, '🔄 Envoi des fichiers au serveur...']
       }));
 
+      // Envoi de la requête
       const response = await fetch('/api/admin/images/build', {
         method: 'POST',
-        body: formData,
+        body: formData
       });
 
       if (!response.ok) {
-        throw new Error(await response.text());
+        const errorText = await response.text();
+        throw new Error(errorText);
       }
 
       setBuildProgress(prev => ({
         ...prev!,
-        status: 'Build in progress...',
-        logs: [...prev!.logs, 'Starting build...'],
-        percentage: 30
+        logs: [...prev!.logs, '⚙️ Build en cours...']
       }));
 
-      // Suivre le progrès avec SSE
-      const eventSource = new EventSource(`/api/admin/images/build/${buildConfig.imageName}/status`);
-      
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          
-          if (data.error) {
-            throw new Error(data.error);
-          }
+      const buildResult = await response.json();
 
-          // Calculer le pourcentage approximatif basé sur les étapes
-          let percentage = 30;
-          if (data.status.includes('Downloading')) percentage = 40;
-          if (data.status.includes('Extracting')) percentage = 60;
-          if (data.status.includes('Building')) percentage = 80;
-          if (data.status.includes('completed')) percentage = 100;
-
-          setBuildProgress(prev => ({
-            ...prev!,
-            status: data.status,
-            details: data.details,
-            logs: [...prev!.logs, ` ${data.status}`],
-            percentage
-          }));
-          
-          if (data.status === 'completed') {
-            eventSource.close();
-            setIsBuilding(false);
-            toast({
-              title: 'Build Successful',
-              description: `Image ${buildConfig.imageName}:${buildConfig.tag} built successfully`,
-              variant: 'default',
-            });
-            onImageBuilt();
-          }
-        } catch (error) {
-          eventSource.close();
-          setIsBuilding(false);
-          setBuildProgress(prev => ({
-            ...prev!,
-            status: 'Error',
-            error: error instanceof Error ? error.message : 'An unknown error occurred',
-            logs: [...prev!.logs, ` Error: ${error instanceof Error ? error.message : 'An unknown error occurred'}`],
-            percentage: 0
-          }));
-          toast({
-            title: 'Build Failed',
-            description: error instanceof Error ? error.message : 'An unknown error occurred',
-            variant: 'destructive',
-          });
-        }
-      };
-
-      eventSource.onerror = () => {
-        eventSource.close();
-        setIsBuilding(false);
-        setBuildProgress(prev => ({
-          ...prev!,
-          status: 'Error',
-          error: 'Connection to build process lost',
-          logs: [...prev!.logs, ' Error: Connection to build process lost'],
-          percentage: 0
-        }));
-        toast({
-          title: 'Build Failed',
-          description: 'Connection to build process lost',
-          variant: 'destructive',
+      if (buildResult.success) {
+        setBuildProgress({
+          status: 'Build terminé',
+          logs: [
+            ...buildProgress?.logs || [],
+            '✨ Build terminé avec succès',
+            `🏷️ Image créée : ${buildConfig.imageName}:${buildConfig.tag || 'latest'}`,
+            '✅ Processus terminé'
+          ]
         });
-      };
 
+        toast({
+          title: "Succès",
+          description: `L'image ${buildConfig.imageName}:${buildConfig.tag || 'latest'} a été construite avec succès`,
+        });
+
+        onImageBuilt();
+      } else {
+        throw new Error(buildResult.error || 'Erreur lors du build');
+      }
     } catch (error) {
-      setIsBuilding(false);
-      setBuildProgress(prev => ({
-        ...prev!,
-        status: 'Error',
-        error: error instanceof Error ? error.message : 'An unknown error occurred',
-        logs: [...prev!.logs, ` Error: ${error instanceof Error ? error.message : 'An unknown error occurred'}`],
-        percentage: 0
-      }));
-      toast({
-        title: 'Build Failed',
-        description: error instanceof Error ? error.message : 'An unknown error occurred',
-        variant: 'destructive',
+      console.error('Build error:', error);
+      setBuildProgress({
+        status: 'Erreur',
+        error: error instanceof Error ? error.message : "Une erreur est survenue",
+        logs: [
+          ...buildProgress?.logs || [],
+          '❌ Une erreur est survenue pendant le build',
+          `⚠️ ${error instanceof Error ? error.message : "Erreur inconnue"}`
+        ]
       });
+
+      toast({
+        title: "Erreur",
+        description: error instanceof Error ? error.message : "Une erreur est survenue",
+        variant: "destructive",
+      });
+    } finally {
+      setIsBuilding(false);
     }
   };
 
@@ -531,489 +548,253 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
     }
   }, [buildProgress?.logs]);
 
-  // Fonction utilitaire pour trouver les fichiers manquants référencés dans le Dockerfile
-  const findMissingFiles = (dockerfileContent: string, additionalFiles: FileEntry[]): string[] => {
-    const missingFiles: string[] = [];
-    const copyCommands = dockerfileContent.match(/COPY\s+([^\n]+)/g) || [];
-    
-    copyCommands.forEach(command => {
-      const parts = command.split(/\s+/).slice(1); // Ignorer le mot-clé COPY
-      const sources = parts.slice(0, -1); // Le dernier élément est la destination
-      
-      sources.forEach(source => {
-        // Ignorer les wildcards et les chemins de destination
-        if (!source.includes('*') && !source.startsWith('/')) {
-          const fileExists = additionalFiles.some(file => file.name === source);
-          if (!fileExists) {
-            missingFiles.push(source);
-          }
-        }
-      });
-    });
-    
-    return missingFiles;
-  };
-
   return (
     <Card className="w-full h-full min-h-[600px] max-h-screen flex flex-col overflow-hidden">
-      <CardHeader className="flex-none">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="space-y-4 p-4">
+        <div className="flex justify-between items-center mb-6">
           <div>
-            <CardTitle>Build Image</CardTitle>
-            <CardDescription>
+            <h2 className="text-2xl font-bold">Build Image</h2>
+            <p className="text-sm text-muted-foreground">
               Develop and manage your Docker image build environment
-            </CardDescription>
+            </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => fileInputRef.current?.click()}
-            >
+          <div className="flex space-x-2">
+            <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
               <Upload className="w-4 h-4 mr-2" />
               Import Files
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowTemplateDialog(true)}
-            >
+            <Button variant="outline" onClick={() => setShowTemplateDialog(true)}>
               <FileText className="w-4 h-4 mr-2" />
               Templates
             </Button>
           </div>
         </div>
-      </CardHeader>
 
-      <CardContent className="flex-1 flex flex-col lg:flex-row gap-4 min-h-0">
-        {/* Left Panel - File Explorer */}
-        <div className="w-full lg:w-64 flex-none border rounded-lg overflow-hidden flex flex-col">
-          <div className="p-4 space-y-4 flex-none">
+        <div className="grid grid-cols-12 gap-4">
+          {/* Left Panel - Configuration */}
+          <div className="col-span-3 space-y-4">
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="imageName">Image Name</Label>
+                <Label>Image Name</Label>
                 <Input
-                  id="imageName"
+                  placeholder="ex: my-app"
                   value={buildConfig.imageName}
-                  onChange={(e) => setBuildConfig(prev => ({ ...prev, imageName: e.target.value }))}
-                  placeholder="e.g., myapp"
+                  onChange={(e) => setBuildConfig(prev => ({
+                    ...prev,
+                    imageName: e.target.value
+                  }))}
+                  className="bg-background"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="tag">Tag</Label>
+                <Label>Tag</Label>
                 <Input
-                  id="tag"
+                  placeholder="latest"
                   value={buildConfig.tag}
-                  onChange={(e) => setBuildConfig(prev => ({ ...prev, tag: e.target.value }))}
-                  placeholder="e.g., latest"
+                  onChange={(e) => setBuildConfig(prev => ({
+                    ...prev,
+                    tag: e.target.value
+                  }))}
+                  className="bg-background"
                 />
               </div>
             </div>
 
-            <Separator />
-
-            <div className="font-semibold flex items-center justify-between">
-              <span>Files</span>
-              <Button variant="ghost" size="sm" onClick={() => setShowTemplateDialog(true)}>
-                <Plus className="w-4 h-4" />
-              </Button>
+            <div className="space-y-2">
+              <Label className="flex items-center justify-between">
+                <span>Files</span>
+                <Badge variant="outline" className="bg-background">
+                  {buildConfig.projectFiles.additionalFiles.length + (buildConfig.projectFiles.dockerfile ? 1 : 0)} files
+                </Badge>
+              </Label>
+              <ScrollArea className="h-[300px] w-full rounded-md border bg-background p-2">
+                <div className="space-y-2">
+                  {/* Dockerfile */}
+                  {buildConfig.projectFiles.dockerfile && (
+                    <div className="flex items-center justify-between p-2 rounded-md hover:bg-accent group">
+                      <div 
+                        className="flex items-center space-x-2 flex-1 cursor-pointer"
+                        onClick={() => handleFileEdit('dockerfile')}
+                      >
+                        <FileText className="w-4 h-4 text-blue-500" />
+                        <span>Dockerfile</span>
+                      </div>
+                      <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleFileEdit('dockerfile')}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setBuildConfig(prev => ({
+                              ...prev,
+                              projectFiles: {
+                                ...prev.projectFiles,
+                                dockerfile: null
+                              }
+                            }));
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Additional Files */}
+                  {buildConfig.projectFiles.additionalFiles.map((file, index) => (
+                    <div key={index} className="flex items-center justify-between p-2 rounded-md hover:bg-accent group">
+                      <div 
+                        className="flex items-center space-x-2 flex-1 cursor-pointer"
+                        onClick={() => handleFileEdit('additional', index)}
+                      >
+                        <File className="w-4 h-4" />
+                        <span>{file.name}</span>
+                      </div>
+                      <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleFileEdit('additional', index)}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            const newName = prompt('Nouveau nom du fichier:', file.name);
+                            if (newName && newName !== file.name) {
+                              handleFileRename(newName);
+                            }
+                          }}
+                        >
+                          <FileText className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setBuildConfig(prev => ({
+                              ...prev,
+                              projectFiles: {
+                                ...prev.projectFiles,
+                                additionalFiles: prev.projectFiles.additionalFiles.filter((_, i) => i !== index)
+                              }
+                            }));
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
             </div>
           </div>
-          
-          <ScrollArea className="flex-1 min-h-0">
-            <div className="p-4 space-y-2">
-              {buildConfig.projectFiles.dockerfile && (
-                <div
-                  className={`flex items-center justify-between p-2 rounded-md cursor-pointer ${
-                    activeFile?.id === buildConfig.projectFiles.dockerfile.id
-                      ? 'bg-secondary'
-                      : 'hover:bg-secondary/50'
-                  }`}
-                  onClick={() => setActiveFile(buildConfig.projectFiles.dockerfile)}
-                >
-                  <div className="flex items-center">
-                    <FileText className="w-4 h-4 mr-2" />
-                    <span className="truncate">Dockerfile</span>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowDeleteDialog(true);
-                    }}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              )}
-              
-              {buildConfig.projectFiles.additionalFiles.map((file) => (
-                <div
-                  key={file.id}
-                  className={`flex items-center justify-between p-2 rounded-md cursor-pointer ${
-                    activeFile?.id === file.id
-                      ? 'bg-secondary'
-                      : 'hover:bg-secondary/50'
-                  }`}
-                  onClick={() => setActiveFile(file)}
-                >
-                  <div className="flex items-center min-w-0">
-                    <File className="w-4 h-4 mr-2 flex-none" />
-                    <span className="truncate">{file.name}</span>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="flex-none"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleFileDelete(file);
-                    }}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </ScrollArea>
 
-          <div className="p-4 flex-none space-y-2">
-            <Button 
-              className="w-full"
-              onClick={handleBuild}
-              disabled={!buildConfig.projectFiles.dockerfile || !buildConfig.imageName || !buildConfig.tag || isBuilding}
-            >
-              {isBuilding ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Build en cours...
-                </>
-              ) : (
-                <>
-                  <HardDrive className="w-4 h-4 mr-2" />
-                  Build Image
-                </>
-              )}
-            </Button>
-
-            {buildProgress && (
-              <div className="space-y-2">
-                {/* Barre de progression */}
-                {buildProgress.percentage !== undefined && (
-                  <div className="w-full bg-secondary h-2 rounded-full overflow-hidden">
-                    <div 
-                      className={cn(
-                        "h-full transition-all duration-300",
-                        buildProgress.error 
-                          ? "bg-destructive" 
-                          : buildProgress.percentage === 100 
-                            ? "bg-green-500"
-                            : "bg-primary"
-                      )}
-                      style={{ width: `${buildProgress.percentage}%` }}
-                    />
-                  </div>
-                )}
-
-                {/* Status et détails */}
-                <div className={cn(
-                  "text-sm p-3 rounded-lg",
-                  buildProgress.error 
-                    ? "bg-destructive/10 text-destructive"
-                    : "bg-muted text-muted-foreground"
-                )}>
-                  <div className="font-medium flex items-center justify-between">
-                    <span>{buildProgress.status}</span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 px-2"
-                      onClick={() => setShowBuildLogs(!showBuildLogs)}
-                    >
-                      {showBuildLogs ? 'Masquer' : 'Voir les logs'}
-                    </Button>
-                  </div>
-
-                  {buildProgress.details && (
-                    <div className="text-xs mt-1">{buildProgress.details}</div>
-                  )}
-
-                  {buildProgress.error && (
-                    <div className="text-xs mt-1 text-destructive font-medium">
-                      {buildProgress.error}
-                    </div>
-                  )}
-
-                  {/* Fichiers manquants */}
-                  {buildProgress.missingFiles && buildProgress.missingFiles.length > 0 && (
-                    <div className="mt-2 text-xs">
-                      <div className="font-medium text-destructive">Fichiers manquants :</div>
-                      <ul className="list-disc list-inside mt-1">
-                        {buildProgress.missingFiles.map((file, index) => (
-                          <li key={index}>{file}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Logs du build */}
-                  {showBuildLogs && buildProgress.logs.length > 0 && (
-                    <div className="mt-2 bg-background/50 rounded p-2 max-h-48 overflow-y-auto text-xs font-mono">
-                      {buildProgress.logs.map((log, index) => (
-                        <div key={index} className="py-0.5">{log}</div>
-                      ))}
-                      <div ref={logsEndRef} />
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right Panel - Editor */}
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-          {activeFile ? (
-            <>
-              <div className="flex items-center justify-between mb-4 flex-none">
+          {/* Right Panel - Build Logs */}
+          <div className="col-span-9">
+            <Card className="h-full">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-lg font-bold">Build Logs</CardTitle>
                 <div className="flex items-center space-x-2">
-                  <span className="font-semibold">{activeFile.name}</span>
-                  <span className="text-sm text-muted-foreground">
-                    Last modified: {activeFile.lastModified.toLocaleString()}
-                  </span>
+                  {isBuilding ? (
+                    <Badge variant="outline" className="bg-blue-50">
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Building
+                    </Badge>
+                  ) : buildProgress?.status === 'Erreur' ? (
+                    <Badge variant="outline" className="bg-red-50 text-red-600">
+                      <AlertCircle className="w-4 h-4 mr-2" />
+                      Error
+                    </Badge>
+                  ) : buildProgress?.status === 'Build terminé' ? (
+                    <Badge variant="outline" className="bg-green-50 text-green-600">
+                      <CheckCircle className="w-4 h-4 mr-2" />
+                      Complete
+                    </Badge>
+                  ) : null}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setBuildConfig({
+                        imageName: '',
+                        tag: 'latest',
+                        projectFiles: {
+                          dockerfile: null,
+                          additionalFiles: []
+                        },
+                        buildArgs: {}
+                      });
+                      setBuildProgress(null);
+                    }}
+                  >
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Reset
+                  </Button>
+                  <Button
+                    onClick={handleBuild}
+                    disabled={isBuilding || !buildConfig.projectFiles.dockerfile}
+                    className="bg-blue-600 text-white hover:bg-blue-700"
+                  >
+                    {isBuilding ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Building...
+                      </>
+                    ) : (
+                      <>
+                        <Settings className="w-4 h-4 mr-2" />
+                        Build Image
+                      </>
+                    )}
+                  </Button>
                 </div>
-              </div>
-              <Textarea
-                value={activeFile.content}
-                onChange={(e) => handleFileContentChange(e.target.value)}
-                className="flex-1 min-h-0 font-mono resize-none"
-              />
-            </>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-              <FileText className="w-12 h-12 mb-4" />
-              <p>Select a file to edit or create a new one</p>
-              <div className="flex flex-wrap justify-center gap-4 mt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  Import Files
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setShowTemplateDialog(true)}
-                >
-                  Use Template
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Configuration du build */}
-        <div className="space-y-4">
-          <h3 className="text-sm font-medium">Configuration du Build</h3>
-          
-          {/* Options d'optimisation */}
-          <div className="bg-muted/50 p-3 rounded-lg space-y-2">
-            <h4 className="text-sm font-medium">Optimisations</h4>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="flex items-center space-x-2">
-                <Checkbox 
-                  id="compress"
-                  checked={buildConfig.optimizations.compress}
-                  onCheckedChange={(checked) => 
-                    setBuildConfig(prev => ({
-                      ...prev,
-                      optimizations: {
-                        ...prev.optimizations,
-                        compress: checked as boolean
-                      }
-                    }))
-                  }
-                />
-                <label htmlFor="compress" className="text-sm">
-                  Compression
-                </label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox 
-                  id="cache"
-                  checked={buildConfig.optimizations.cache}
-                  onCheckedChange={(checked) => 
-                    setBuildConfig(prev => ({
-                      ...prev,
-                      optimizations: {
-                        ...prev.optimizations,
-                        cache: checked as boolean
-                      }
-                    }))
-                  }
-                />
-                <label htmlFor="cache" className="text-sm">
-                  Cache Build
-                </label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox 
-                  id="multiStage"
-                  checked={buildConfig.optimizations.multiStage}
-                  onCheckedChange={(checked) => 
-                    setBuildConfig(prev => ({
-                      ...prev,
-                      optimizations: {
-                        ...prev.optimizations,
-                        multiStage: checked as boolean
-                      }
-                    }))
-                  }
-                />
-                <label htmlFor="multiStage" className="text-sm">
-                  Multi-stage Build
-                </label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox 
-                  id="healthcheck"
-                  checked={buildConfig.healthcheck}
-                  onCheckedChange={(checked) => 
-                    setBuildConfig(prev => ({
-                      ...prev,
-                      healthcheck: checked as boolean
-                    }))
-                  }
-                />
-                <label htmlFor="healthcheck" className="text-sm">
-                  Healthcheck
-                </label>
-              </div>
-            </div>
-          </div>
-
-          {/* Ressources */}
-          <div className="bg-muted/50 p-3 rounded-lg space-y-2">
-            <h4 className="text-sm font-medium">Ressources</h4>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <Label htmlFor="memory">Mémoire</Label>
-                <Select
-                  value={buildConfig.resources.memory}
-                  onValueChange={(value) =>
-                    setBuildConfig(prev => ({
-                      ...prev,
-                      resources: {
-                        ...prev.resources,
-                        memory: value
-                      }
-                    }))
-                  }
-                >
-                  <SelectTrigger id="memory">
-                    <SelectValue placeholder="Sélectionner la mémoire" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="512m">512 MB</SelectItem>
-                    <SelectItem value="1g">1 GB</SelectItem>
-                    <SelectItem value="2g">2 GB</SelectItem>
-                    <SelectItem value="4g">4 GB</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="cpu">CPU</Label>
-                <Select
-                  value={buildConfig.resources.cpu}
-                  onValueChange={(value) =>
-                    setBuildConfig(prev => ({
-                      ...prev,
-                      resources: {
-                        ...prev.resources,
-                        cpu: value
-                      }
-                    }))
-                  }
-                >
-                  <SelectTrigger id="cpu">
-                    <SelectValue placeholder="Sélectionner les CPU" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="0.5">0.5 CPU</SelectItem>
-                    <SelectItem value="1">1 CPU</SelectItem>
-                    <SelectItem value="2">2 CPU</SelectItem>
-                    <SelectItem value="4">4 CPU</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-
-          {/* Build Arguments */}
-          <div className="bg-muted/50 p-3 rounded-lg space-y-2">
-            <div className="flex items-center justify-between">
-              <h4 className="text-sm font-medium">Arguments de Build</h4>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  const key = prompt('Nom de l\'argument');
-                  const value = prompt('Valeur de l\'argument');
-                  if (key && value) {
-                    setBuildConfig(prev => ({
-                      ...prev,
-                      buildArgs: {
-                        ...prev.buildArgs,
-                        [key]: value
-                      }
-                    }));
-                  }
-                }}
-              >
-                <Plus className="w-4 h-4" />
-              </Button>
-            </div>
-            {Object.entries(buildConfig.buildArgs).map(([key, value]) => (
-              <div key={key} className="flex items-center space-x-2">
-                <Input
-                  value={key}
-                  readOnly
-                  className="flex-1"
-                />
-                <Input
-                  value={value}
-                  onChange={(e) =>
-                    setBuildConfig(prev => ({
-                      ...prev,
-                      buildArgs: {
-                        ...prev.buildArgs,
-                        [key]: e.target.value
-                      }
-                    }))
-                  }
-                  className="flex-1"
-                />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    setBuildConfig(prev => {
-                      const newArgs = { ...prev.buildArgs };
-                      delete newArgs[key];
-                      return {
-                        ...prev,
-                        buildArgs: newArgs
-                      };
-                    })
-                  }
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </div>
-            ))}
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[500px] w-full rounded-md border bg-background p-4">
+                  <div className="space-y-2 font-mono text-sm">
+                    {!buildProgress?.logs.length ? (
+                      <div className="text-muted-foreground text-center py-4">
+                        No logs available. Start a build to see logs here.
+                      </div>
+                    ) : (
+                      buildProgress.logs.map((log, index) => (
+                        <div
+                          key={index}
+                          className={cn(
+                            "py-1",
+                            log.includes("Erreur") ? "text-red-500" :
+                            log.includes("terminé") ? "text-green-500" :
+                            log.includes("étape") ? "text-blue-500" :
+                            "text-foreground"
+                          )}
+                        >
+                          {log}
+                        </div>
+                      ))
+                    )}
+                    {buildProgress?.error && (
+                      <div className="mt-4 p-4 rounded-md bg-red-50 text-red-500 border border-red-200">
+                        <div className="font-bold mb-2">Error:</div>
+                        <div className="whitespace-pre-wrap">{buildProgress.error}</div>
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
           </div>
         </div>
-      </CardContent>
+      </div>
 
       <input
         type="file"
@@ -1162,6 +943,47 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={!!selectedFile} onOpenChange={() => setSelectedFile(null)}>
+        <DialogContent className="max-w-4xl h-[80vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                {selectedFile?.type === 'dockerfile' ? (
+                  <FileText className="w-5 h-5 text-blue-500" />
+                ) : (
+                  <File className="w-5 h-5" />
+                )}
+                <span>{selectedFile?.name}</span>
+              </div>
+              {selectedFile?.type === 'additional' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const newName = prompt('Nouveau nom du fichier:', selectedFile.name);
+                    if (newName && newName !== selectedFile.name) {
+                      handleFileRename(newName);
+                    }
+                  }}
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Renommer
+                </Button>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 mt-4">
+            <Textarea
+              value={selectedFile?.content || ''}
+              onChange={(e) => handleFileContentSave(e.target.value)}
+              className="h-full font-mono resize-none"
+              placeholder="Contenu du fichier..."
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+
     </Card>
   );
 };

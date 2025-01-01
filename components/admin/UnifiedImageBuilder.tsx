@@ -65,7 +65,9 @@ import {
   Clock,
   Cpu,
   X,
-  Pencil
+  Pencil,
+  Terminal,
+  ArrowUpDown
 } from "lucide-react";
 
 import {
@@ -88,6 +90,13 @@ interface FileEntry {
   lastModified: Date;
 }
 
+interface BuildOptions {
+  cache: boolean;
+  platform: string;
+  compress: boolean;
+  pull: boolean;
+}
+
 interface BuildConfig {
   imageName: string;
   tag: string;
@@ -96,6 +105,7 @@ interface BuildConfig {
     additionalFiles: FileEntry[];
   };
   buildArgs: Record<string, string>;
+  options: BuildOptions;
 }
 
 interface BuildProgress {
@@ -177,7 +187,13 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
       dockerfile: null,
       additionalFiles: []
     },
-    buildArgs: {}
+    buildArgs: {},
+    options: {
+      cache: true,
+      platform: 'linux/amd64',
+      compress: true,
+      pull: true
+    }
   });
 
   const [activeFile, setActiveFile] = useState<FileEntry | null>(null);
@@ -304,105 +320,111 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
     }
   };
 
-  const handleFileContentChange = (content: string) => {
-    if (!activeFile) return;
+  const handleFileContentSave = (content: string) => {
+    if (!selectedFile) return;
 
-    if (activeFile.type === 'dockerfile') {
+    if (selectedFile.type === 'dockerfile') {
       const updatedFile: FileEntry = {
-        ...activeFile,
-        content,
+        id: buildConfig.projectFiles.dockerfile?.id || Math.random().toString(36).substring(2),
+        name: 'Dockerfile',
+        content: content,
+        type: 'dockerfile',
         lastModified: new Date()
       };
-      setBuildConfig((prev) => ({
+
+      setBuildConfig(prev => ({
         ...prev,
         projectFiles: {
           ...prev.projectFiles,
           dockerfile: updatedFile
         }
       }));
-      setActiveFile(updatedFile);
-    } else {
+
+      toast({
+        title: "Fichier modifié",
+        description: "Le Dockerfile a été mis à jour avec succès",
+      });
+    } else if (selectedFile.type === 'additional' && typeof selectedFile.index === 'number') {
+      const updatedFiles = [...buildConfig.projectFiles.additionalFiles];
       const updatedFile: FileEntry = {
-        ...activeFile,
-        content,
+        id: updatedFiles[selectedFile.index]?.id || Math.random().toString(36).substring(2),
+        name: selectedFile.name,
+        content: content,
+        type: 'file',
         lastModified: new Date()
       };
-      setBuildConfig((prev) => ({
+      updatedFiles[selectedFile.index] = updatedFile;
+
+      setBuildConfig(prev => ({
         ...prev,
         projectFiles: {
           ...prev.projectFiles,
-          additionalFiles: prev.projectFiles.additionalFiles.map(f =>
-            f.id === activeFile.id ? updatedFile : f
-          )
+          additionalFiles: updatedFiles
         }
       }));
-      setActiveFile(updatedFile);
+
+      toast({
+        title: "Fichier modifié",
+        description: `Le fichier ${selectedFile.name} a été mis à jour avec succès`,
+      });
     }
+  };
+
+  const handleFileRename = async (fileIndex: number, currentName: string) => {
+    const newName = await new Promise<string | null>((resolve) => {
+      const result = window.prompt('Entrez le nouveau nom du fichier:', currentName);
+      resolve(result);
+    });
+
+    if (!newName || newName === currentName) return;
+
+    // Vérifier si le nom est déjà utilisé
+    const isNameTaken = buildConfig.projectFiles.additionalFiles.some(
+      (file, idx) => idx !== fileIndex && file.name === newName
+    );
+
+    if (isNameTaken) {
+      toast({
+        title: "Erreur",
+        description: "Ce nom de fichier est déjà utilisé",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setBuildConfig(prev => ({
+      ...prev,
+      projectFiles: {
+        ...prev.projectFiles,
+        additionalFiles: prev.projectFiles.additionalFiles.map((file, idx) =>
+          idx === fileIndex
+            ? { ...file, name: newName, lastModified: new Date() }
+            : file
+        )
+      }
+    }));
+
+    toast({
+      title: "Fichier renommé",
+      description: `${currentName} a été renommé en ${newName}`,
+    });
   };
 
   const handleFileEdit = (type: 'dockerfile' | 'additional', index?: number) => {
     if (type === 'dockerfile' && buildConfig.projectFiles.dockerfile) {
       setSelectedFile({
         type,
-        content: buildConfig.projectFiles.dockerfile.content,
-        name: 'Dockerfile'
+        name: 'Dockerfile',
+        content: buildConfig.projectFiles.dockerfile.content
       });
     } else if (type === 'additional' && typeof index === 'number') {
       const file = buildConfig.projectFiles.additionalFiles[index];
       setSelectedFile({
         type,
         index,
-        content: file.content,
-        name: file.name
+        name: file.name,
+        content: file.content
       });
-    }
-  };
-
-  const handleFileContentSave = (content: string) => {
-    if (!selectedFile) return;
-
-    if (selectedFile.type === 'dockerfile') {
-      setBuildConfig(prev => ({
-        ...prev,
-        projectFiles: {
-          ...prev.projectFiles,
-          dockerfile: {
-            ...prev.projectFiles.dockerfile!,
-            content,
-            lastModified: new Date()
-          }
-        }
-      }));
-    } else {
-      setBuildConfig(prev => ({
-        ...prev,
-        projectFiles: {
-          ...prev.projectFiles,
-          additionalFiles: prev.projectFiles.additionalFiles.map((file, idx) =>
-            idx === selectedFile.index
-              ? { ...file, content, lastModified: new Date() }
-              : file
-          )
-        }
-      }));
-    }
-  };
-
-  const handleFileRename = (newName: string) => {
-    if (!selectedFile) return;
-
-    if (selectedFile.type === 'additional' && typeof selectedFile.index === 'number') {
-      setBuildConfig(prev => ({
-        ...prev,
-        projectFiles: {
-          ...prev.projectFiles,
-          additionalFiles: prev.projectFiles.additionalFiles.map((file, idx) =>
-            idx === selectedFile.index
-              ? { ...file, name: newName }
-              : file
-          )
-        }
-      }));
     }
   };
 
@@ -430,18 +452,19 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
       status: 'Construction en cours...',
       logs: [
         '🚀 Démarrage du processus de build...',
+        `📦 Configuration: ${JSON.stringify(buildConfig.options, null, 2)}`,
         '📦 Préparation des fichiers...'
       ]
     });
 
     try {
-      // Préparation des fichiers
       const formData = new FormData();
       
       // Ajout des informations de base
       formData.append('hasDockerfile', 'true');
       formData.append('tag', buildConfig.tag || 'latest');
       formData.append('imageName', buildConfig.imageName);
+      formData.append('options', JSON.stringify(buildConfig.options));
       
       setBuildProgress(prev => ({
         ...prev!,
@@ -485,7 +508,7 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
       // Envoi de la requête
       const response = await fetch('/api/admin/images/build', {
         method: 'POST',
-        body: formData
+        body: formData,
       });
 
       if (!response.ok) {
@@ -567,6 +590,78 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
               <FileText className="w-4 h-4 mr-2" />
               Templates
             </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  <Settings className="w-4 h-4 mr-2" />
+                  Options
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <div className="p-4 space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        checked={buildConfig.options.cache}
+                        onCheckedChange={(checked) => 
+                          setBuildConfig(prev => ({
+                            ...prev,
+                            options: { ...prev.options, cache: checked as boolean }
+                          }))
+                        }
+                      />
+                      <Label>Use Build Cache</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        checked={buildConfig.options.compress}
+                        onCheckedChange={(checked) => 
+                          setBuildConfig(prev => ({
+                            ...prev,
+                            options: { ...prev.options, compress: checked as boolean }
+                          }))
+                        }
+                      />
+                      <Label>Compress Build Context</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        checked={buildConfig.options.pull}
+                        onCheckedChange={(checked) => 
+                          setBuildConfig(prev => ({
+                            ...prev,
+                            options: { ...prev.options, pull: checked as boolean }
+                          }))
+                        }
+                      />
+                      <Label>Always Pull Base Image</Label>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Platform</Label>
+                    <Select
+                      value={buildConfig.options.platform}
+                      onValueChange={(value) => 
+                        setBuildConfig(prev => ({
+                          ...prev,
+                          options: { ...prev.options, platform: value }
+                        }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select platform" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="linux/amd64">linux/amd64</SelectItem>
+                        <SelectItem value="linux/arm64">linux/arm64</SelectItem>
+                        <SelectItem value="linux/arm/v7">linux/arm/v7</SelectItem>
+                        <SelectItem value="windows/amd64">windows/amd64</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
@@ -614,7 +709,11 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
                     <div className="flex items-center justify-between p-2 rounded-md hover:bg-accent group">
                       <div 
                         className="flex items-center space-x-2 flex-1 cursor-pointer"
-                        onClick={() => handleFileEdit('dockerfile')}
+                        onClick={() => setSelectedFile({
+                          type: 'dockerfile',
+                          name: 'Dockerfile',
+                          content: buildConfig.projectFiles.dockerfile.content
+                        })}
                       >
                         <FileText className="w-4 h-4 text-blue-500" />
                         <span>Dockerfile</span>
@@ -623,7 +722,11 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleFileEdit('dockerfile')}
+                          onClick={() => setSelectedFile({
+                            type: 'dockerfile',
+                            name: 'Dockerfile',
+                            content: buildConfig.projectFiles.dockerfile.content
+                          })}
                         >
                           <Pencil className="w-4 h-4" />
                         </Button>
@@ -648,10 +751,15 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
                   
                   {/* Additional Files */}
                   {buildConfig.projectFiles.additionalFiles.map((file, index) => (
-                    <div key={index} className="flex items-center justify-between p-2 rounded-md hover:bg-accent group">
+                    <div key={file.id} className="flex items-center justify-between p-2 rounded-md hover:bg-accent group">
                       <div 
                         className="flex items-center space-x-2 flex-1 cursor-pointer"
-                        onClick={() => handleFileEdit('additional', index)}
+                        onClick={() => setSelectedFile({
+                          type: 'additional',
+                          index: index,
+                          name: file.name,
+                          content: file.content
+                        })}
                       >
                         <File className="w-4 h-4" />
                         <span>{file.name}</span>
@@ -660,19 +768,19 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleFileEdit('additional', index)}
+                          onClick={() => setSelectedFile({
+                            type: 'additional',
+                            index: index,
+                            name: file.name,
+                            content: file.content
+                          })}
                         >
                           <Pencil className="w-4 h-4" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => {
-                            const newName = prompt('Nouveau nom du fichier:', file.name);
-                            if (newName && newName !== file.name) {
-                              handleFileRename(newName);
-                            }
-                          }}
+                          onClick={() => handleFileRename(index, file.name)}
                         >
                           <FileText className="w-4 h-4" />
                         </Button>
@@ -732,7 +840,13 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
                           dockerfile: null,
                           additionalFiles: []
                         },
-                        buildArgs: {}
+                        buildArgs: {},
+                        options: {
+                          cache: true,
+                          platform: 'linux/amd64',
+                          compress: true,
+                          pull: true
+                        }
                       });
                       setBuildProgress(null);
                     }}
@@ -944,7 +1058,7 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={!!selectedFile} onOpenChange={() => setSelectedFile(null)}>
+      <Dialog open={!!selectedFile} onOpenChange={(open) => !open && setSelectedFile(null)}>
         <DialogContent className="max-w-4xl h-[80vh]">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
@@ -956,16 +1070,11 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
                 )}
                 <span>{selectedFile?.name}</span>
               </div>
-              {selectedFile?.type === 'additional' && (
+              {selectedFile?.type === 'additional' && typeof selectedFile.index === 'number' && (
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    const newName = prompt('Nouveau nom du fichier:', selectedFile.name);
-                    if (newName && newName !== selectedFile.name) {
-                      handleFileRename(newName);
-                    }
-                  }}
+                  onClick={() => handleFileRename(selectedFile.index!, selectedFile.name)}
                 >
                   <FileText className="w-4 h-4 mr-2" />
                   Renommer

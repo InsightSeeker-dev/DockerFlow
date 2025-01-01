@@ -8,10 +8,17 @@ import fs from 'fs/promises';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 
+interface BuildOptions {
+  cache: boolean;
+  platform: string;
+  compress: boolean;
+  pull: boolean;
+}
+
 export async function POST(req: NextRequest) {
   try {
     console.log('Starting image build process...');
-    
+
     // Vérifier l'authentification
     const session = await getServerSession(authOptions);
     if (!session?.user) {
@@ -41,7 +48,7 @@ export async function POST(req: NextRequest) {
     // Vérifier le type de contenu
     const contentType = req.headers.get('content-type');
     console.log('Content-Type:', contentType);
-    
+
     if (!contentType || !contentType.includes('multipart/form-data')) {
       console.log('Invalid content type:', contentType);
       return new NextResponse('Invalid content type. Expected multipart/form-data', { 
@@ -49,28 +56,52 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    let formData: FormData;
-    try {
-      formData = await req.formData();
-      console.log('Form data parsed successfully');
-    } catch (error) {
-      console.error('Error parsing form data:', error);
-      return new NextResponse('Invalid form data', { status: 400 });
-    }
+    const formData = await req.formData();
+    console.log('Form data parsed successfully');
 
     const dockerfile = formData.get('dockerfile') as Blob | null;
     const tag = formData.get('tag') as string | null;
-    const contextFiles = formData.getAll('context') as File[];
+    const imageName = formData.get('imageName') as string | null;
+    const contextFiles = formData.getAll('files') as File[];
+    const optionsStr = formData.get('options') as string | null;
+
+    let buildOptions: BuildOptions = {
+      cache: true,
+      platform: 'linux/amd64',
+      compress: true,
+      pull: true
+    };
+
+    if (optionsStr) {
+      try {
+        const parsedOptions = JSON.parse(optionsStr);
+        buildOptions = {
+          ...buildOptions,
+          ...parsedOptions
+        };
+        console.log('Build options parsed:', buildOptions);
+      } catch (error) {
+        console.error('Error parsing build options:', error);
+      }
+    }
 
     console.log('Received data:', {
       hasDockerfile: !!dockerfile,
       tag,
-      contextFilesCount: contextFiles.length
+      imageName,
+      contextFilesCount: contextFiles.length,
+      buildOptions
     });
 
-    if (!dockerfile || !tag) {
-      console.log('Missing required fields:', { hasDockerfile: !!dockerfile, hasTag: !!tag });
-      return new NextResponse('Dockerfile and tag are required', { status: 400 });
+    if (!dockerfile || !tag || !imageName) {
+      console.log('Missing required fields:', { hasDockerfile: !!dockerfile, hasTag: !!tag, hasImageName: !!imageName });
+      return new NextResponse(
+        JSON.stringify({
+          error: true,
+          message: 'Missing required fields: dockerfile, tag, or imageName'
+        }),
+        { status: 400 }
+      );
     }
 
     // Créer un dossier temporaire pour le build
@@ -116,8 +147,10 @@ export async function POST(req: NextRequest) {
 
           console.log('Starting Docker build with options:', {
             tag,
+            imageName,
             buildDir,
-            contextFiles: contextFiles.map(f => f.name)
+            contextFiles: contextFiles.map(f => f.name),
+            buildOptions
           });
 
           // Construire l'image
@@ -125,8 +158,17 @@ export async function POST(req: NextRequest) {
             context: buildDir,
             src: ['Dockerfile', ...contextFiles.map(f => f.name)]
           }, {
-            t: tag,
-            dockerfile: 'Dockerfile'
+            t: `${imageName}:${tag}`,
+            dockerfile: 'Dockerfile',
+            nocache: !buildOptions.cache,
+            platform: buildOptions.platform,
+            compress: buildOptions.compress,
+            pull: buildOptions.pull,
+            buildargs: {},
+            memory: 0,
+            memswap: 0,
+            cpushares: 0,
+            cpusetcpus: ''
           });
 
           docker.modem.followProgress(
@@ -143,14 +185,14 @@ export async function POST(req: NextRequest) {
               } else {
                 try {
                   console.log('Getting image info...');
-                  const image = await docker.getImage(tag).inspect();
-                  
+                  const image = await docker.getImage(`${imageName}:${tag}`).inspect();
+
                   console.log('Creating database entry...');
                   await prisma.dockerImage.create({
                     data: {
                       userId: user.id,
-                      name: tag.split(':')[0],
-                      tag: tag.split(':')[1] || 'latest',
+                      name: imageName,
+                      tag: tag,
                       size: image.Size,
                     }
                   });

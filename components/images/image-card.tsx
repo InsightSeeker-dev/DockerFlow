@@ -6,7 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { formatBytes } from '@/lib/utils';
-import { TrashIcon, Loader2 } from 'lucide-react';
+import { TrashIcon, Loader2, Info } from 'lucide-react';
+import { ImageDetails } from './image-details';
+import { useSession } from 'next-auth/react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,14 +28,17 @@ interface ImageCardProps {
 
 export function ImageCard({ image, onRemove }: ImageCardProps) {
   const { toast } = useToast();
+  const { data: session } = useSession();
   const [isLoading, setIsLoading] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
 
   const handleRemove = async () => {
     try {
       setIsLoading(true);
       const imageId = image.Id.replace('sha256:', '');
-      console.log('Deleting image with ID:', imageId); // Debug log
+      console.log('Deleting image with ID:', imageId);
 
+      // Supprimer l'image
       const response = await fetch(`/api/admin/images/${imageId}`, {
         method: 'DELETE',
         headers: {
@@ -52,6 +57,27 @@ export function ImageCard({ image, onRemove }: ImageCardProps) {
           return;
         }
         throw new Error(error.message || 'Failed to remove image');
+      }
+
+      // Enregistrer l'activité
+      const activityResponse = await fetch('/api/admin/activities', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'IMAGE_DELETE',
+          description: `Deleted image: ${image.RepoTags?.[0] || imageId}`,
+          metadata: {
+            imageId,
+            tags: image.RepoTags,
+            size: image.Size
+          }
+        }),
+      });
+
+      if (!activityResponse.ok) {
+        console.error('Failed to log image deletion activity');
       }
 
       toast({
@@ -73,92 +99,91 @@ export function ImageCard({ image, onRemove }: ImageCardProps) {
   };
 
   const tags = image.RepoTags?.filter(tag => tag !== '<none>:<none>') || [];
-  const shortId = image.Id.substring(7, 19);
+  const imageId = image.Id.replace('sha256:', '').substring(0, 12);
 
   return (
-    <Card className="group hover:shadow-md transition-all duration-200">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-base font-medium">
-          {tags[0] || shortId}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">ID:</span>
-              <span className="font-mono text-xs bg-secondary px-2 py-1 rounded">{shortId}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Size:</span>
-              <span className="font-medium">{formatBytes(image.Size)}</span>
-            </div>
-            {tags.length > 1 && (
-              <div className="flex flex-col gap-2">
-                <span className="text-muted-foreground">Tags:</span>
-                <div className="flex flex-wrap gap-2">
-                  {tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="text-xs bg-secondary px-2 py-1 rounded-full"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="destructive"
-                size="sm"
-                disabled={isLoading}
-                className="w-full opacity-80 group-hover:opacity-100 transition-opacity"
-              >
-                {isLoading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <TrashIcon className="mr-2 h-4 w-4" />
-                )}
-                {isLoading ? 'Removing...' : 'Remove'}
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Remove Docker Image</AlertDialogTitle>
-                <AlertDialogDescription className="space-y-2">
-                  <p>Are you sure you want to remove this Docker image?</p>
-                  <div className="mt-2 p-2 bg-secondary/50 rounded-md">
-                    <p className="font-medium">{tags[0] || shortId}</p>
-                    <p className="text-sm text-muted-foreground">Size: {formatBytes(image.Size)}</p>
-                  </div>
-                  <p className="text-sm text-destructive">This action cannot be undone.</p>
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={handleRemove}
+    <>
+      <Card className="group hover:shadow-md transition-all duration-200">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-base font-medium">
+            {tags[0] || imageId}
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowDetails(true)}
+              className="opacity-0 group-hover:opacity-100 transition-opacity"
+            >
+              <Info className="h-4 w-4" />
+            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
                   disabled={isLoading}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  className="opacity-0 group-hover:opacity-100 transition-opacity text-destructive"
                 >
                   {isLoading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Removing...
-                    </>
+                    <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    'Remove'
+                    <TrashIcon className="h-4 w-4" />
                   )}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
-      </CardContent>
-    </Card>
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This action cannot be undone. This will permanently delete the image
+                    and all its associated data.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleRemove}>Continue</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">ID:</span>
+                <span className="font-mono text-xs bg-secondary px-2 py-1 rounded">{imageId}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Size:</span>
+                <span className="font-medium">{formatBytes(image.Size)}</span>
+              </div>
+              {tags.length > 1 && (
+                <div className="flex flex-col gap-2">
+                  <span className="text-muted-foreground">Tags:</span>
+                  <div className="flex flex-wrap gap-2">
+                    {tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="bg-secondary text-secondary-foreground text-xs px-2 py-1 rounded"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <ImageDetails
+        image={image}
+        open={showDetails}
+        onOpenChange={setShowDetails}
+      />
+    </>
   );
 }

@@ -7,6 +7,7 @@ import { prisma } from '@/lib/prisma';
 import fs from 'fs/promises';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { ActivityType } from '@prisma/client';
 
 export async function POST(req: NextRequest) {
   const buildDir = path.join(process.cwd(), 'tmp', uuidv4());
@@ -97,19 +98,40 @@ export async function POST(req: NextRequest) {
 
                 try {
                   const image = await docker.getImage(`${imageName}:${tag}`).inspect();
+                  // Créer l'entrée de l'image dans la base de données
                   await prisma.dockerImage.create({
                     data: {
                       userId: user.id,
                       name: imageName,
                       tag: tag,
+                      imageId: image.Id,
                       size: image.Size,
-                    }
+                      created: new Date(image.Created),
+                    },
                   });
-                  controller.enqueue('Build completed successfully\n');
+
+                  // Enregistrer l'activité de build
+                  await prisma.activity.create({
+                    data: {
+                      type: ActivityType.IMAGE_BUILD,
+                      description: `Built image: ${imageName}:${tag}`,
+                      userId: user.id,
+                      metadata: {
+                        imageId: image.Id,
+                        size: image.Size,
+                        tag: tag
+                      },
+                      ipAddress: req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown',
+                      userAgent: req.headers.get('user-agent') || undefined,
+                    },
+                  });
+
+                  controller.enqueue(`Successfully built ${imageName}:${tag}\n`);
                   controller.close();
                   resolve(true);
                 } catch (error) {
-                  controller.enqueue(`error: ${error instanceof Error ? error.message : 'Unknown error'}\n`);
+                  console.error('Error creating image record:', error);
+                  controller.enqueue(`Error creating image record: ${error}\n`);
                   controller.close();
                   reject(error);
                 }
@@ -119,8 +141,6 @@ export async function POST(req: NextRequest) {
                   controller.enqueue(event.stream);
                 } else if (event.error) {
                   controller.enqueue(`error: ${event.error}\n`);
-                } else {
-                  controller.enqueue(`${JSON.stringify(event)}\n`);
                 }
               }
             );

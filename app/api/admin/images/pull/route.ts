@@ -4,6 +4,7 @@ import { PassThrough } from 'stream';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { ActivityType } from '@prisma/client';
 
 function formatImageUrl(registry: string, imageUrl: string): string {
   // Nettoyer l'URL de l'image
@@ -108,90 +109,94 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-      // Créer les options de pull
-      const pullOptions: any = {};
-      if (authconfig) {
-        pullOptions.authconfig = authconfig;
-      }
+      // Lancer le pull de l'image
+      const pullStream = await docker.pull(formattedImageUrl, { authconfig });
 
-      console.log('Pulling image with options:', {
-        imageUrl: formattedImageUrl,
-        hasAuth: !!authconfig
-      });
-
-      // Gérer le pull de l'image
-      const pullStream = await docker.pull(formattedImageUrl, pullOptions);
-
-      // Transformer le stream Docker en stream lisible
       docker.modem.followProgress(
         pullStream,
-        (err: Error | null, output: any[]) => {
+        async (err: Error | null, output: any[]) => {
           if (err) {
-            console.error('Docker pull error:', err);
-            const errorMessage = JSON.stringify({
-              error: true,
-              message: err.message || 'Failed to pull image',
-              details: err
-            }) + '\n';
-            stream.write(encoder.encode(errorMessage));
-            stream.end();
-          } else {
-            console.log('Pull completed successfully');
-            const successMessage = JSON.stringify({
-              success: true,
-              message: 'Image pulled successfully'
-            }) + '\n';
-            stream.write(encoder.encode(successMessage));
-            stream.end();
+            console.error('Error following pull progress:', err);
+            stream.write(encoder.encode(JSON.stringify({ error: err.message }) + '\n'));
+            return;
+          }
+
+          try {
+            // Récupérer les informations de l'image
+            const image = await docker.getImage(formattedImageUrl).inspect();
+
+            // Créer l'entrée dans la base de données
+            const dockerImage = await prisma.dockerImage.create({
+              data: {
+                userId: user.id,
+                name: imageUrl,
+                tag: formattedImageUrl.split(':')[1] || 'latest',
+                size: image.Size,
+                created: new Date(image.Created),
+              },
+            });
+
+            // Enregistrer l'activité
+            await prisma.activity.create({
+              data: {
+                type: ActivityType.IMAGE_PULL,
+                description: `Pulled image: ${formattedImageUrl}`,
+                userId: user.id,
+                metadata: {
+                  size: image.Size,
+                  registry: registry,
+                  tag: formattedImageUrl.split(':')[1] || 'latest'
+                },
+                ipAddress: req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown',
+                userAgent: req.headers.get('user-agent') || undefined,
+              },
+            });
+
+            stream.write(encoder.encode(JSON.stringify({ status: 'Image pulled successfully' }) + '\n'));
+          } catch (error) {
+            console.error('Error creating image record:', error);
+            if (error instanceof Error) {
+              stream.write(encoder.encode(JSON.stringify({ error: error.message }) + '\n'));
+            } else {
+              stream.write(encoder.encode(JSON.stringify({ error: 'Unknown error occurred' }) + '\n'));
+            }
           }
         },
         (event: any) => {
-          const line = JSON.stringify(event) + '\n';
-          stream.write(encoder.encode(line));
-        }
-      );
-
-      // Retourner le stream comme réponse
-      return new NextResponse(readable);
-    } catch (pullError: any) {
-      console.error('Pull error details:', {
-        message: pullError.message,
-        statusCode: pullError.statusCode,
-        reason: pullError.reason,
-        json: pullError.json
-      });
-
-      // Retourner une erreur plus détaillée
-      return new NextResponse(
-        JSON.stringify({
-          error: true,
-          message: pullError.message,
-          statusCode: pullError.statusCode,
-          reason: pullError.reason || 'Unknown error',
-          details: pullError.json
-        }),
-        { 
-          status: pullError.statusCode || 500,
-          headers: {
-            'Content-Type': 'application/json'
+          if (event.status) {
+            stream.write(encoder.encode(JSON.stringify(event) + '\n'));
+          }
+          if (event.progress) {
+            stream.write(encoder.encode(JSON.stringify(event) + '\n'));
+          }
+          if (event.error) {
+            stream.write(encoder.encode(JSON.stringify({ error: event.error }) + '\n'));
           }
         }
       );
-    }
-  } catch (error: any) {
-    console.error('General error:', error);
-    return new NextResponse(
-      JSON.stringify({
-        error: true,
-        message: error.message || 'Internal Server Error',
-        details: error
-      }),
-      { 
-        status: 500,
+
+      return new NextResponse(readable, {
         headers: {
-          'Content-Type': 'application/json'
-        }
-      }
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+      });
+
+    } catch (error) {
+      console.error('Pull error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to pull image';
+      return NextResponse.json(
+        { error: errorMessage },
+        { status: 500 }
+      );
+    }
+  } catch (error) {
+    console.error('General error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Internal Server Error';
+    return NextResponse.json(
+      { error: errorMessage },
+      { status: 500 }
     );
   }
 }

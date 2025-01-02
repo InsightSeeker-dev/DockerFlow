@@ -11,7 +11,9 @@ export interface User {
   createdAt: Date;
   updatedAt: Date;
   lastLogin?: Date | null;
-  isActive: boolean;
+  _count?: {
+    containers: number;
+  };
 }
 
 export type UserWithoutDates = Omit<User, 'createdAt' | 'updatedAt'>;

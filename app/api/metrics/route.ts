@@ -52,6 +52,8 @@ async function getNetworkTraffic() {
   }
 }
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     // CPU Usage

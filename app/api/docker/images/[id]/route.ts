@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { UserRole } from '@prisma/client';
 
 export async function DELETE(
   request: Request,
@@ -22,7 +23,7 @@ export async function DELETE(
     }
 
     // Vérifier si l'utilisateur est propriétaire de l'image ou admin
-    if (image.userId !== session.user.id && session.user.role !== 'admin') {
+    if (image.userId !== session.user.id && session.user.role !== UserRole.ADMIN) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

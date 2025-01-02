@@ -10,6 +10,8 @@ import { Session } from 'next-auth';
 import { Prisma } from '@prisma/client';
 import { containerActivity } from '@/lib/activity';
 
+export const dynamic = 'force-dynamic';
+
 interface ExtendedSession extends Session {
   user: {
     id: string;

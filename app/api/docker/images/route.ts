@@ -4,6 +4,8 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { imageActivity } from '@/lib/activity';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -51,7 +53,7 @@ export async function POST(request: Request) {
     });
 
     // Enregistrer l'activité
-    await imageActivity.create(session.user.id, `${name}:${tag}`, {
+    await imageActivity.pull(session.user.id, `${name}:${tag}`, {
       size,
       created: new Date(),
     });

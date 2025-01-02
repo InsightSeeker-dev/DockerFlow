@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { z } from 'zod';
+import { UserRole } from '@prisma/client';
 
 // Schema de validation pour la mise à jour des ressources
 const updateResourcesSchema = z.object({
@@ -29,7 +30,7 @@ export async function GET(request: Request) {
     // Si un userId est spécifié, retourner les ressources de cet utilisateur
     if (userId) {
       // Vérifier si l'utilisateur demande ses propres ressources ou est admin
-      if (userId !== session.user.id && session.user.role !== 'admin') {
+      if (userId !== session.user.id && session.user.role !== UserRole.ADMIN) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
       }
 
@@ -42,7 +43,7 @@ export async function GET(request: Request) {
     }
 
     // Si pas de userId, vérifier que l'utilisateur est admin pour voir toutes les ressources
-    if (session.user.role !== 'admin') {
+    if (session.user.role !== UserRole.ADMIN) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -83,7 +84,7 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || session.user.role !== 'admin') {
+    if (!session?.user || session.user.role !== UserRole.ADMIN) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

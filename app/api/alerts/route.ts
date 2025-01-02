@@ -6,6 +6,8 @@ import { Prisma, AlertSeverity, AlertType, AlertStatus } from '@prisma/client';
 import { z } from 'zod';
 import { alertActivity } from '@/lib/activity';
 
+export const dynamic = 'force-dynamic';
+
 const alertQuerySchema = z.object({
   userId: z.string().optional(),
   severity: z.enum(['INFO', 'WARNING', 'ERROR', 'CRITICAL']).optional(),

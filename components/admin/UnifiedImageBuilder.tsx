@@ -67,9 +67,7 @@ import {
   X,
   Pencil,
   Terminal,
-  ArrowUpDown,
-  RotateCcw,
-  Hammer
+  ArrowUpDown
 } from "lucide-react";
 
 import {
@@ -586,20 +584,6 @@ const UnifiedImageBuilder: React.FC<UnifiedImageBuilderProps> = ({ onImageBuilt 
     }
   };
 
-  const handleReset = () => {
-    setBuildConfig(defaultBuildConfig);
-    setSelectedTemplate(null);
-    setBuildProgress(null);
-    setBuildLogs([]);
-    setShowBuildLogs(false);
-    setActiveFile(null);
-    toast({
-      title: "Réinitialisation",
-      description: "Le formulaire a été réinitialisé",
-      variant: "default",
-    });
-  };
-
   const renderRecommendations = (template: DockerTemplate) => {
     if (!template.recommendations) return null;
 
@@ -630,10 +614,32 @@ const UnifiedImageBuilder: React.FC<UnifiedImageBuilderProps> = ({ onImageBuilt 
     );
   };
 
+  const resetForm = () => {
+    setBuildConfig(defaultBuildConfig);
+    setBuildProgress(null);
+    setSelectedTemplate(null);
+    setBuildLogs([]);
+    setActiveFile(null);
+    toast({
+      title: "Reset Complete",
+      description: "All fields have been reset to their default values",
+    });
+  };
+
   return (
     <Card className="w-full">
       <CardHeader>
-        <CardTitle>Construction d'Image Docker</CardTitle>
+        <div className="flex justify-between items-center">
+          <CardTitle>Construction d'Image Docker</CardTitle>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={resetForm}
+            disabled={isBuilding}
+          >
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </div>
         <CardDescription>
           Créez une nouvelle image Docker à partir d'un Dockerfile et de fichiers additionnels
         </CardDescription>
@@ -822,8 +828,8 @@ const UnifiedImageBuilder: React.FC<UnifiedImageBuilderProps> = ({ onImageBuilt 
             </div>
           </div>
 
-          {/* Boutons d'action */}
-          <div className="flex justify-end space-x-2 mt-4">
+          {/* Bouton de build */}
+          <div className="flex justify-end space-x-2">
             <Button
               variant="outline"
               onClick={() => setShowBuildLogs(!showBuildLogs)}
@@ -834,19 +840,10 @@ const UnifiedImageBuilder: React.FC<UnifiedImageBuilderProps> = ({ onImageBuilt 
             </Button>
             <Button
               onClick={handleBuild}
-              disabled={isBuilding || !selectedTemplate || !buildConfig.imageName}
+              disabled={isBuilding || !buildConfig.projectFiles.dockerfile}
             >
-              {isBuilding ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Construction...
-                </>
-              ) : (
-                <>
-                  <Hammer className="w-4 h-4 mr-2" />
-                  Construire
-                </>
-              )}
+              {isBuilding && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {isBuilding ? "Construction en cours..." : "Construire l'image"}
             </Button>
           </div>
 
@@ -855,6 +852,13 @@ const UnifiedImageBuilder: React.FC<UnifiedImageBuilderProps> = ({ onImageBuilt 
             <div className="mt-4 space-y-2">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold">Logs de build</h3>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowBuildLogs(!showBuildLogs)}
+                >
+                  {showBuildLogs ? 'Masquer' : 'Afficher'}
+                </Button>
               </div>
               <ScrollArea className="h-[200px] border rounded-md p-4">
                 <div className="space-y-1">

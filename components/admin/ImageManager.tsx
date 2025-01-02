@@ -48,7 +48,6 @@ export default function ImageManager() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('newest');
-  const [filterTag, setFilterTag] = useState('');
 
   const formatSize = (size: number) => {
     const units = ['B', 'KB', 'MB', 'GB'];
@@ -72,7 +71,7 @@ export default function ImageManager() {
       if (!response.ok) throw new Error('Failed to fetch images');
       const data = await response.json();
       setImages(data);
-      filterAndSortImages(data, searchTerm, sortBy, filterTag);
+      filterAndSortImages(data, searchTerm, sortBy);
       toast({
         title: 'Images refreshed',
         description: `Successfully loaded ${data.length} images`,
@@ -93,7 +92,6 @@ export default function ImageManager() {
     imageList: DockerImage[],
     search: string,
     sort: string,
-    tag: string
   ) => {
     let filtered = [...imageList];
 
@@ -102,12 +100,6 @@ export default function ImageManager() {
         image.RepoTags?.some((tag) =>
           tag.toLowerCase().includes(search.toLowerCase())
         )
-      );
-    }
-
-    if (tag) {
-      filtered = filtered.filter((image) =>
-        image.RepoTags?.some((t) => t === tag)
       );
     }
 
@@ -175,12 +167,13 @@ export default function ImageManager() {
     }
   };
 
-  const getAvailableTags = () => {
-    const tags = new Set<string>();
-    images.forEach((image) => {
-      image.RepoTags?.forEach((tag) => tags.add(tag));
+  const resetFilters = () => {
+    setSearchTerm('');
+    setSortBy('newest');
+    toast({
+      title: 'Filters Reset',
+      description: 'Search filters have been reset to default values',
     });
-    return Array.from(tags);
   };
 
   useEffect(() => {
@@ -188,25 +181,13 @@ export default function ImageManager() {
   }, []);
 
   useEffect(() => {
-    filterAndSortImages(images, searchTerm, sortBy, filterTag);
-  }, [searchTerm, sortBy, filterTag, images]);
+    filterAndSortImages(images, searchTerm, sortBy);
+  }, [searchTerm, sortBy, images]);
 
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold tracking-tight">Docker Images</h2>
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={fetchImages}
-          disabled={loading}
-        >
-          {loading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <RefreshCcw className="h-4 w-4" />
-          )}
-        </Button>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
@@ -217,15 +198,24 @@ export default function ImageManager() {
         </TabsList>
 
         <TabsContent value="images" className="space-y-4">
-          <ImageSearch
-            searchTerm={searchTerm}
-            onSearchChange={setSearchTerm}
-            sortBy={sortBy}
-            onSortChange={setSortBy}
-            filterTag={filterTag}
-            onFilterChange={setFilterTag}
-            availableTags={getAvailableTags()}
-          />
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <ImageSearch
+                searchTerm={searchTerm}
+                onSearchChange={setSearchTerm}
+                sortBy={sortBy}
+                onSortChange={setSortBy}
+              />
+            </div>
+            <Button
+              variant="outline"
+              className="h-12 px-4 bg-white/5 backdrop-blur-sm border-2 border-gray-700 hover:border-gray-600"
+              onClick={resetFilters}
+            >
+              <RefreshCcw className="h-4 w-4 mr-2" />
+              Reset
+            </Button>
+          </div>
 
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {filteredImages.map((image) => (

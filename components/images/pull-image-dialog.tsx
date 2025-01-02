@@ -25,7 +25,8 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
-import { UploadIcon } from 'lucide-react';
+import { UploadIcon, Loader2 } from 'lucide-react';
+import { PullProgress } from './pull-progress';
 
 const pullImageSchema = z.object({
   image: z.string().min(1, 'Image name is required'),
@@ -40,6 +41,8 @@ interface PullImageDialogProps {
 
 export function PullImageDialog({ onSuccess }: PullImageDialogProps) {
   const [open, setOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [pullMessages, setPullMessages] = useState<string[]>([]);
   const { toast } = useToast();
   const form = useForm<FormData>({
     resolver: zodResolver(pullImageSchema),
@@ -50,6 +53,10 @@ export function PullImageDialog({ onSuccess }: PullImageDialogProps) {
   });
 
   async function onSubmit(data: FormData) {
+    if (isLoading) return;
+    
+    setIsLoading(true);
+    setPullMessages([]);
     try {
       const response = await fetch('/api/images/pull', {
         method: 'POST',
@@ -60,6 +67,39 @@ export function PullImageDialog({ onSuccess }: PullImageDialogProps) {
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.message || 'Failed to pull image');
+      }
+
+      // Lire le stream de réponse
+      const reader = response.body?.getReader();
+      if (reader) {
+        let isPullComplete = false;
+        while (!isPullComplete) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          // Traiter les messages du stream
+          const text = new TextDecoder().decode(value);
+          const lines = text.split('\n').filter(line => line.trim());
+          
+          setPullMessages(prev => [...prev, ...lines]);
+          
+          // Vérifier chaque ligne pour détecter la fin du pull
+          for (const line of lines) {
+            try {
+              const event = JSON.parse(line);
+              if (event.error) {
+                throw new Error(event.error);
+              }
+              // Détecter si c'est le message de fin
+              if (event.status === 'Pull completed successfully') {
+                isPullComplete = true;
+                break;
+              }
+            } catch (e) {
+              console.error('Error parsing stream:', e);
+            }
+          }
+        }
       }
 
       toast({
@@ -76,6 +116,8 @@ export function PullImageDialog({ onSuccess }: PullImageDialogProps) {
         description: error instanceof Error ? error.message : 'An error occurred',
         variant: 'destructive',
       });
+    } finally {
+      setIsLoading(false);
     }
   }
 
@@ -107,7 +149,7 @@ export function PullImageDialog({ onSuccess }: PullImageDialogProps) {
                     <Input placeholder="nginx" {...field} />
                   </FormControl>
                   <FormDescription>
-                    The name of the image to pull (e.g., nginx, ubuntu).
+                    Enter the name of the Docker image you want to pull.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -124,22 +166,34 @@ export function PullImageDialog({ onSuccess }: PullImageDialogProps) {
                     <Input placeholder="latest" {...field} />
                   </FormControl>
                   <FormDescription>
-                    The tag of the image (defaults to latest).
+                    Specify the tag of the image (default: latest).
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
 
+            {isLoading && pullMessages.length > 0 && (
+              <PullProgress messages={pullMessages} />
+            )}
+
             <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setOpen(false)}
-              >
+              <Button variant="outline" onClick={() => setOpen(false)} type="button">
                 Cancel
               </Button>
-              <Button type="submit">Pull Image</Button>
+              <Button type="submit" disabled={isLoading}>
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Pulling...
+                  </>
+                ) : (
+                  <>
+                    <UploadIcon className="mr-2 h-4 w-4" />
+                    Pull Image
+                  </>
+                )}
+              </Button>
             </DialogFooter>
           </form>
         </Form>

@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getDockerClient } from "@/lib/docker/client";
 import { UserRole } from "@prisma/client";
+import { imageActivity } from '@/lib/activity';
 
 const docker = getDockerClient();
 
@@ -46,7 +47,20 @@ export async function DELETE(
     }
 
     const image = docker.getImage(params.imageId);
+    
+    // Récupérer les informations de l'image avant de la supprimer
+    const imageInfo = await image.inspect();
+    const imageName = imageInfo.RepoTags?.[0] || imageInfo.Id;
+    
+    // Supprimer l'image
     await image.remove();
+
+    // Enregistrer l'activité
+    await imageActivity.delete(session.user.id, imageName, {
+      imageId: params.imageId,
+      size: imageInfo.Size,
+      tags: imageInfo.RepoTags,
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

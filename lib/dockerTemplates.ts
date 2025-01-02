@@ -8,6 +8,12 @@ export interface DockerTemplate {
   estimatedBuildTime: string;
   baseImage: string;
   dockerfile: string;
+  recommendations?: {
+    memory?: string;
+    cpu?: string;
+    storage?: string;
+    notes?: string[];
+  };
   defaultFiles: {
     name: string;
     content: string;

@@ -234,10 +234,91 @@ export default function ImagePuller({ onImagePulled }: ImagePullerProps) {
     }
   };
 
+  const resetForm = () => {
+    setImageUrl('');
+    setSelectedRegistry('docker.io');
+    setPullProgress({});
+    toast.success('Form reset successfully');
+  };
+
   return (
-    <Card>
+    <Card className="w-full">
+      <CardHeader>
+        <div className="flex justify-between items-center">
+          <CardTitle>Pull Image</CardTitle>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={resetForm}
+            disabled={isPulling}
+          >
+            <RefreshCcw className="h-4 w-4" />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="registry">Registry</Label>
+            <Select
+              value={selectedRegistry}
+              onValueChange={setSelectedRegistry}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select registry" />
+              </SelectTrigger>
+              <SelectContent>
+                {registries
+                  .filter(registry => registry.enabled)
+                  .map((registry) => (
+                    <SelectItem key={registry.id} value={registry.url}>
+                      {registry.name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="imageUrl">Image URL</Label>
+            <div className="flex gap-2">
+              <Input
+                id="imageUrl"
+                placeholder="e.g., nginx:latest"
+                value={imageUrl}
+                onChange={(e) => setImageUrl(e.target.value)}
+                disabled={isPulling}
+              />
+              <Button
+                onClick={handlePull}
+                disabled={isPulling || !imageUrl}
+                className="w-32"
+              >
+                {isPulling ? (
+                  <RefreshCcw className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-2 h-4 w-4" />
+                )}
+                Pull
+              </Button>
+            </div>
+          </div>
+
+          {Object.keys(pullProgress).length > 0 && (
+            <div className="mt-4 space-y-2">
+              <Label>Pull Progress</Label>
+              <div className="rounded-lg border p-4 space-y-2">
+                {Object.entries(pullProgress).map(([id, status]) => (
+                  <div key={id} className="text-sm">
+                    <span className="font-medium">{id}:</span> {status}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </CardContent>
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-2xl font-bold">Pull Docker Image</CardTitle>
         <Dialog>
           <DialogTrigger asChild>
             <Button variant="outline" size="icon">
@@ -308,68 +389,6 @@ export default function ImagePuller({ onImagePulled }: ImagePullerProps) {
           </DialogContent>
         </Dialog>
       </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <div className="grid gap-2">
-            <Label htmlFor="registry">Registry</Label>
-            <Select
-              value={selectedRegistry}
-              onValueChange={setSelectedRegistry}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select registry" />
-              </SelectTrigger>
-              <SelectContent>
-                {registries
-                  .filter(registry => registry.enabled)
-                  .map((registry) => (
-                    <SelectItem key={registry.id} value={registry.url}>
-                      {registry.name}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="imageUrl">Image URL</Label>
-            <div className="flex gap-2">
-              <Input
-                id="imageUrl"
-                placeholder="e.g., nginx:latest"
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                disabled={isPulling}
-              />
-              <Button
-                onClick={handlePull}
-                disabled={isPulling || !imageUrl}
-                className="w-32"
-              >
-                {isPulling ? (
-                  <RefreshCcw className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Download className="mr-2 h-4 w-4" />
-                )}
-                Pull
-              </Button>
-            </div>
-          </div>
-
-          {Object.keys(pullProgress).length > 0 && (
-            <div className="mt-4 space-y-2">
-              <Label>Pull Progress</Label>
-              <div className="rounded-lg border p-4 space-y-2">
-                {Object.entries(pullProgress).map(([id, status]) => (
-                  <div key={id} className="text-sm">
-                    <span className="font-medium">{id}:</span> {status}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </CardContent>
     </Card>
   );
 }

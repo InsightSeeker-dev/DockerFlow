@@ -67,7 +67,9 @@ import {
   X,
   Pencil,
   Terminal,
-  ArrowUpDown
+  ArrowUpDown,
+  RotateCcw,
+  Hammer
 } from "lucide-react";
 
 import {
@@ -181,28 +183,30 @@ const buildImage = async (
   }
 };
 
-export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilderProps) {
-  const [buildConfig, setBuildConfig] = useState<BuildConfig>({
-    imageName: '',
-    tag: 'latest',
-    projectFiles: {
-      dockerfile: null,
-      additionalFiles: []
-    },
-    buildArgs: {},
-    options: {
-      cache: true,
-      platform: 'linux/amd64',
-      compress: true,
-      pull: true
-    }
-  });
+const defaultBuildConfig: BuildConfig = {
+  imageName: '',
+  tag: 'latest',
+  projectFiles: {
+    dockerfile: null,
+    additionalFiles: []
+  },
+  buildArgs: {},
+  options: {
+    cache: true,
+    platform: 'linux/amd64',
+    compress: true,
+    pull: true
+  }
+};
 
+const UnifiedImageBuilder: React.FC<UnifiedImageBuilderProps> = ({ onImageBuilt }) => {
+  const [buildConfig, setBuildConfig] = useState<BuildConfig>(defaultBuildConfig);
   const [activeFile, setActiveFile] = useState<FileEntry | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showTemplateDialog, setShowTemplateDialog] = useState(false);
   const [buildProgress, setBuildProgress] = useState<BuildProgress | null>(null);
   const [isBuilding, setIsBuilding] = useState(false);
+  const [buildLogs, setBuildLogs] = useState<string[]>([]);
   const [showBuildLogs, setShowBuildLogs] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<DockerTemplate | null>(null);
 
@@ -456,140 +460,144 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
   };
 
   const handleBuild = async () => {
-    if (!buildConfig.projectFiles.dockerfile) {
-      toast({
-        title: "Erreur",
-        description: "Veuillez d'abord sélectionner ou créer un Dockerfile",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!buildConfig.imageName) {
-      toast({
-        title: "Erreur",
-        description: "Le nom de l'image est requis",
-        variant: "destructive",
-      });
-      return;
-    }
-
     setIsBuilding(true);
     setBuildProgress({
-      status: 'Construction en cours...',
-      logs: [
-        '🚀 Démarrage du processus de build...',
-        `📦 Configuration: ${JSON.stringify(buildConfig.options, null, 2)}`,
-        '📦 Préparation des fichiers...'
-      ]
+      status: 'Démarrage...',
+      logs: ['🚀 Démarrage du processus de build...']
     });
+    setBuildLogs(['🚀 Démarrage du processus de build...']);
 
     try {
       const formData = new FormData();
-      
-      // Ajout des informations de base
-      formData.append('hasDockerfile', 'true');
-      formData.append('tag', buildConfig.tag || 'latest');
+      formData.append('dockerfile', new Blob([buildConfig.projectFiles.dockerfile!.content], { type: 'text/plain' }));
       formData.append('imageName', buildConfig.imageName);
-      formData.append('options', JSON.stringify(buildConfig.options));
-      
-      setBuildProgress(prev => ({
-        ...prev!,
-        logs: [...prev!.logs, '📝 Configuration du build...']
-      }));
+      formData.append('tag', buildConfig.tag || 'latest');
 
-      // Ajout du Dockerfile
-      const dockerfileBlob = new Blob([buildConfig.projectFiles.dockerfile.content], { type: 'text/plain' });
-      formData.append('dockerfile', dockerfileBlob, 'Dockerfile');
+      // Ajouter les fichiers supplémentaires
+      buildConfig.projectFiles.additionalFiles.forEach(file => {
+        formData.append('files', new Blob([file.content], { type: 'text/plain' }), file.name);
+      });
 
-      setBuildProgress(prev => ({
-        ...prev!,
-        logs: [...prev!.logs, '📄 Dockerfile ajouté au contexte']
-      }));
-
-      // Ajout des fichiers additionnels
-      if (buildConfig.projectFiles.additionalFiles.length > 0) {
-        setBuildProgress(prev => ({
-          ...prev!,
-          logs: [...prev!.logs, '📁 Ajout des fichiers additionnels...']
-        }));
-
-        buildConfig.projectFiles.additionalFiles.forEach(file => {
-          const blob = new Blob([file.content], { type: 'text/plain' });
-          formData.append('files', blob, file.name);
-          setBuildProgress(prev => ({
-            ...prev!,
-            logs: [...prev!.logs, `  ↳ ${file.name} ajouté`]
-          }));
-        });
-      }
-
-      // Ajout du nombre de fichiers
-      formData.append('contextFilesCount', buildConfig.projectFiles.additionalFiles.length.toString());
-
-      setBuildProgress(prev => ({
-        ...prev!,
-        logs: [...prev!.logs, '🔄 Envoi des fichiers au serveur...']
-      }));
-
-      // Envoi de la requête
       const response = await fetch('/api/admin/images/build', {
         method: 'POST',
         body: formData,
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText);
+        const errorData = await response.text();
+        let errorMessage: string;
+        try {
+          const jsonError = JSON.parse(errorData);
+          errorMessage = jsonError.message || 'Une erreur est survenue pendant le build';
+        } catch {
+          errorMessage = errorData || 'Une erreur est survenue pendant le build';
+        }
+        toast({
+          title: "Erreur",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        setBuildProgress(prev => ({
+          ...prev!,
+          status: 'Erreur',
+          error: errorMessage,
+          logs: [...(prev?.logs || []), `❌ ${errorMessage}`]
+        }));
+        return;
       }
 
-      setBuildProgress(prev => ({
-        ...prev!,
-        logs: [...prev!.logs, '⚙️ Build en cours...']
-      }));
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('Impossible de lire la réponse');
+      }
 
-      const buildResult = await response.json();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      if (buildResult.success) {
-        setBuildProgress({
-          status: 'Build terminé',
-          logs: [
-            ...(buildProgress?.logs || []),
-            '✨ Build terminé avec succès',
-            `🏷️ Image créée : ${buildConfig.imageName}:${buildConfig.tag || 'latest'}`,
-            '✅ Processus terminé'
-          ]
-        });
+        const text = new TextDecoder().decode(value);
+        const lines = text.split('\n').filter(line => line.trim());
 
-        toast({
-          title: "Succès",
-          description: `L'image ${buildConfig.imageName}:${buildConfig.tag || 'latest'} a été construite avec succès`,
-        });
-
-        onImageBuilt();
-      } else {
-        throw new Error(buildResult.error || 'Erreur lors du build');
+        for (const line of lines) {
+          try {
+            const data = JSON.parse(line);
+            if (data.error) {
+              toast({
+                title: "Erreur",
+                description: data.message,
+                variant: "destructive",
+              });
+              setBuildProgress(prev => ({
+                status: 'Erreur',
+                error: data.message,
+                logs: [...(prev?.logs || []), `❌ ${data.message}`]
+              }));
+              setBuildLogs(prev => [...prev, `❌ ${data.message}`]);
+            } else if (data.success) {
+              toast({
+                title: "Succès",
+                description: "L'image a été construite avec succès",
+                variant: "default",
+              });
+              setBuildProgress(prev => ({
+                status: 'Build terminé',
+                logs: [...(prev?.logs || []), '✅ Build terminé avec succès']
+              }));
+              setBuildLogs(prev => [...prev, '✅ Build terminé avec succès']);
+              onImageBuilt();
+            } else if (data.stream) {
+              const logLine = data.stream.trim();
+              if (logLine) {
+                setBuildProgress(prev => ({
+                  status: 'Construction...',
+                  logs: [...(prev?.logs || []), logLine]
+                }));
+                setBuildLogs(prev => [...prev, logLine]);
+              }
+            }
+          } catch {
+            // Si la ligne n'est pas du JSON, c'est probablement un log direct
+            if (line.trim()) {
+              setBuildProgress(prev => ({
+                status: 'Construction...',
+                logs: [...(prev?.logs || []), line.trim()]
+              }));
+              setBuildLogs(prev => [...prev, line.trim()]);
+            }
+          }
+        }
       }
     } catch (error) {
       console.error('Build error:', error);
-      setBuildProgress({
-        status: 'Erreur',
-        error: error instanceof Error ? error.message : "Une erreur est survenue",
-        logs: [
-          ...(buildProgress?.logs || []),
-          '❌ Une erreur est survenue pendant le build',
-          `⚠️ ${error instanceof Error ? error.message : "Erreur inconnue"}`
-        ]
-      });
-
+      const errorMessage = error instanceof Error ? error.message : "Une erreur inattendue est survenue";
       toast({
         title: "Erreur",
-        description: error instanceof Error ? error.message : "Une erreur est survenue",
+        description: errorMessage,
         variant: "destructive",
       });
+      setBuildProgress(prev => ({
+        status: 'Erreur',
+        error: errorMessage,
+        logs: [...(prev?.logs || []), `❌ ${errorMessage}`]
+      }));
+      setBuildLogs(prev => [...prev, `❌ ${errorMessage}`]);
     } finally {
       setIsBuilding(false);
     }
+  };
+
+  const handleReset = () => {
+    setBuildConfig(defaultBuildConfig);
+    setSelectedTemplate(null);
+    setBuildProgress(null);
+    setBuildLogs([]);
+    setShowBuildLogs(false);
+    setActiveFile(null);
+    toast({
+      title: "Réinitialisation",
+      description: "Le formulaire a été réinitialisé",
+      variant: "default",
+    });
   };
 
   const renderRecommendations = (template: DockerTemplate) => {
@@ -639,24 +647,57 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
               <Input
                 id="imageName"
                 value={buildConfig.imageName}
-                onChange={(e) => setBuildConfig(prev => ({
-                  ...prev,
-                  imageName: e.target.value
-                }))}
+                onChange={(e) => {
+                  const value = e.target.value.toLowerCase().replace(/[^a-z0-9-_.]/g, '-');
+                  setBuildConfig(prev => ({
+                    ...prev,
+                    imageName: value
+                  }));
+                }}
+                onBlur={(e) => {
+                  // Nettoyage final du nom
+                  const value = e.target.value
+                    .toLowerCase()
+                    .replace(/[^a-z0-9-_.]/g, '-')
+                    .replace(/^[._-]+|[._-]+$/g, ''); // Supprime les caractères spéciaux au début et à la fin
+                  setBuildConfig(prev => ({
+                    ...prev,
+                    imageName: value
+                  }));
+                }}
                 placeholder="mon-image"
               />
+              <p className="text-xs text-muted-foreground">
+                Utilisez uniquement des lettres minuscules, des chiffres, des tirets (-), des points (.) et des underscores (_)
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="tag">Tag</Label>
               <Input
                 id="tag"
                 value={buildConfig.tag}
-                onChange={(e) => setBuildConfig(prev => ({
-                  ...prev,
-                  tag: e.target.value
-                }))}
+                onChange={(e) => {
+                  const value = e.target.value.replace(/[^a-zA-Z0-9-_.]/g, '-');
+                  setBuildConfig(prev => ({
+                    ...prev,
+                    tag: value
+                  }));
+                }}
+                onBlur={(e) => {
+                  // Nettoyage final du tag
+                  const value = e.target.value
+                    .replace(/[^a-zA-Z0-9-_.]/g, '-')
+                    .replace(/^[._-]+|[._-]+$/g, ''); // Supprime les caractères spéciaux au début et à la fin
+                  setBuildConfig(prev => ({
+                    ...prev,
+                    tag: value || 'latest'
+                  }));
+                }}
                 placeholder="latest"
               />
+              <p className="text-xs text-muted-foreground">
+                Le tag peut contenir des lettres, des chiffres, des tirets (-), des points (.) et des underscores (_)
+              </p>
             </div>
           </div>
 
@@ -781,8 +822,8 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
             </div>
           </div>
 
-          {/* Bouton de build */}
-          <div className="flex justify-end space-x-2">
+          {/* Boutons d'action */}
+          <div className="flex justify-end space-x-2 mt-4">
             <Button
               variant="outline"
               onClick={() => setShowBuildLogs(!showBuildLogs)}
@@ -793,29 +834,35 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
             </Button>
             <Button
               onClick={handleBuild}
-              disabled={isBuilding || !buildConfig.projectFiles.dockerfile}
+              disabled={isBuilding || !selectedTemplate || !buildConfig.imageName}
             >
-              {isBuilding && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              {isBuilding ? "Construction en cours..." : "Construire l'image"}
+              {isBuilding ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Construction...
+                </>
+              ) : (
+                <>
+                  <Hammer className="w-4 h-4 mr-2" />
+                  Construire
+                </>
+              )}
             </Button>
           </div>
 
           {/* Logs de build */}
           {showBuildLogs && buildProgress && (
             <div className="mt-4 space-y-2">
-              <div className="flex items-center space-x-2">
-                <Badge variant={buildProgress.error ? "destructive" : "default"}>
-                  {buildProgress.status}
-                </Badge>
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold">Logs de build</h3>
               </div>
               <ScrollArea className="h-[200px] border rounded-md p-4">
                 <div className="space-y-1">
-                  {buildProgress.logs.map((log, index) => (
-                    <div key={index} className="text-sm font-mono">
+                  {buildLogs.map((log: string, index: number) => (
+                    <div key={index} className="text-sm font-mono whitespace-pre-wrap">
                       {log}
                     </div>
                   ))}
-                  <div ref={logsEndRef} />
                 </div>
               </ScrollArea>
             </div>
@@ -912,4 +959,6 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
       </Dialog>
     </Card>
   );
-}
+};
+
+export default UnifiedImageBuilder;

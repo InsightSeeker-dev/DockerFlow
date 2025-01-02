@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { UserStatus } from '@prisma/client';
 
 // Fonction commune pour la vérification
 async function verifyEmail(token: string) {
@@ -9,7 +8,17 @@ async function verifyEmail(token: string) {
   // Chercher l'utilisateur avec ce token
   const user = await prisma.user.findFirst({
     where: {
-      verificationToken: token,
+      verificationTokens: {
+        some: {
+          token: token,
+          expires: {
+            gt: new Date(),
+          },
+        },
+      },
+    },
+    include: {
+      verificationTokens: true,
     },
   });
 
@@ -19,33 +28,30 @@ async function verifyEmail(token: string) {
   }
 
   // Vérifier si l'utilisateur est déjà vérifié
-  if (user.emailVerified && user.status === UserStatus.ACTIVE) {
+  if (user.emailVerified) {
     console.log('User already verified:', user.id);
     throw new Error('Email is already verified. You can log in to your account.');
   }
 
-  // Vérifier si le token n'est pas expiré
-  if (user.verificationTokenExpires && new Date(user.verificationTokenExpires) < new Date()) {
-    console.log('Token expired for user:', user.id);
-    throw new Error('Verification link has expired. Please request a new one.');
-  }
-
   try {
-    // Mettre à jour l'utilisateur
-    const updatedUser = await prisma.user.update({
-      where: {
-        id: user.id,
-      },
-      data: {
-        emailVerified: new Date(),
-        verificationToken: null,
-        verificationTokenExpires: null,
-        status: UserStatus.ACTIVE,
-      },
-    });
+    // Mettre à jour l'utilisateur et supprimer le token de vérification
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: {
+          emailVerified: new Date(),
+          status: "ACTIVE",
+        },
+      }),
+      prisma.verificationToken.deleteMany({
+        where: {
+          userId: user.id,
+        },
+      }),
+    ]);
 
     console.log('User verified successfully:', user.id);
-    return updatedUser;
+    return user;
   } catch (updateError) {
     console.error('Error updating user:', updateError);
     throw new Error('Failed to verify email. Please try again later.');

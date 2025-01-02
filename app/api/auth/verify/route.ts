@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { UserStatus } from '@prisma/client';
-import crypto from 'crypto';
 
 export async function POST(request: Request) {
   try {
@@ -14,13 +13,20 @@ export async function POST(request: Request) {
       );
     }
 
-    // Trouver l'utilisateur avec ce token de vérification
+    // Vérifier le token
     const user = await prisma.user.findFirst({
       where: {
-        verificationToken: token,
-        verificationTokenExpires: {
-          gt: new Date(),
+        verificationTokens: {
+          some: {
+            token: token,
+            expires: {
+              gt: new Date(),
+            },
+          },
         },
+      },
+      include: {
+        verificationTokens: true,
       },
     });
 
@@ -31,16 +37,21 @@ export async function POST(request: Request) {
       );
     }
 
-    // Mettre à jour l'utilisateur
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        emailVerified: new Date(),
-        verificationToken: null,
-        verificationTokenExpires: null,
-        status: UserStatus.ACTIVE,
-      },
-    });
+    // Mettre à jour l'utilisateur et supprimer le token
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: {
+          emailVerified: new Date(),
+          status: UserStatus.ACTIVE,
+        },
+      }),
+      prisma.verificationToken.deleteMany({
+        where: {
+          userId: user.id,
+        },
+      }),
+    ]);
 
     return NextResponse.json({ message: 'Email verified successfully' });
   } catch (error) {

@@ -10,6 +10,8 @@ const docker = new Docker({
   version: process.env.DOCKER_VERSION,
 });
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }

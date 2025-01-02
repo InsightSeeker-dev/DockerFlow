@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+import { UserRole, UserStatus } from '@prisma/client';
 
 export async function POST(
   req: Request,
@@ -10,8 +11,19 @@ export async function POST(
   try {
     const session = await getServerSession(authOptions);
     
-    if (!session || session.user.role !== 'ADMIN') {
-      return new NextResponse('Unauthorized', { status: 401 });
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Vérifier si l'utilisateur est admin ou agit sur son propre compte
+    if (session.user.id !== params.userId && session.user.role !== UserRole.ADMIN) {
+      return NextResponse.json(
+        { error: 'Forbidden' },
+        { status: 403 }
+      );
     }
 
     const { userId, action } = params;
@@ -30,14 +42,14 @@ export async function POST(
       case 'suspend':
         await prisma.user.update({
           where: { id: userId },
-          data: { status: 'SUSPENDED' },
+          data: { status: UserStatus.SUSPENDED },
         });
         break;
 
       case 'activate':
         await prisma.user.update({
           where: { id: userId },
-          data: { status: 'ACTIVE' },
+          data: { status: UserStatus.ACTIVE },
         });
         break;
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { User } from '@/types/user';
 import React, { useState } from 'react';
 import {
   Table,
@@ -22,19 +23,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { MoreHorizontal, ShieldAlert, ShieldCheck, User2 } from 'lucide-react';
 import { format } from 'date-fns';
-
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-  status: string;
-  createdAt: string;
-  emailVerified: boolean | null;
-  _count: {
-    containers: number;
-  };
-}
 
 interface UsersTableProps {
   users: User[];
@@ -138,7 +126,7 @@ export function UsersTable({ users, onUserAction, onBulkAction, onUserSelect }: 
                 </Badge>
               </TableCell>
               <TableCell>{format(new Date(user.createdAt), 'PP')}</TableCell>
-              <TableCell>{user._count.containers}</TableCell>
+              <TableCell>{user._count?.containers || 0}</TableCell>
               <TableCell onClick={(e) => e.stopPropagation()}>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>

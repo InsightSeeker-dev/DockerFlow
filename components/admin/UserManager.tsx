@@ -1,5 +1,6 @@
 "use client";
 
+import { User } from '@/types/user';
 import React, { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { UsersTable } from './UsersTable';
@@ -8,19 +9,6 @@ import { CreateUserDialog } from './create-user-dialog';
 import { Loader2, Plus, Search, RefreshCw, Users as UsersIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-
-interface User {
-  id: string;
-  name: string | null;
-  email: string;
-  role: string;
-  status: string;
-  createdAt: string;
-  emailVerified: Date | null;
-  _count: {
-    containers: number;
-  };
-}
 
 interface UserManagerProps {
   onUserSelect: (userId: string) => void;

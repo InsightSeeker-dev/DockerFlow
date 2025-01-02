@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { hash, compare } from 'bcryptjs';
 
+export const dynamic = 'force-dynamic';
+
 export async function PUT(request: Request) {
   try {
     const session = await getServerSession(authOptions);

@@ -12,11 +12,15 @@ export async function GET() {
       select: {
         id: true,
         name: true,
-        username: true,
         email: true,
+        username: true,
         role: true,
         status: true,
+        emailVerified: true,
+        image: true,
         createdAt: true,
+        updatedAt: true,
+        lastLogin: true,
         _count: {
           select: {
             containers: true,
@@ -25,7 +29,15 @@ export async function GET() {
       },
     });
 
-    return NextResponse.json(users);
+    const formattedUsers = users.map(user => ({
+      ...user,
+      name: user.name || '',  
+      role: user.role as 'ADMIN' | 'USER',
+      status: user.status as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED',
+      _count: user._count || { containers: 0 },
+    }));
+
+    return NextResponse.json(formattedUsers);
   } catch (error) {
     console.error('Error fetching users:', error);
     return new NextResponse('Internal Server Error', { status: 500 });
@@ -41,11 +53,40 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { name, email, password, role } = body;
+    const { 
+      name, 
+      email, 
+      password, 
+      role,
+      bio,
+      defaultRegistry,
+      autoUpdate,
+      resourceLimits,
+      notifications,
+      cpuLimit,
+      memoryLimit,
+      storageLimit,
+      cpuThreshold,
+      memoryThreshold,
+      storageThreshold
+    } = body;
 
     // Validation
     if (!name || !email || !password || !role) {
       return new NextResponse('Missing required fields', { status: 400 });
+    }
+
+    // Validate resource limits
+    if (cpuLimit && (cpuLimit < 1000 || cpuLimit > 8000)) {
+      return new NextResponse('CPU limit must be between 1000 and 8000', { status: 400 });
+    }
+
+    if (memoryLimit && (memoryLimit < 1073741824 || memoryLimit > 17179869184)) {
+      return new NextResponse('Memory limit must be between 1GB and 16GB', { status: 400 });
+    }
+
+    if (storageLimit && (storageLimit < 10737418240 || storageLimit > 214748364800)) {
+      return new NextResponse('Storage limit must be between 10GB and 200GB', { status: 400 });
     }
 
     // Generate username from email
@@ -73,7 +114,7 @@ export async function POST(req: Request) {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Create user with INACTIVE status
+    // Create user with default values based on role
     const user = await prisma.user.create({
       data: {
         name,
@@ -82,17 +123,34 @@ export async function POST(req: Request) {
         password: hashedPassword,
         role,
         status: 'INACTIVE',
-        cpuLimit: role === 'ADMIN' ? 4000 : 2000,
-        memoryLimit: role === 'ADMIN' ? 8589934592 : 4294967296,
-        storageLimit: role === 'ADMIN' ? 107374182400 : 53687091200,
+        bio: bio || null,
+        defaultRegistry: defaultRegistry || 'docker.io',
+        autoUpdate: autoUpdate ?? true,
+        resourceLimits: resourceLimits || null,
+        notifications: notifications || null,
+        cpuLimit: cpuLimit || (role === 'ADMIN' ? 4000 : 2000),
+        memoryLimit: memoryLimit || (role === 'ADMIN' ? 8589934592 : 4294967296),
+        storageLimit: storageLimit || (role === 'ADMIN' ? 107374182400 : 53687091200),
+        cpuThreshold: cpuThreshold || 80,
+        memoryThreshold: memoryThreshold || 85,
+        storageThreshold: storageThreshold || 90
       },
       select: {
         id: true,
         name: true,
-        username: true,
         email: true,
+        username: true,
         role: true,
         status: true,
+        bio: true,
+        defaultRegistry: true,
+        autoUpdate: true,
+        cpuLimit: true,
+        memoryLimit: true,
+        storageLimit: true,
+        cpuThreshold: true,
+        memoryThreshold: true,
+        storageThreshold: true,
         createdAt: true,
         _count: {
           select: {
@@ -102,30 +160,20 @@ export async function POST(req: Request) {
       },
     });
 
-    // Create verification token
-    const token = crypto.randomBytes(32).toString('hex');
-    await prisma.verificationToken.create({
+    // Create verification token and send email
+    const verificationToken = await prisma.verificationToken.create({
       data: {
         userId: user.id,
-        token,
+        token: crypto.randomBytes(32).toString('hex'),
         expires: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
       },
     });
 
-    // Send verification email
-    try {
-      await sendVerificationEmail(user.email, token);
-    } catch (error) {
-      console.error('Error sending verification email:', error);
-      // Ne pas bloquer la création de l'utilisateur si l'envoi de l'email échoue
-    }
+    await sendVerificationEmail(email, verificationToken.token);
 
     return NextResponse.json(user);
   } catch (error) {
     console.error('Error creating user:', error);
-    if (error instanceof Error) {
-      return new NextResponse(error.message, { status: 500 });
-    }
     return new NextResponse('Internal Server Error', { status: 500 });
   }
 }

@@ -5,9 +5,21 @@ import { sendEmail } from '@/lib/email';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import crypto from 'crypto';
+import { UserRole } from '@prisma/client';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
+    const session = await getServerSession(authOptions);
+    
+    if (!session || session.user.role !== UserRole.ADMIN) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
     const users = await prisma.user.findMany({
       select: {
         id: true,
@@ -41,7 +53,8 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || session.user.role !== 'admin') {
+    
+    if (!session || session.user.role !== UserRole.ADMIN) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -101,8 +114,12 @@ export async function POST(request: Request) {
         cpuThreshold,
         memoryThreshold,
         storageThreshold,
-        verificationToken,
-        verificationTokenExpires,
+        verificationTokens: {
+          create: {
+            token: verificationToken,
+            expires: verificationTokenExpires,
+          },
+        },
       },
     });
 

@@ -5,6 +5,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { sendEmail } from '@/lib/email';
 import { z } from 'zod';
+import { UserRole } from '@prisma/client';
 
 const createUserSchema = z.object({
   username: z
@@ -31,7 +32,7 @@ export async function POST(request: Request) {
   try {
     // Vérifier que l'utilisateur est un administrateur
     const session = await getServerSession(authOptions);
-    if (!session || session.user.role !== 'admin') {
+    if (!session || session.user.role !== UserRole.ADMIN) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }

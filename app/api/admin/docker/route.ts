@@ -1,14 +1,15 @@
 import { NextResponse } from 'next/server';
-import Docker from 'dockerode';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { getDockerClient } from '@/lib/docker/client';
+import { UserRole } from '@prisma/client';
 
-const docker = new Docker();
+const docker = getDockerClient();
 
 export async function GET(request: Request) {
   const session = await getServerSession(authOptions);
 
-  if (!session || session.user.role !== 'admin') {
+  if (!session || session.user.role !== UserRole.ADMIN) {
     return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
     });
@@ -26,7 +27,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
 
-  if (!session || session.user.role !== 'admin') {
+  if (!session || session.user.role !== UserRole.ADMIN) {
     return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
     });

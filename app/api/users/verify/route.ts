@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import { prisma } from '@/lib/prisma';
 
 export async function POST(req: Request) {
   try {
@@ -9,30 +9,41 @@ export async function POST(req: Request) {
       return new NextResponse('Verification token is required', { status: 400 });
     }
 
-    // Find user with this token
-    const user = await prisma.user.findFirst({
+    // Find verification token
+    const verificationToken = await prisma.verificationToken.findUnique({
       where: {
-        verificationToken: token,
-        verificationTokenExpiry: {
-          gt: new Date(), // Token hasn't expired
-        },
+        token: token
       },
+      include: {
+        user: true
+      }
     });
 
-    if (!user) {
-      return new NextResponse('Invalid or expired verification token', { status: 400 });
+    if (!verificationToken) {
+      return new NextResponse('Invalid verification token', { status: 400 });
     }
 
-    // Update user status and clear verification token
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        status: 'ACTIVE',
-        emailVerified: new Date(),
-        verificationToken: null,
-        verificationTokenExpiry: null,
-      },
-    });
+    if (verificationToken.expires < new Date()) {
+      // Delete expired token
+      await prisma.verificationToken.delete({
+        where: { id: verificationToken.id }
+      });
+      return new NextResponse('Verification token has expired', { status: 400 });
+    }
+
+    // Update user status and delete verification token
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: verificationToken.userId },
+        data: {
+          status: 'ACTIVE',
+          emailVerified: new Date()
+        }
+      }),
+      prisma.verificationToken.delete({
+        where: { id: verificationToken.id }
+      })
+    ]);
 
     return new NextResponse('Email verified successfully');
   } catch (error) {

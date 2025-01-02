@@ -77,6 +77,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+import Editor from "@monaco-editor/react";
+
 // Utility function to determine file type
 const getFileType = (fileName: string): 'dockerfile' | 'file' => {
   return fileName.toLowerCase() === 'dockerfile' ? 'dockerfile' : 'file';
@@ -288,6 +290,26 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
 
     setShowTemplateDialog(false);
 
+    // Afficher les recommandations si disponibles
+    if (template.recommendations) {
+      toast({
+        title: "Recommandations pour ce template",
+        description: (
+          <div className="space-y-2">
+            {template.recommendations.memory && (
+              <p>Mémoire recommandée: {template.recommendations.memory}</p>
+            )}
+            {template.recommendations.cpu && (
+              <p>CPU recommandé: {template.recommendations.cpu}</p>
+            )}
+            {template.recommendations.storage && (
+              <p>Stockage recommandé: {template.recommendations.storage}</p>
+            )}
+          </div>
+        ),
+      });
+    }
+
     toast({
       title: 'Template appliqué',
       description: `Le template ${template.name} a été appliqué avec succès.`,
@@ -411,20 +433,25 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
   };
 
   const handleFileEdit = (type: 'dockerfile' | 'additional', index?: number) => {
-    if (type === 'dockerfile' && buildConfig.projectFiles.dockerfile) {
-      setSelectedFile({
-        type,
-        name: 'Dockerfile',
-        content: buildConfig.projectFiles.dockerfile.content
-      });
+    if (type === 'dockerfile') {
+      const dockerfile = buildConfig.projectFiles.dockerfile;
+      if (dockerfile) {
+        setSelectedFile({
+          type,
+          name: 'Dockerfile',
+          content: dockerfile.content
+        });
+      }
     } else if (type === 'additional' && typeof index === 'number') {
       const file = buildConfig.projectFiles.additionalFiles[index];
-      setSelectedFile({
-        type,
-        index,
-        name: file.name,
-        content: file.content
-      });
+      if (file) {
+        setSelectedFile({
+          type,
+          index,
+          name: file.name,
+          content: file.content
+        });
+      }
     }
   };
 
@@ -527,7 +554,7 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
         setBuildProgress({
           status: 'Build terminé',
           logs: [
-            ...buildProgress?.logs || [],
+            ...(buildProgress?.logs || []),
             '✨ Build terminé avec succès',
             `🏷️ Image créée : ${buildConfig.imageName}:${buildConfig.tag || 'latest'}`,
             '✅ Processus terminé'
@@ -549,7 +576,7 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
         status: 'Erreur',
         error: error instanceof Error ? error.message : "Une erreur est survenue",
         logs: [
-          ...buildProgress?.logs || [],
+          ...(buildProgress?.logs || []),
           '❌ Une erreur est survenue pendant le build',
           `⚠️ ${error instanceof Error ? error.message : "Erreur inconnue"}`
         ]
@@ -565,534 +592,324 @@ export default function UnifiedImageBuilder({ onImageBuilt }: UnifiedImageBuilde
     }
   };
 
-  useEffect(() => {
-    if (buildProgress?.logs.length) {
-      logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [buildProgress?.logs]);
+  const renderRecommendations = (template: DockerTemplate) => {
+    if (!template.recommendations) return null;
+
+    return (
+      <div className="space-y-1">
+        <span className="text-sm font-medium">Recommandations :</span>
+        <ul className="text-sm text-muted-foreground space-y-1">
+          {template.recommendations.cpu && (
+            <li className="flex items-center">
+              <Cpu className="w-3 h-3 mr-1" />
+              CPU: {template.recommendations.cpu}
+            </li>
+          )}
+          {template.recommendations.memory && (
+            <li className="flex items-center">
+              <HardDrive className="w-3 h-3 mr-1" />
+              RAM: {template.recommendations.memory}
+            </li>
+          )}
+          {template.recommendations.storage && (
+            <li className="flex items-center">
+              <Database className="w-3 h-3 mr-1" />
+              Stockage: {template.recommendations.storage}
+            </li>
+          )}
+        </ul>
+      </div>
+    );
+  };
 
   return (
-    <Card className="w-full h-full min-h-[600px] max-h-screen flex flex-col overflow-hidden">
-      <div className="space-y-4 p-4">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h2 className="text-2xl font-bold">Build Image</h2>
-            <p className="text-sm text-muted-foreground">
-              Develop and manage your Docker image build environment
-            </p>
-          </div>
-          <div className="flex space-x-2">
-            <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
-              <Upload className="w-4 h-4 mr-2" />
-              Import Files
-            </Button>
-            <Button variant="outline" onClick={() => setShowTemplateDialog(true)}>
-              <FileText className="w-4 h-4 mr-2" />
-              Templates
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline">
-                  <Settings className="w-4 h-4 mr-2" />
-                  Options
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <div className="p-4 space-y-4">
-                  <div className="space-y-2">
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        checked={buildConfig.options.cache}
-                        onCheckedChange={(checked) => 
-                          setBuildConfig(prev => ({
-                            ...prev,
-                            options: { ...prev.options, cache: checked as boolean }
-                          }))
-                        }
-                      />
-                      <Label>Use Build Cache</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        checked={buildConfig.options.compress}
-                        onCheckedChange={(checked) => 
-                          setBuildConfig(prev => ({
-                            ...prev,
-                            options: { ...prev.options, compress: checked as boolean }
-                          }))
-                        }
-                      />
-                      <Label>Compress Build Context</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        checked={buildConfig.options.pull}
-                        onCheckedChange={(checked) => 
-                          setBuildConfig(prev => ({
-                            ...prev,
-                            options: { ...prev.options, pull: checked as boolean }
-                          }))
-                        }
-                      />
-                      <Label>Always Pull Base Image</Label>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Platform</Label>
-                    <Select
-                      value={buildConfig.options.platform}
-                      onValueChange={(value) => 
-                        setBuildConfig(prev => ({
-                          ...prev,
-                          options: { ...prev.options, platform: value }
-                        }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select platform" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="linux/amd64">linux/amd64</SelectItem>
-                        <SelectItem value="linux/arm64">linux/arm64</SelectItem>
-                        <SelectItem value="linux/arm/v7">linux/arm/v7</SelectItem>
-                        <SelectItem value="windows/amd64">windows/amd64</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-12 gap-4">
-          {/* Left Panel - Configuration */}
-          <div className="col-span-3 space-y-4">
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Image Name</Label>
-                <Input
-                  placeholder="ex: my-app"
-                  value={buildConfig.imageName}
-                  onChange={(e) => setBuildConfig(prev => ({
-                    ...prev,
-                    imageName: e.target.value
-                  }))}
-                  className="bg-background"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Tag</Label>
-                <Input
-                  placeholder="latest"
-                  value={buildConfig.tag}
-                  onChange={(e) => setBuildConfig(prev => ({
-                    ...prev,
-                    tag: e.target.value
-                  }))}
-                  className="bg-background"
-                />
-              </div>
-            </div>
-
+    <Card className="w-full">
+      <CardHeader>
+        <CardTitle>Construction d'Image Docker</CardTitle>
+        <CardDescription>
+          Créez une nouvelle image Docker à partir d'un Dockerfile et de fichiers additionnels
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          {/* Configuration de base */}
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label className="flex items-center justify-between">
-                <span>Files</span>
-                <Badge variant="outline" className="bg-background">
-                  {buildConfig.projectFiles.additionalFiles.length + (buildConfig.projectFiles.dockerfile ? 1 : 0)} files
-                </Badge>
-              </Label>
-              <ScrollArea className="h-[300px] w-full rounded-md border bg-background p-2">
-                <div className="space-y-2">
-                  {/* Dockerfile */}
-                  {buildConfig.projectFiles.dockerfile && (
-                    <div className="flex items-center justify-between p-2 rounded-md hover:bg-accent group">
-                      <div 
-                        className="flex items-center space-x-2 flex-1 cursor-pointer"
-                        onClick={() => setSelectedFile({
-                          type: 'dockerfile',
-                          name: 'Dockerfile',
-                          content: buildConfig.projectFiles.dockerfile.content
-                        })}
-                      >
-                        <FileText className="w-4 h-4 text-blue-500" />
-                        <span>Dockerfile</span>
-                      </div>
-                      <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setSelectedFile({
-                            type: 'dockerfile',
-                            name: 'Dockerfile',
-                            content: buildConfig.projectFiles.dockerfile.content
-                          })}
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setBuildConfig(prev => ({
-                              ...prev,
-                              projectFiles: {
-                                ...prev.projectFiles,
-                                dockerfile: null
-                              }
-                            }));
-                          }}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* Additional Files */}
-                  {buildConfig.projectFiles.additionalFiles.map((file, index) => (
-                    <div key={file.id} className="flex items-center justify-between p-2 rounded-md hover:bg-accent group">
-                      <div 
-                        className="flex items-center space-x-2 flex-1 cursor-pointer"
-                        onClick={() => setSelectedFile({
-                          type: 'additional',
-                          index: index,
-                          name: file.name,
-                          content: file.content
-                        })}
-                      >
-                        <File className="w-4 h-4" />
-                        <span>{file.name}</span>
-                      </div>
-                      <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setSelectedFile({
-                            type: 'additional',
-                            index: index,
-                            name: file.name,
-                            content: file.content
-                          })}
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleFileRename(index, file.name)}
-                        >
-                          <FileText className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setBuildConfig(prev => ({
-                              ...prev,
-                              projectFiles: {
-                                ...prev.projectFiles,
-                                additionalFiles: prev.projectFiles.additionalFiles.filter((_, i) => i !== index)
-                              }
-                            }));
-                          }}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </ScrollArea>
+              <Label htmlFor="imageName">Nom de l'image</Label>
+              <Input
+                id="imageName"
+                value={buildConfig.imageName}
+                onChange={(e) => setBuildConfig(prev => ({
+                  ...prev,
+                  imageName: e.target.value
+                }))}
+                placeholder="mon-image"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tag">Tag</Label>
+              <Input
+                id="tag"
+                value={buildConfig.tag}
+                onChange={(e) => setBuildConfig(prev => ({
+                  ...prev,
+                  tag: e.target.value
+                }))}
+                placeholder="latest"
+              />
             </div>
           </div>
 
-          {/* Right Panel - Build Logs */}
-          <div className="col-span-9">
-            <Card className="h-full">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-lg font-bold">Build Logs</CardTitle>
-                <div className="flex items-center space-x-2">
-                  {isBuilding ? (
-                    <Badge variant="outline" className="bg-blue-50">
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Building
-                    </Badge>
-                  ) : buildProgress?.status === 'Erreur' ? (
-                    <Badge variant="outline" className="bg-red-50 text-red-600">
-                      <AlertCircle className="w-4 h-4 mr-2" />
-                      Error
-                    </Badge>
-                  ) : buildProgress?.status === 'Build terminé' ? (
-                    <Badge variant="outline" className="bg-green-50 text-green-600">
-                      <CheckCircle className="w-4 h-4 mr-2" />
-                      Complete
-                    </Badge>
-                  ) : null}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setBuildConfig({
-                        imageName: '',
-                        tag: 'latest',
-                        projectFiles: {
-                          dockerfile: null,
-                          additionalFiles: []
-                        },
-                        buildArgs: {},
-                        options: {
-                          cache: true,
-                          platform: 'linux/amd64',
-                          compress: true,
-                          pull: true
-                        }
-                      });
-                      setBuildProgress(null);
-                    }}
-                  >
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                    Reset
-                  </Button>
-                  <Button
-                    onClick={handleBuild}
-                    disabled={isBuilding || !buildConfig.projectFiles.dockerfile}
-                    className="bg-blue-600 text-white hover:bg-blue-700"
-                  >
-                    {isBuilding ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Building...
-                      </>
-                    ) : (
-                      <>
-                        <Settings className="w-4 h-4 mr-2" />
-                        Build Image
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <ScrollArea className="h-[500px] w-full rounded-md border bg-background p-4">
-                  <div className="space-y-2 font-mono text-sm">
-                    {!buildProgress?.logs.length ? (
-                      <div className="text-muted-foreground text-center py-4">
-                        No logs available. Start a build to see logs here.
-                      </div>
-                    ) : (
-                      buildProgress.logs.map((log, index) => (
-                        <div
-                          key={index}
-                          className={cn(
-                            "py-1",
-                            log.includes("Erreur") ? "text-red-500" :
-                            log.includes("terminé") ? "text-green-500" :
-                            log.includes("étape") ? "text-blue-500" :
-                            "text-foreground"
-                          )}
-                        >
-                          {log}
-                        </div>
-                      ))
-                    )}
-                    {buildProgress?.error && (
-                      <div className="mt-4 p-4 rounded-md bg-red-50 text-red-500 border border-red-200">
-                        <div className="font-bold mb-2">Error:</div>
-                        <div className="whitespace-pre-wrap">{buildProgress.error}</div>
-                      </div>
-                    )}
-                  </div>
-                </ScrollArea>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      </div>
-
-      <input
-        type="file"
-        ref={fileInputRef}
-        className="hidden"
-        multiple
-        onChange={handleFileImport}
-      />
-
-      <AlertDialog open={showTemplateDialog} onOpenChange={setShowTemplateDialog}>
-        <AlertDialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-          <AlertDialogHeader className="flex-none">
-            <AlertDialogTitle>Choose a Template</AlertDialogTitle>
-            <AlertDialogDescription>
-              Select a template to start with or create a new Dockerfile from scratch.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <ScrollArea className="flex-1 min-h-0">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
-              {dockerTemplates.map((template) => (
-                <Card
-                  key={template.id}
-                  className={cn(
-                    "cursor-pointer transition-all hover:shadow-md",
-                    selectedTemplate?.id === template.id && "border-primary"
-                  )}
-                  onClick={() => handleTemplateSelect(template)}
-                >
-                  <CardHeader>
-                    <div className="flex items-center space-x-2">
-                      <span className="text-2xl">{template.icon}</span>
-                      <div>
-                        <CardTitle className="text-lg">{template.name}</CardTitle>
-                        <div className="flex items-center space-x-2 mt-1">
-                          <Badge variant={
-                            template.difficulty === 'Beginner' ? 'default' :
-                            template.difficulty === 'Intermediate' ? 'secondary' :
-                            'destructive'
-                          }>
-                            {template.difficulty}
-                          </Badge>
-                          <Badge variant="outline">{template.category}</Badge>
-                        </div>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <p className="text-sm text-muted-foreground">
-                      {template.description}
-                    </p>
-                    
-                    <div className="space-y-2">
-                      <div className="flex items-center text-sm">
-                        <Clock className="w-4 h-4 mr-2" />
-                        <span>{template.estimatedBuildTime}</span>
-                      </div>
-
-                      {template.recommendations && (
-                        <div className="space-y-1">
-                          <span className="text-sm font-medium">Recommandations :</span>
-                          <ul className="text-sm text-muted-foreground space-y-1">
-                            <li className="flex items-center">
-                              <Cpu className="w-3 h-3 mr-1" />
-                              CPU: {template.recommendations.cpu}
-                            </li>
-                            <li className="flex items-center">
-                              <HardDrive className="w-3 h-3 mr-1" />
-                              RAM: {template.recommendations.memory}
-                            </li>
-                            <li className="flex items-center">
-                              <Database className="w-3 h-3 mr-1" />
-                              Disque: {template.recommendations.disk}
-                            </li>
-                          </ul>
-                        </div>
-                      )}
-
-                      {template.ports.length > 0 && (
-                        <div>
-                          <span className="text-sm font-medium">Ports exposés :</span>
-                          <div className="flex flex-wrap gap-2 mt-1">
-                            {template.ports.map((port, index) => (
-                              <Badge key={index} variant="secondary">
-                                {port.container}:{port.host}
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {template.environmentVariables.length > 0 && (
-                        <div>
-                          <span className="text-sm font-medium">Variables d'environnement :</span>
-                          <ul className="text-sm text-muted-foreground mt-1">
-                            {template.environmentVariables
-                              .filter(env => env.required)
-                              .map((env, index) => (
-                                <li key={index} className="flex items-center">
-                                  <span className="font-mono">{env.name}</span>
-                                  {env.required && <span className="text-destructive ml-1">*</span>}
-                                </li>
-                              ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        {template.tags.map((tag, index) => (
-                          <Badge key={index} variant="outline" className="text-xs">
-                            {tag}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </ScrollArea>
-          <AlertDialogFooter className="flex-none">
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete File</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete this file? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (activeFile) {
-                  handleFileDelete(activeFile);
-                }
-                setShowDeleteDialog(false);
-              }}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <Dialog open={!!selectedFile} onOpenChange={(open) => !open && setSelectedFile(null)}>
-        <DialogContent className="max-w-4xl h-[80vh]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                {selectedFile?.type === 'dockerfile' ? (
-                  <FileText className="w-5 h-5 text-blue-500" />
-                ) : (
-                  <File className="w-5 h-5" />
-                )}
-                <span>{selectedFile?.name}</span>
-              </div>
-              {selectedFile?.type === 'additional' && typeof selectedFile.index === 'number' && (
+          {/* Gestion des fichiers */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Fichiers du projet</Label>
+              <div className="space-x-2">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => handleFileRename(selectedFile.index!, selectedFile.name)}
+                  onClick={() => setShowTemplateDialog(true)}
                 >
                   <FileText className="w-4 h-4 mr-2" />
-                  Renommer
+                  Templates
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload className="w-4 h-4 mr-2" />
+                  Importer
+                </Button>
+              </div>
+            </div>
+
+            <input
+              type="file"
+              ref={fileInputRef}
+              className="hidden"
+              onChange={handleFileImport}
+              multiple
+            />
+
+            <div className="border rounded-lg p-4 space-y-2">
+              {/* Dockerfile */}
+              {buildConfig.projectFiles.dockerfile ? (
+                <div className="flex items-center justify-between p-2 bg-secondary rounded">
+                  <div className="flex items-center">
+                    <FileText className="w-4 h-4 mr-2" />
+                    <span>Dockerfile</span>
+                  </div>
+                  <div className="space-x-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleFileEdit('dockerfile')}
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleFileDelete(buildConfig.projectFiles.dockerfile!)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center p-4 border-2 border-dashed rounded">
+                  <p className="text-muted-foreground">
+                    Aucun Dockerfile sélectionné
+                  </p>
+                </div>
               )}
+
+              {/* Fichiers additionnels */}
+              {buildConfig.projectFiles.additionalFiles.map((file, index) => (
+                <div
+                  key={file.id}
+                  className="flex items-center justify-between p-2 bg-secondary rounded"
+                >
+                  <div className="flex items-center">
+                    <File className="w-4 h-4 mr-2" />
+                    <span>{file.name}</span>
+                  </div>
+                  <div className="space-x-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleFileEdit('additional', index)}
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleFileRename(index, file.name)}
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleFileDelete(file)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Options de build */}
+          <div className="space-y-2">
+            <Label>Options de build</Label>
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="pull"
+                  checked={buildConfig.options.pull}
+                  onCheckedChange={(checked) => setBuildConfig(prev => ({
+                    ...prev,
+                    options: { ...prev.options, pull: checked as boolean }
+                  }))}
+                />
+                <Label htmlFor="pull">Toujours télécharger les dernières images de base</Label>
+              </div>
+            </div>
+          </div>
+
+          {/* Bouton de build */}
+          <div className="flex justify-end space-x-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowBuildLogs(!showBuildLogs)}
+              disabled={!buildProgress}
+            >
+              {showBuildLogs ? <X className="w-4 h-4 mr-2" /> : <Terminal className="w-4 h-4 mr-2" />}
+              {showBuildLogs ? "Masquer les logs" : "Voir les logs"}
+            </Button>
+            <Button
+              onClick={handleBuild}
+              disabled={isBuilding || !buildConfig.projectFiles.dockerfile}
+            >
+              {isBuilding && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {isBuilding ? "Construction en cours..." : "Construire l'image"}
+            </Button>
+          </div>
+
+          {/* Logs de build */}
+          {showBuildLogs && buildProgress && (
+            <div className="mt-4 space-y-2">
+              <div className="flex items-center space-x-2">
+                <Badge variant={buildProgress.error ? "destructive" : "default"}>
+                  {buildProgress.status}
+                </Badge>
+              </div>
+              <ScrollArea className="h-[200px] border rounded-md p-4">
+                <div className="space-y-1">
+                  {buildProgress.logs.map((log, index) => (
+                    <div key={index} className="text-sm font-mono">
+                      {log}
+                    </div>
+                  ))}
+                  <div ref={logsEndRef} />
+                </div>
+              </ScrollArea>
+            </div>
+          )}
+        </div>
+      </CardContent>
+
+      {/* Dialog d'édition de fichier */}
+      <Dialog open={selectedFile !== null} onOpenChange={(open) => !open && setSelectedFile(null)}>
+        <DialogContent className="max-w-4xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle>
+              Modifier {selectedFile?.type === 'dockerfile' ? 'Dockerfile' : selectedFile?.name}
             </DialogTitle>
           </DialogHeader>
-          <div className="flex-1 min-h-0 mt-4">
-            <Textarea
-              value={selectedFile?.content || ''}
-              onChange={(e) => handleFileContentSave(e.target.value)}
-              className="h-full font-mono resize-none"
-              placeholder="Contenu du fichier..."
-            />
+          <div className="space-y-4">
+            <div className="border rounded-md overflow-hidden">
+              <Editor
+                height="400px"
+                defaultLanguage={selectedFile?.type === 'dockerfile' ? 'dockerfile' : 'plaintext'}
+                value={selectedFile?.content || ''}
+                onChange={(value) => setSelectedFile(prev => prev ? {
+                  ...prev,
+                  content: value || ''
+                } : null)}
+                theme="vs-dark"
+                options={{
+                  minimap: { enabled: false },
+                  fontSize: 14,
+                  lineNumbers: 'on',
+                  scrollBeyondLastLine: false,
+                  automaticLayout: true,
+                  wordWrap: 'on',
+                  tabSize: 2,
+                  renderWhitespace: 'selection',
+                }}
+                loading={
+                  <div className="flex items-center justify-center h-full">
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                  </div>
+                }
+              />
+            </div>
+            <div className="flex justify-end space-x-2">
+              <Button
+                variant="outline"
+                onClick={() => setSelectedFile(null)}
+              >
+                Annuler
+              </Button>
+              <Button
+                onClick={() => {
+                  if (selectedFile) {
+                    handleFileContentSave(selectedFile.content);
+                    setSelectedFile(null);
+                  }
+                }}
+              >
+                <Save className="w-4 h-4 mr-2" />
+                Enregistrer
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
 
+      {/* Dialog de sélection de template */}
+      <Dialog open={showTemplateDialog} onOpenChange={setShowTemplateDialog}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Sélectionner un template</DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="h-[500px] pr-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {dockerTemplates.map((template) => (
+                <div
+                  key={template.name}
+                  className="flex flex-col space-y-2 p-4 border rounded-lg cursor-pointer hover:bg-secondary transition-colors"
+                  onClick={() => handleTemplateSelect(template)}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">{template.name}</span>
+                    <Badge variant="outline">{template.category}</Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {template.description}
+                  </p>
+                  {renderRecommendations(template)}
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
-};
+}

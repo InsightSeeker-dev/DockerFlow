@@ -23,6 +23,7 @@ services:
       - "172.18.201.152:16680:16680"     # HTTP
       - "172.18.201.152:16643:16643"    # HTTPS
       - "172.18.201.152:16600:8080"   # Dashboard Traefik
+      - "172.18.201.152:16650:16650"   # Next.js Application
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - traefik-acme:/letsencrypt:rw
@@ -49,20 +50,22 @@ services:
       - "traefik.http.services.traefik.loadbalancer.server.port=8080"
       # NextJS Application configuration
       - "traefik.http.routers.nextjs.rule=Host(`dockerflow.dockersphere.ovh`)"
-      - "traefik.http.routers.nextjs.entrypoints=websecure"
+      - "traefik.http.routers.nextjs.entrypoints=nextjs"
       - "traefik.http.routers.nextjs.tls=true"
       - "traefik.http.routers.nextjs.tls.certresolver=letsencrypt"
-      - "traefik.http.services.nextjs.loadbalancer.server.port=3000"
+      - "traefik.http.services.nextjs.loadbalancer.server.port=16650"
       - "traefik.http.services.nextjs.loadbalancer.server.scheme=http"
-      - "traefik.http.services.nextjs.loadbalancer.server.url=http://172.18.201.152:3000"
     command:
       - --api.dashboard=true
       - --log.level=DEBUG
       # Entrypoints configuration
       - --entrypoints.web.address=:16680
       - --entrypoints.websecure.address=:16643
+      - --entrypoints.nextjs.address=:16650
       # SSL configuration
       - --entrypoints.websecure.http.tls=true
+      - --entrypoints.nextjs.http.tls=true
+      - --entrypoints.nextjs.http.tls.certResolver=letsencrypt
       - --entrypoints.websecure.http.tls.certResolver=letsencrypt
       - --entrypoints.websecure.http.tls.domains[0].main=dockersphere.ovh
       - --entrypoints.websecure.http.tls.domains[0].sans=*.dockersphere.ovh

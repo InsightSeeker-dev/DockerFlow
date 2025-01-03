@@ -3,6 +3,16 @@ import type { Container, ContainerStats, NetworkSettings } from './types';
 import type { ContainerInfo } from 'dockerode';
 import { prisma } from '@/lib/prisma';
 
+interface CreateContainerConfig {
+  name: string;
+  image: string;
+  userId: string;
+  subdomain: string;
+  ports?: { [key: string]: string };
+  env?: { [key: string]: string };
+  volumes?: { [key: string]: string };
+}
+
 export async function listContainers(): Promise<Container[]> {
   const docker = getDockerClient();
   try {
@@ -91,5 +101,83 @@ export async function getContainerStats(containerId: string): Promise<ContainerS
   } catch (error) {
     console.error(`Error getting stats for container ${containerId}:`, error);
     throw new Error('Failed to get container stats');
+  }
+}
+
+export async function createContainer(config: CreateContainerConfig): Promise<Container> {
+  const docker = getDockerClient();
+  try {
+    // Valider le sous-domaine
+    const subdomainRegex = /^[a-zA-Z0-9-]+$/;
+    if (!subdomainRegex.test(config.subdomain)) {
+      throw new Error('Invalid subdomain format');
+    }
+
+    // Configurer le réseau et les labels pour Traefik
+    const labels = {
+      'traefik.enable': 'true',
+      [`traefik.http.routers.${config.name}.rule`]: `Host(\`${config.subdomain}.dockersphere.ovh\`)`,
+      [`traefik.http.routers.${config.name}.entrypoints`]: 'websecure',
+      [`traefik.http.routers.${config.name}.tls.certresolver`]: 'letsencrypt'
+    };
+
+    // Créer le conteneur
+    const containerConfig = {
+      Image: config.image,
+      name: config.name,
+      Labels: labels,
+      ExposedPorts: {},
+      HostConfig: {
+        PortBindings: {},
+        RestartPolicy: {
+          Name: 'unless-stopped'
+        }
+      },
+      Env: Object.entries(config.env || {}).map(([key, value]) => `${key}=${value}`)
+    };
+
+    // Créer le conteneur avec Docker
+    const container = await docker.createContainer(containerConfig);
+    
+    // Enregistrer le conteneur dans la base de données
+    const dbContainer = await prisma.container.create({
+      data: {
+        name: config.name,
+        imageId: config.image,
+        status: 'created',
+        userId: config.userId,
+        ports: config.ports || {},
+        volumes: config.volumes || {},
+        env: config.env || {},
+        cpuLimit: 0,
+        memoryLimit: 0
+      }
+    });
+
+    // Démarrer le conteneur
+    await container.start();
+
+    // Retourner les informations du conteneur
+    const containerInfo = await container.inspect();
+    return {
+      Id: containerInfo.Id,
+      Names: [containerInfo.Name],
+      Image: containerInfo.Config.Image,
+      ImageID: containerInfo.Image,
+      Command: containerInfo.Config.Cmd?.join(' ') || '',
+      Created: containerInfo.Created,
+      State: containerInfo.State.Status,
+      Status: containerInfo.State.Status,
+      Ports: containerInfo.NetworkSettings.Ports,
+      Labels: containerInfo.Config.Labels,
+      NetworkSettings: containerInfo.NetworkSettings,
+      Mounts: containerInfo.Mounts,
+      created_at: dbContainer.created.toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: dbContainer.userId
+    } as Container;
+  } catch (error) {
+    console.error('Error creating container:', error);
+    throw new Error(`Failed to create container: ${error.message}`);
   }
 }

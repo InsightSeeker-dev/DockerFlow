@@ -27,10 +27,19 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
 import { PlusIcon } from 'lucide-react';
 
+const subdomainRegex = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
+
 const createContainerSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   image: z.string().min(1, 'Image is required'),
   port: z.string().regex(/^\d+$/, 'Port must be a number'),
+  subdomain: z
+    .string()
+    .min(1, 'Subdomain is required')
+    .regex(subdomainRegex, 'Subdomain must contain only lowercase letters, numbers, and hyphens')
+    .min(3, 'Subdomain must be at least 3 characters')
+    .max(63, 'Subdomain must be less than 63 characters'),
+  enableHttps: z.boolean().default(true),
 });
 
 type FormData = z.infer<typeof createContainerSchema>;
@@ -48,6 +57,8 @@ export function CreateContainerDialog({ onSuccess }: CreateContainerDialogProps)
       name: '',
       image: '',
       port: '',
+      subdomain: '',
+      enableHttps: true,
     },
   });
 
@@ -59,6 +70,16 @@ export function CreateContainerDialog({ onSuccess }: CreateContainerDialogProps)
         body: JSON.stringify({
           ...data,
           port: parseInt(data.port, 10),
+          labels: {
+            'traefik.enable': 'true',
+            [`traefik.http.routers.$${data.subdomain}.rule`]: `Host(\`$${data.subdomain}.dockersphere.ovh\`)`,
+            [`traefik.http.routers.$${data.subdomain}.entrypoints`]: data.enableHttps ? 'websecure' : 'web',
+            [`traefik.http.services.$${data.subdomain}.loadbalancer.server.port`]: data.port,
+            ...(data.enableHttps && {
+              [`traefik.http.routers.$${data.subdomain}.tls`]: 'true',
+              [`traefik.http.routers.$${data.subdomain}.tls.certresolver`]: 'letsencrypt',
+            }),
+          },
         }),
       });
 
@@ -96,7 +117,7 @@ export function CreateContainerDialog({ onSuccess }: CreateContainerDialogProps)
         <DialogHeader>
           <DialogTitle>Create Container</DialogTitle>
           <DialogDescription>
-            Create a new container from a Docker image.
+            Create a new container from a Docker image and configure its access URL.
           </DialogDescription>
         </DialogHeader>
 
@@ -112,7 +133,27 @@ export function CreateContainerDialog({ onSuccess }: CreateContainerDialogProps)
                     <Input placeholder="my-app" {...field} />
                   </FormControl>
                   <FormDescription>
-                    This will be used as the subdomain for your container.
+                    A unique name for your container.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="subdomain"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Subdomain</FormLabel>
+                  <FormControl>
+                    <div className="flex items-center space-x-2">
+                      <Input placeholder="myapp" {...field} />
+                      <span className="text-sm text-muted-foreground">.dockersphere.ovh</span>
+                    </div>
+                  </FormControl>
+                  <FormDescription>
+                    Your container will be accessible at subdomain.dockersphere.ovh
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -149,6 +190,29 @@ export function CreateContainerDialog({ onSuccess }: CreateContainerDialogProps)
                     The port your application listens on inside the container.
                   </FormDescription>
                   <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="enableHttps"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
+                  <div className="space-y-0.5">
+                    <FormLabel>Enable HTTPS</FormLabel>
+                    <FormDescription>
+                      Secure your container with SSL/TLS certificate
+                    </FormDescription>
+                  </div>
+                  <FormControl>
+                    <input
+                      type="checkbox"
+                      checked={field.value}
+                      onChange={field.onChange}
+                      className="accent-primary"
+                    />
+                  </FormControl>
                 </FormItem>
               )}
             />

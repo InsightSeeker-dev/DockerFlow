@@ -7,8 +7,9 @@ import { z } from 'zod';
 import { checkStorageLimit, getImageSize } from '@/lib/docker/storage';
 import { pullImage } from '@/lib/docker/images';
 import { Session } from 'next-auth';
-import { Prisma } from '@prisma/client';
+import { Prisma, ActivityType } from '@prisma/client';
 import { containerActivity } from '@/lib/activity';
+import { ovhDNSService } from '@/lib/ovh/dns-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,14 +22,16 @@ interface ExtendedSession extends Session {
 }
 
 const createContainerSchema = z.object({
-  name: z.string(),
+  name: z.string().min(1).max(63).regex(/^[a-zA-Z0-9-]+$/, 'Container name must contain only letters, numbers, and hyphens'),
   image: z.string(),
-  ports: z.array(z.string()).optional(),
-  useStorageImage: z.boolean().optional(),
+  subdomain: z.string().min(3).max(63).regex(/^[a-zA-Z0-9-]+$/, 'Subdomain must contain only letters, numbers, and hyphens'),
+  port: z.number().min(1),
+  enableHttps: z.boolean().default(true),
+  labels: z.record(z.string()).optional(),
+  env: z.record(z.string()).optional(),
+  volumes: z.record(z.string()).optional(),
   cpuLimit: z.number().optional(),
   memoryLimit: z.number().optional(),
-  volumes: z.array(z.string()).optional(),
-  env: z.array(z.string()).optional(),
 });
 
 const containerActionSchema = z.object({
@@ -90,10 +93,27 @@ export async function POST(request: Request) {
       );
     }
 
-    const { name, image, ports, volumes, env, cpuLimit, memoryLimit } = result.data;
+    const { name, image: imageName, subdomain, port, enableHttps, labels, env, volumes, cpuLimit, memoryLimit } = result.data;
 
-    // Check storage limit before creating container
-    const imageSize = await getImageSize(image);
+    // Vérifier si le sous-domaine est déjà utilisé
+    const existingContainer = await prisma.container.findFirst({
+      where: {
+        OR: [
+          { name },
+          { env: { equals: { VIRTUAL_HOST: `${subdomain}.dockersphere.ovh` } } }
+        ]
+      }
+    });
+
+    if (existingContainer) {
+      return NextResponse.json(
+        { error: 'Container name or subdomain already in use' },
+        { status: 400 }
+      );
+    }
+
+    // Vérifier la limite de stockage avant de créer le conteneur
+    const imageSize = await getImageSize(imageName);
     const hasSpace = await checkStorageLimit(session.user.id, imageSize);
     
     if (!hasSpace) {
@@ -103,117 +123,101 @@ export async function POST(request: Request) {
       );
     }
 
-    const docker = getDockerClient();
+    // S'assurer que l'image est disponible
+    const image = imageName.includes(':') ? imageName : `${imageName}:latest`;
+    await pullImage(image, session.user.id);
 
-    // If using a storage image, check if it exists
-    let finalImage = image;
-    if (result.data.useStorageImage) {
-      const storageImage = await prisma.dockerImage.findFirst({
-        where: {
-          userId: session.user.id,
-          name: image,
-        },
-      });
-
-      if (!storageImage) {
-        return NextResponse.json(
-          { error: `Docker image ${image} not found in your storage` },
-          { status: 404 }
-        );
-      }
-
-      // Use the stored Docker image name and tag
-      finalImage = `${storageImage.name}:${storageImage.tag}`;
-    }
-
-    // Check if image exists locally, if not pull it
+    // Créer le sous-domaine DNS chez OVH
     try {
-      await docker.getImage(finalImage).inspect();
+      await ovhDNSService.addSubdomain(subdomain);
     } catch (error) {
-      // Image doesn't exist locally, try to pull it
-      try {
-        await pullImage(finalImage, session.user.id);
-      } catch (pullError) {
-        return NextResponse.json(
-          { error: `Failed to pull image: ${finalImage}. Please make sure the image name is correct and you have internet connection.` },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Check if container name is already taken by this user
-    const existingContainer = await prisma.container.findFirst({
-      where: {
-        name,
-        userId: session.user.id
-      }
-    });
-
-    if (existingContainer) {
+      console.error('Erreur lors de la création du sous-domaine:', error);
       return NextResponse.json(
-        { error: 'Container name already exists' },
-        { status: 400 }
+        { error: 'Failed to create subdomain. Please try again.' },
+        { status: 500 }
       );
     }
 
-    // Create container and start it
-    const containerInfo = await docker.createContainer({
-      Image: finalImage,
+    // Créer le conteneur avec la configuration Traefik
+    const docker = getDockerClient();
+    const containerConfig = {
+      Image: image,
       name,
+      Labels: {
+        ...labels,
+        'traefik.enable': 'true',
+        [`traefik.http.routers.${name}.rule`]: `Host(\`${subdomain}.dockersphere.ovh\`)`,
+        [`traefik.http.routers.${name}.entrypoints`]: enableHttps ? 'websecure' : 'web',
+        [`traefik.http.routers.${name}.tls.certresolver`]: enableHttps ? 'letsencrypt' : '',
+      },
+      ExposedPorts: {
+        [`${port}/tcp`]: {}
+      },
       HostConfig: {
-        PortBindings: ports ? Object.fromEntries(
-          ports.map(port => {
-            const [hostPort, containerPort] = port.split(':');
-            return [
-              `${containerPort}/tcp`,
-              [{ HostPort: hostPort }]
-            ];
-          })
-        ) : {}
-      }
-    });
+        PortBindings: {
+          [`${port}/tcp`]: [{ HostPort: '0' }]
+        },
+        Binds: volumes ? Object.entries(volumes).map(([host, container]) => `${host}:${container}`) : [],
+        RestartPolicy: {
+          Name: 'unless-stopped'
+        }
+      },
+      Env: [
+        ...Object.entries(env || {}).map(([key, value]) => `${key}=${value}`),
+        `VIRTUAL_HOST=${subdomain}.dockersphere.ovh`,
+        enableHttps ? `LETSENCRYPT_HOST=${subdomain}.dockersphere.ovh` : ''
+      ]
+    };
 
-    await containerInfo.start();
-    const containerState = await containerInfo.inspect();
+    const container = await docker.createContainer(containerConfig);
+    await container.start();
 
-    // Save container to database with user association
-    const container = await prisma.container.create({
+    // Créer l'entrée dans la base de données
+    const dbContainer = await prisma.container.create({
       data: {
-        id: containerInfo.id,
         name,
-        imageId: finalImage,
-        status: containerState.State?.Status || 'created',
+        imageId: image,
+        status: 'running',
         userId: session.user.id,
-        cpuLimit: cpuLimit || 4000,  // 4 CPU cores par défaut
-        memoryLimit: memoryLimit || 8589934592,  // 8GB par défaut
-        ports: ports ? JSON.stringify(ports) : null,
-        volumes: volumes ? JSON.stringify(volumes) : null,
-        env: env ? JSON.stringify(env) : null
+        ports: { [port]: port },
+        volumes: volumes || {},
+        env: {
+          ...(env || {}),
+          VIRTUAL_HOST: `${subdomain}.dockersphere.ovh`,
+          LETSENCRYPT_HOST: enableHttps ? `${subdomain}.dockersphere.ovh` : ''
+        },
+        cpuLimit: cpuLimit || 0,
+        memoryLimit: memoryLimit || 0
       }
     });
 
     // Enregistrer l'activité
-    await containerActivity.create(session.user.id, name, {
-      image,
-      ports,
-      volumes,
-      cpuLimit,
-      memoryLimit,
+    await prisma.activity.create({
+      data: {
+        type: ActivityType.CONTAINER_CREATE,
+        userId: session.user.id,
+        description: `Created container ${name} with subdomain ${subdomain}.dockersphere.ovh`,
+        metadata: {
+          containerId: container.id,
+          containerName: name,
+          image,
+          subdomain: `${subdomain}.dockersphere.ovh`
+        }
+      }
     });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({
+      container: {
+        id: container.id,
+        name,
+        subdomain: `${subdomain}.dockersphere.ovh`,
+        status: 'running'
+      }
+    });
   } catch (error) {
-    console.error('Container creation error:', error);
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Invalid input', details: error.errors },
-        { status: 400 }
-      );
-    }
-    return NextResponse.json(
-      { error: 'Failed to create container' },
-      { status: 500 }
-    );
+    console.error('Error creating container:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Failed to create container';
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
 
@@ -241,28 +245,61 @@ export async function PATCH(request: Request) {
     switch (action) {
       case 'start':
         await container.start();
-        await containerActivity.start(session.user.id, containerName, {
-          containerId,
-          status: containerInfo.State,
-          config: containerInfo.Config
+        await prisma.activity.create({
+          data: {
+            type: ActivityType.CONTAINER_START,
+            userId: session.user.id,
+            description: `Started container ${containerName}`,
+            metadata: {
+              containerId,
+              containerName,
+              status: containerInfo.State
+            }
+          }
         });
         break;
 
       case 'stop':
         await container.stop();
-        await containerActivity.stop(session.user.id, containerName, {
-          containerId,
-          status: containerInfo.State,
-          config: containerInfo.Config
+        await prisma.activity.create({
+          data: {
+            type: ActivityType.CONTAINER_STOP,
+            userId: session.user.id,
+            description: `Stopped container ${containerName}`,
+            metadata: {
+              containerId,
+              containerName,
+              status: containerInfo.State
+            }
+          }
         });
         break;
 
       case 'remove':
+        // Supprimer le sous-domaine DNS
+        try {
+          const env = containerInfo.Config.Env || [];
+          const virtualHostEnv = env.find(e => e.startsWith('VIRTUAL_HOST='));
+          if (virtualHostEnv) {
+            const subdomain = virtualHostEnv.split('=')[1].split('.')[0];
+            await ovhDNSService.removeSubdomain(subdomain);
+          }
+        } catch (error) {
+          console.error('Erreur lors de la suppression du sous-domaine:', error);
+        }
+
         await container.remove({ force: true });
-        await containerActivity.delete(session.user.id, containerName, {
-          containerId,
-          status: containerInfo.State,
-          config: containerInfo.Config
+        await prisma.activity.create({
+          data: {
+            type: ActivityType.CONTAINER_DELETE,
+            userId: session.user.id,
+            description: `Removed container ${containerName}`,
+            metadata: {
+              containerId,
+              containerName,
+              status: containerInfo.State
+            }
+          }
         });
         break;
 

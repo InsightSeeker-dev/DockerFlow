@@ -10,6 +10,7 @@ import { Search, RefreshCwIcon, Database, Tag, Clock, HardDrive } from 'lucide-r
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Badge } from '@/components/ui/badge';
+import { CreateContainerForm } from '@/components/containers/create-container-form';
 import { cn } from '@/lib/utils';
 
 interface ImageListProps {
@@ -114,14 +115,10 @@ export function ImageList({
 
                 <div className="mt-4 flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="bg-zinc-900/50 border-zinc-800 hover:border-blue-500/30 hover:bg-blue-500/10"
-                      onClick={() => {/* TODO: Implémenter la fonction de démarrage */}}
-                    >
-                      Start Container
-                    </Button>
+                    <CreateContainerForm 
+                      image={image} 
+                      onSuccess={onRefresh}
+                    />
                     <Button
                       variant="outline"
                       size="sm"

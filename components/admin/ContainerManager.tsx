@@ -62,6 +62,7 @@ interface Container {
   memoryLimit: number;
   created: Date;
   userId: string;
+  subdomain?: string;
 }
 
 interface ContainerLogs {
@@ -73,9 +74,7 @@ interface ContainerLogs {
 export default function ContainerManager() {
   const [containers, setContainers] = useState<Container[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedContainer, setSelectedContainer] = useState<Container | null>(
-    null
-  );
+  const [selectedContainer, setSelectedContainer] = useState<Container | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isLogsDialogOpen, setIsLogsDialogOpen] = useState(false);
   const [containerLogs, setContainerLogs] = useState<ContainerLogs[]>([]);
@@ -83,10 +82,13 @@ export default function ContainerManager() {
   const [newContainer, setNewContainer] = useState({
     name: '',
     image: '',
+    subdomain: '',
     ports: '',
     volumes: '',
     env: '',
   });
+  const [subdomainError, setSubdomainError] = useState<string | null>(null);
+  const [isCheckingSubdomain, setIsCheckingSubdomain] = useState(false);
 
   useEffect(() => {
     fetchContainers();
@@ -109,24 +111,20 @@ export default function ContainerManager() {
     }
   };
 
-  const handleContainerAction = async (action: string, container: Container) => {
+  const handleContainerAction = async (containerId: string, action: 'start' | 'stop' | 'restart') => {
     try {
-      const response = await fetch(`/api/admin/containers/${container.id}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ action }),
+      const response = await fetch(`/api/admin/containers/${containerId}/${action}`, {
+        method: 'POST'
       });
 
-      if (response.ok) {
-        toast.success(`Container ${action} successful`);
-        fetchContainers();
-      } else {
+      if (!response.ok) {
         throw new Error(`Failed to ${action} container`);
       }
+
+      toast.success(`Container ${action}ed successfully`);
+      fetchContainers();
     } catch (error) {
-      console.error(`Failed to ${action} container:`, error);
+      console.error(`Error ${action}ing container:`, error);
       toast.error(`Failed to ${action} container`);
     }
   };
@@ -135,18 +133,13 @@ export default function ContainerManager() {
     if (!selectedContainer) return;
 
     try {
-      const response = await fetch(
-        `/api/admin/containers/${selectedContainer.id}`,
-        {
-          method: 'DELETE',
-        }
-      );
+      const response = await fetch(`/api/admin/containers/${selectedContainer.id}`, {
+        method: 'DELETE',
+      });
 
       if (response.ok) {
         toast.success('Container deleted successfully');
-        setContainers(
-          containers.filter((c) => c.id !== selectedContainer.id)
-        );
+        setContainers(containers.filter((c) => c.id !== selectedContainer.id));
         setIsDeleteDialogOpen(false);
         setSelectedContainer(null);
       } else {
@@ -179,14 +172,87 @@ export default function ContainerManager() {
     await fetchContainerLogs(container.id);
   };
 
+  const validateSubdomain = async (subdomain: string) => {
+    if (!subdomain) {
+      setSubdomainError('Subdomain is required');
+      return false;
+    }
+
+    const subdomainRegex = /^[a-zA-Z0-9-]+$/;
+    if (!subdomainRegex.test(subdomain)) {
+      setSubdomainError('Subdomain can only contain letters, numbers, and hyphens');
+      return false;
+    }
+
+    if (subdomain.length < 3 || subdomain.length > 63) {
+      setSubdomainError('Subdomain must be between 3 and 63 characters');
+      return false;
+    }
+
+    setIsCheckingSubdomain(true);
+    try {
+      const response = await fetch(`/api/admin/containers/check-subdomain?subdomain=${subdomain}`);
+      const data = await response.json();
+      
+      if (!response.ok) {
+        setSubdomainError(data.error || 'Subdomain is not available');
+        return false;
+      }
+      
+      setSubdomainError(null);
+      return true;
+    } catch (error) {
+      setSubdomainError('Error checking subdomain availability');
+      return false;
+    } finally {
+      setIsCheckingSubdomain(false);
+    }
+  };
+
   const handleCreateContainer = async () => {
     try {
+      // Valider le nom
+      if (!newContainer.name) {
+        toast.error('Container name is required');
+        return;
+      }
+
+      // Valider l'image
+      if (!newContainer.image) {
+        toast.error('Container image is required');
+        return;
+      }
+
+      // Valider le sous-domaine
+      const isSubdomainValid = await validateSubdomain(newContainer.subdomain);
+      if (!isSubdomainValid) {
+        return;
+      }
+
+      // Parser et valider les ports
+      const parsedPorts = parsePortsString(newContainer.ports);
+      if (newContainer.ports && parsedPorts.length === 0) {
+        toast.error('Invalid ports format. Use format: hostPort:containerPort');
+        return;
+      }
+
+      // Parser les volumes et variables d'environnement
+      const parsedVolumes = parseVolumesString(newContainer.volumes);
+      const parsedEnv = parseEnvString(newContainer.env);
+
       const response = await fetch('/api/admin/containers', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(newContainer),
+        body: JSON.stringify({
+          name: newContainer.name,
+          image: newContainer.image,
+          subdomain: newContainer.subdomain,
+          ports: parsedPorts,
+          volumes: parsedVolumes,
+          env: parsedEnv,
+        }),
       });
 
       if (response.ok) {
@@ -195,18 +261,53 @@ export default function ContainerManager() {
         setNewContainer({
           name: '',
           image: '',
+          subdomain: '',
           ports: '',
           volumes: '',
           env: '',
         });
         fetchContainers();
       } else {
-        throw new Error('Failed to create container');
+        const error = await response.json();
+        toast.error(error.message || 'Failed to create container');
       }
     } catch (error) {
-      console.error('Failed to create container:', error);
-      toast.error('Failed to create container');
+      console.error('Error creating container:', error);
+      toast.error('An error occurred while creating the container');
     }
+  };
+
+  const parsePortsString = (ports: string): [string, string][] => {
+    if (!ports) return [];
+    return ports.split(',')
+      .map(pair => pair.trim())
+      .filter(pair => pair.includes(':'))
+      .map(pair => {
+        const [host, container] = pair.split(':');
+        return [host.trim(), container.trim()];
+      });
+  };
+
+  const parseVolumesString = (volumes: string): [string, string][] => {
+    if (!volumes) return [];
+    return volumes.split(',')
+      .map(pair => pair.trim())
+      .filter(pair => pair.includes(':'))
+      .map(pair => {
+        const [host, container] = pair.split(':');
+        return [host.trim(), container.trim()];
+      });
+  };
+
+  const parseEnvString = (env: string): [string, string][] => {
+    if (!env) return [];
+    return env.split(',')
+      .map(pair => pair.trim())
+      .filter(pair => pair.includes('='))
+      .map(pair => {
+        const [key, value] = pair.split('=');
+        return [key.trim(), value.trim()];
+      });
   };
 
   const getStatusColor = (status: string) => {
@@ -239,35 +340,54 @@ export default function ContainerManager() {
 
       <Card>
         <Table>
-          <TableHeader>
+          <TableHead>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Image</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Ports</TableHead>
-              <TableHead>Created</TableHead>
-              <TableHead>Actions</TableHead>
+              <TableHeader>Name</TableHeader>
+              <TableHeader>Image</TableHeader>
+              <TableHeader>Status</TableHeader>
+              <TableHeader>Subdomain</TableHeader>
+              <TableHeader>Created</TableHeader>
+              <TableHeader>Actions</TableHeader>
             </TableRow>
-          </TableHeader>
+          </TableHead>
           <TableBody>
             {containers.map((container) => (
               <TableRow key={container.id}>
-                <TableCell>{container.name}</TableCell>
+                <TableCell className="font-medium">{container.name}</TableCell>
                 <TableCell>{container.imageId}</TableCell>
                 <TableCell>
                   <Badge
-                    className={getStatusColor(container.status)}
-                    variant="secondary"
+                    variant={
+                      container.status === 'running'
+                        ? 'default'
+                        : container.status === 'stopped'
+                        ? 'secondary'
+                        : 'destructive'
+                    }
+                    className={
+                      container.status === 'running'
+                        ? 'bg-green-500/10 text-green-500'
+                        : container.status === 'stopped'
+                        ? 'bg-yellow-500/10 text-yellow-500'
+                        : 'bg-red-500/10 text-red-500'
+                    }
                   >
                     {container.status}
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  {Object.entries(container.ports).map(([port, target]) => (
-                    <Badge key={port} variant="outline" className="mr-1">
-                      {port}:{target}
-                    </Badge>
-                  ))}
+                  {container.subdomain ? (
+                    <a
+                      href={`https://${container.subdomain}.dockersphere.ovh`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-500 hover:underline"
+                    >
+                      {container.subdomain}.dockersphere.ovh
+                    </a>
+                  ) : (
+                    '-'
+                  )}
                 </TableCell>
                 <TableCell>
                   {new Date(container.created).toLocaleDateString()}
@@ -275,7 +395,7 @@ export default function ContainerManager() {
                 <TableCell>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon">
+                      <Button variant="ghost" className="h-8 w-8 p-0">
                         <MoreVertical className="h-4 w-4" />
                       </Button>
                     </DropdownMenuTrigger>
@@ -283,28 +403,16 @@ export default function ContainerManager() {
                       <DropdownMenuLabel>Actions</DropdownMenuLabel>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
-                        onClick={() =>
-                          handleContainerAction('start', container)
-                        }
+                        onClick={() => handleContainerAction(container.id, 'start')}
                       >
                         <Play className="mr-2 h-4 w-4" />
                         Start
                       </DropdownMenuItem>
                       <DropdownMenuItem
-                        onClick={() =>
-                          handleContainerAction('stop', container)
-                        }
+                        onClick={() => handleContainerAction(container.id, 'stop')}
                       >
                         <Square className="mr-2 h-4 w-4" />
                         Stop
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() =>
-                          handleContainerAction('restart', container)
-                        }
-                      >
-                        <RefreshCw className="mr-2 h-4 w-4" />
-                        Restart
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => handleViewLogs(container)}
@@ -337,8 +445,7 @@ export default function ContainerManager() {
           <DialogHeader>
             <DialogTitle>Delete Container</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete this container? This action cannot
-              be undone.
+              Are you sure you want to delete this container? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -382,45 +489,82 @@ export default function ContainerManager() {
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create Container</DialogTitle>
+            <DialogTitle>Create New Container</DialogTitle>
             <DialogDescription>
-              Create a new container with the specified configuration.
+              Create a new container with custom configuration
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="name">Name</Label>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="name" className="text-right">
+                Name
+              </Label>
               <Input
                 id="name"
                 value={newContainer.name}
                 onChange={(e) =>
                   setNewContainer({ ...newContainer, name: e.target.value })
                 }
+                className="col-span-3"
               />
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="image">Image</Label>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="image" className="text-right">
+                Image
+              </Label>
               <Input
                 id="image"
                 value={newContainer.image}
                 onChange={(e) =>
                   setNewContainer({ ...newContainer, image: e.target.value })
                 }
+                className="col-span-3"
               />
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="ports">Ports (e.g., 80:80,443:443)</Label>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="subdomain" className="text-right">
+                Subdomain
+              </Label>
+              <div className="col-span-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="subdomain"
+                    value={newContainer.subdomain}
+                    onChange={(e) => {
+                      setNewContainer({ ...newContainer, subdomain: e.target.value });
+                      validateSubdomain(e.target.value);
+                    }}
+                    className="flex-1"
+                    placeholder="myapp"
+                    disabled={isCheckingSubdomain}
+                  />
+                  <span className="text-sm text-muted-foreground">.dockersphere.ovh</span>
+                </div>
+                {subdomainError && (
+                  <p className="text-sm text-red-500">{subdomainError}</p>
+                )}
+                {isCheckingSubdomain && (
+                  <p className="text-sm text-muted-foreground">Checking subdomain availability...</p>
+                )}
+              </div>
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="ports" className="text-right">
+                Ports
+              </Label>
               <Input
                 id="ports"
                 value={newContainer.ports}
                 onChange={(e) =>
                   setNewContainer({ ...newContainer, ports: e.target.value })
                 }
+                className="col-span-3"
+                placeholder="80:80, 443:443"
               />
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="volumes">
-                Volumes (e.g., /host/path:/container/path)
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="volumes" className="text-right">
+                Volumes
               </Label>
               <Input
                 id="volumes"
@@ -428,11 +572,13 @@ export default function ContainerManager() {
                 onChange={(e) =>
                   setNewContainer({ ...newContainer, volumes: e.target.value })
                 }
+                className="col-span-3"
+                placeholder="/host/path:/container/path"
               />
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="env">
-                Environment Variables (e.g., KEY=value,OTHER=value)
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="env" className="text-right">
+                Env
               </Label>
               <Input
                 id="env"
@@ -440,6 +586,8 @@ export default function ContainerManager() {
                 onChange={(e) =>
                   setNewContainer({ ...newContainer, env: e.target.value })
                 }
+                className="col-span-3"
+                placeholder="KEY=value,ANOTHER_KEY=value"
               />
             </div>
           </div>
@@ -447,7 +595,7 @@ export default function ContainerManager() {
             <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCreateContainer}>Create</Button>
+            <Button onClick={handleCreateContainer}>Create Container</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

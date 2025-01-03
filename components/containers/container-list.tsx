@@ -197,20 +197,15 @@ export function ContainerList({
               </TableCell>
               <TableCell>{container.Image}</TableCell>
               <TableCell>
-                {container.State.toLowerCase() === 'running' &&
-                 Object.keys(container.NetworkSettings.Ports || {}).length > 0 &&
-                 Object.values(container.NetworkSettings.Networks)[0]?.IPAddress && (
+                {container.State.toLowerCase() === 'running' && container.Labels && (
                   <a
-                    href={`http://${Object.values(container.NetworkSettings.Networks)[0].IPAddress}:${
-                      Object.values(container.NetworkSettings.Ports)[0]?.[0]?.HostPort
-                    }`}
+                    href={`${container.Labels['traefik.http.routers.${container.subdomain}.entrypoints'] === 'websecure' ? 'https' : 'http'}://${container.subdomain}.dockersphere.ovh`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
                   >
                     <span className="flex items-center gap-1">
-                      {Object.values(container.NetworkSettings.Networks)[0].IPAddress}:
-                      {Object.values(container.NetworkSettings.Ports)[0]?.[0]?.HostPort}
+                      {container.subdomain}.dockersphere.ovh
                       <ExternalLinkIcon className="h-4 w-4" />
                     </span>
                   </a>

@@ -888,7 +888,7 @@ const UnifiedImageBuilder: React.FC<UnifiedImageBuilderProps> = ({ onImageBuilt 
                 height="400px"
                 defaultLanguage={selectedFile?.type === 'dockerfile' ? 'dockerfile' : 'plaintext'}
                 value={selectedFile?.content || ''}
-                onChange={(value) => setSelectedFile(prev => prev ? {
+                onChange={(value: string | undefined) => setSelectedFile(prev => prev ? {
                   ...prev,
                   content: value || ''
                 } : null)}

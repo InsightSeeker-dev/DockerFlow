@@ -1,0 +1,86 @@
+version: '3'
+
+volumes:
+  traefik-acme:
+    driver: local
+
+services:
+  traefik-init:
+    image: alpine
+    command: sh -c "mkdir -p /letsencrypt && touch /letsencrypt/acme.json && chmod 600 /letsencrypt/acme.json"
+    volumes:
+      - traefik-acme:/letsencrypt
+
+  traefik:
+    image: traefik:v2.10
+    container_name: traefik
+    restart: unless-stopped
+    depends_on:
+      - traefik-init
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "172.18.201.152:16680:16680"     # HTTP
+      - "172.18.201.152:16643:16643"    # HTTPS
+      - "172.18.201.152:16600:8080"   # Dashboard Traefik
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-acme:/letsencrypt:rw
+    networks:
+      - proxy
+    environment:
+      - TZ=Europe/Paris
+    labels:
+      - "traefik.enable=true"
+      # Dashboard configuration
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.dockersphere.ovh`)"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.tls=true"
+      - "traefik.http.middlewares.auth.basicauth.users=admin:$$apr1$$O7TOR0Eq$$uqqmZk/Dh4FxjDE7dd1yA0"
+      - "traefik.http.routers.dashboard.middlewares=auth"
+      # HTTPS redirect
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true"
+      - "traefik.http.routers.http-catchall.rule=hostregexp(`{host:.+}`)"
+      - "traefik.http.routers.http-catchall.entrypoints=web"
+      - "traefik.http.routers.http-catchall.middlewares=redirect-to-https"
+      # Default port for the dashboard
+      - "traefik.http.services.traefik.loadbalancer.server.port=8080"
+      # NextJS Application configuration
+      - "traefik.http.routers.nextjs.rule=Host(`dockerflow.dockersphere.ovh`)"
+      - "traefik.http.routers.nextjs.entrypoints=websecure"
+      - "traefik.http.routers.nextjs.tls=true"
+      - "traefik.http.routers.nextjs.tls.certresolver=letsencrypt"
+      - "traefik.http.services.nextjs.loadbalancer.server.port=3000"
+      - "traefik.http.services.nextjs.loadbalancer.server.scheme=http"
+      - "traefik.http.services.nextjs.loadbalancer.server.url=http://172.18.201.152:3000"
+    command:
+      - --api.dashboard=true
+      - --log.level=DEBUG
+      # Entrypoints configuration
+      - --entrypoints.web.address=:16680
+      - --entrypoints.websecure.address=:16643
+      # SSL configuration
+      - --entrypoints.websecure.http.tls=true
+      - --entrypoints.websecure.http.tls.certResolver=letsencrypt
+      - --entrypoints.websecure.http.tls.domains[0].main=dockersphere.ovh
+      - --entrypoints.websecure.http.tls.domains[0].sans=*.dockersphere.ovh
+      # Let's Encrypt configuration
+      - --certificatesresolvers.letsencrypt.acme.email=dynastie.amoussou.etu@gmail.com
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.letsencrypt.acme.tlschallenge=true
+      # Docker provider configuration
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=proxy
+      - --providers.docker.watch=true
+      # Enable wildcard certificates
+      - --certificatesresolvers.letsencrypt.acme.dnschallenge=true
+      - --certificatesresolvers.letsencrypt.acme.dnschallenge.provider=ovh
+      # Allow subdomain wildcards in routing
+      - --providers.docker.defaultRule=Host(`{{ normalize .Name }}.dockersphere.ovh`)
+
+networks:
+  proxy:
+    external: true

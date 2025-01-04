@@ -15,18 +15,31 @@ export interface Container extends Omit<ContainerInfo, 'NetworkSettings'> {
   created_at: string;
   updated_at: string;
   user_id: string;
+  subdomain: string;
 }
 
 export interface Port {
   PrivatePort: number;
   PublicPort: number;
   Type: string;
+  IP: string;
 }
 
 export interface NetworkInfo {
   IPAddress: string;
   Gateway: string;
   NetworkID: string;
+}
+
+export interface Mount {
+  Type: string;
+  Name?: string;
+  Source: string;
+  Destination: string;
+  Driver?: string;
+  Mode: string;
+  RW: boolean;
+  Propagation: string;
 }
 
 export interface ContainerStats {

@@ -179,6 +179,7 @@ export async function POST(request: Request) {
         imageId: image,
         status: 'running',
         userId: session.user.id,
+        subdomain,
         ports: { [port]: port },
         volumes: volumes || {},
         env: {

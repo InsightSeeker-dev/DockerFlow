@@ -148,21 +148,24 @@ model Session {
 }
 
 model Container {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  name        String
-  imageId     String
-  status      String
-  ports       Json?
-  volumes     Json?
-  env         Json?
-  cpuLimit    Int
-  memoryLimit Int
-  subdomain   String   @unique  // Pour l'URL personnalisée (ex: moncontainer34)
-  created     DateTime @default(now())
-  userId      String   @db.ObjectId
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  name          String   @unique
+  imageId       String
+  status        String
+  subdomain     String   @unique
+  ports         Json?
+  volumes       Json?
+  env           Json?
+  cpuLimit      Int      @default(0)
+  memoryLimit   Int      @default(0)
+  created       DateTime @default(now())
+  userId        String   @db.ObjectId
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   resourceUsage ResourceUsage[]
 
+  @@index([name])
+  @@index([subdomain])
+  @@index([userId])
   @@map("containers")
 }
 

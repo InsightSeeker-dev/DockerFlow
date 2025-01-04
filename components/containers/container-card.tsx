@@ -64,6 +64,7 @@ export function ContainerCard({ container, onStatusChange }: ContainerCardProps)
         PrivatePort: parseInt(privatePort),
         PublicPort: parseInt(binding.HostPort),
         Type: protocol,
+        IP: binding.HostIp || '0.0.0.0'
       }));
     });
 
@@ -176,7 +177,7 @@ export function ContainerCard({ container, onStatusChange }: ContainerCardProps)
                   variant="secondary"
                   className="text-xs"
                 >
-                  {port.PublicPort}:{port.PrivatePort}/{port.Type}
+                  {port.PublicPort}:{port.PrivatePort}/{port.Type} ({port.IP})
                 </Badge>
               ))}
             </div>

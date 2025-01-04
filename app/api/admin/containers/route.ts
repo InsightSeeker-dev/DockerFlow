@@ -169,6 +169,7 @@ export async function POST(req: Request) {
           VIRTUAL_HOST: `${subdomain}.dockersphere.ovh`,
           LETSENCRYPT_HOST: `${subdomain}.dockersphere.ovh`
         },
+        subdomain,
         cpuLimit: 0,
         memoryLimit: 0
       }

@@ -6,7 +6,6 @@ import { isAdmin } from '@/lib/utils/auth-helpers';
 import { getContainerStats } from '@/lib/utils/docker-helpers';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { Container, Prisma } from '@prisma/client';
 import { ActivityType } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
@@ -80,11 +79,9 @@ const createContainerSchema = z.object({
   name: z.string().min(1).max(63).regex(/^[a-zA-Z0-9-]+$/, 'Container name must contain only letters, numbers, and hyphens'),
   image: z.string(),
   subdomain: z.string().min(1).max(63).regex(/^[a-zA-Z0-9-]+$/, 'Subdomain must contain only letters, numbers, and hyphens'),
-  ports: z.array(z.tuple([z.string(), z.string()])).optional(),
+  ports: z.array(z.tuple([z.string(), z.string()])),
   volumes: z.array(z.tuple([z.string(), z.string()])).optional(),
   env: z.array(z.tuple([z.string(), z.string()])).optional(),
-  cpuLimit: z.number(),
-  memoryLimit: z.number()
 });
 
 // POST /api/admin/containers
@@ -105,14 +102,14 @@ export async function POST(req: Request) {
       );
     }
 
-    const { name, image, subdomain, ports = [], volumes, env, cpuLimit, memoryLimit } = result.data;
+    const { name, image, subdomain, ports, volumes, env } = result.data;
 
     // Vérifier si le sous-domaine est déjà utilisé
     const existingContainer = await prisma.container.findFirst({
       where: {
         OR: [
           { name },
-          { subdomain }
+          { env: { equals: { VIRTUAL_HOST: `${subdomain}.dockersphere.ovh` } } }
         ]
       }
     });
@@ -124,23 +121,32 @@ export async function POST(req: Request) {
       );
     }
 
-    // Configuration du conteneur Docker
+    // Créer le conteneur avec la configuration Traefik
     const containerConfig = {
       Image: image,
-      name: name,
-      HostConfig: {
-        PortBindings: ports.reduce((acc, [host, container]) => ({
-          ...acc,
-          [container]: [{ HostPort: host }]
-        }), {} as Record<string, Array<{ HostPort: string }>>),
-        Binds: volumes?.map(([host, container]) => `${host}:${container}`) || [],
+      name,
+      Labels: {
+        'traefik.enable': 'true',
+        [`traefik.http.routers.${name}.rule`]: `Host(\`${subdomain}.dockersphere.ovh\`)`,
+        [`traefik.http.routers.${name}.entrypoints`]: 'websecure',
+        [`traefik.http.routers.${name}.tls.certresolver`]: 'letsencrypt'
       },
-      ExposedPorts: ports.reduce((acc, [_, container]) => ({
+      ExposedPorts: ports.reduce((acc, [_, containerPort]) => ({
         ...acc,
-        [container]: {}
-      }), {} as Record<string, {}>),
+        [`${containerPort}/tcp`]: {}
+      }), {}),
+      HostConfig: {
+        PortBindings: ports.reduce((acc, [hostPort, containerPort]) => ({
+          ...acc,
+          [`${containerPort}/tcp`]: [{ HostPort: hostPort }]
+        }), {}),
+        Binds: volumes?.map(([host, container]) => `${host}:${container}`) || [],
+        RestartPolicy: {
+          Name: 'unless-stopped'
+        }
+      },
       Env: [
-        ...(env || []).map(([key, value]) => `${key}=${value}`),
+        ...(env?.map(([key, value]) => `${key}=${value}`) || []),
         `VIRTUAL_HOST=${subdomain}.dockersphere.ovh`,
         `LETSENCRYPT_HOST=${subdomain}.dockersphere.ovh`
       ]
@@ -155,21 +161,17 @@ export async function POST(req: Request) {
         name,
         imageId: image,
         status: 'running',
-        subdomain,
-        ports: Object.fromEntries(ports || []),
+        userId: session.user.id,
+        ports: Object.fromEntries(ports),
         volumes: volumes ? Object.fromEntries(volumes) : {},
         env: {
-          ...(env ? Object.fromEntries(env) : {}),
+          ...Object.fromEntries(env || []),
           VIRTUAL_HOST: `${subdomain}.dockersphere.ovh`,
           LETSENCRYPT_HOST: `${subdomain}.dockersphere.ovh`
         },
-        cpuLimit,
-        memoryLimit,
-        user: {
-          connect: {
-            id: session.user.id
-          }
-        }
+        subdomain,
+        cpuLimit: 0,
+        memoryLimit: 0
       }
     });
 

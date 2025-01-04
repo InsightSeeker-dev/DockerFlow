@@ -61,9 +61,13 @@ export function CreateContainerForm({ image, onSuccess }: CreateContainerFormPro
       setIsOpen(false);
       onSuccess?.();
     } catch (error) {
+      const errorMessage = error instanceof Error
+        ? error.message
+        : 'An unexpected error occurred';
+
       toast({
         title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to create container',
+        description: errorMessage,
         variant: 'destructive',
       });
     } finally {

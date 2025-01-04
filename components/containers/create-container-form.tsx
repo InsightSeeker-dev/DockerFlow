@@ -63,7 +63,7 @@ export function CreateContainerForm({ image, onSuccess }: CreateContainerFormPro
     } catch (error) {
       toast({
         title: 'Error',
-        description: error.message,
+        description: error instanceof Error ? error.message : 'Failed to create container',
         variant: 'destructive',
       });
     } finally {

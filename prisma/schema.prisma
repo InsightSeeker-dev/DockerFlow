@@ -149,10 +149,10 @@ model Session {
 
 model Container {
   id            String   @id @default(auto()) @map("_id") @db.ObjectId
-  name          String   @unique
+  name          String
   imageId       String
   status        String
-  subdomain     String   @unique
+  subdomain     String
   ports         Json?
   volumes       Json?
   env           Json?
@@ -163,8 +163,8 @@ model Container {
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   resourceUsage ResourceUsage[]
 
-  @@index([name])
-  @@index([subdomain])
+  @@unique([name])
+  @@unique([subdomain])
   @@index([userId])
   @@map("containers")
 }

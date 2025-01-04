@@ -62,8 +62,9 @@ export function ContainerCard({ container, onStatusChange }: ContainerCardProps)
       const [privatePort, protocol] = key.split('/');
       return bindings.map(binding => ({
         PrivatePort: parseInt(privatePort),
-        PublicPort: parseInt(binding.HostPort),
-        Type: protocol,
+        PublicPort: binding.HostPort ? parseInt(binding.HostPort) : 0,
+        Type: protocol || 'tcp',
+        IP: binding.HostIp || '0.0.0.0'
       }));
     });
 
@@ -176,7 +177,7 @@ export function ContainerCard({ container, onStatusChange }: ContainerCardProps)
                   variant="secondary"
                   className="text-xs"
                 >
-                  {port.PublicPort}:{port.PrivatePort}/{port.Type}
+                  {port.PublicPort}:{port.PrivatePort}/{port.Type} ({port.IP})
                 </Badge>
               ))}
             </div>

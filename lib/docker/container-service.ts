@@ -146,6 +146,7 @@ export async function createContainer(config: CreateContainerConfig): Promise<Co
         imageId: config.image,
         status: 'created',
         userId: config.userId,
+        subdomain: config.subdomain,
         ports: config.ports || {},
         volumes: config.volumes || {},
         env: config.env || {},
@@ -159,25 +160,49 @@ export async function createContainer(config: CreateContainerConfig): Promise<Co
 
     // Retourner les informations du conteneur
     const containerInfo = await container.inspect();
-    return {
+    const containerData: Container = {
       Id: containerInfo.Id,
       Names: [containerInfo.Name],
       Image: containerInfo.Config.Image,
       ImageID: containerInfo.Image,
       Command: containerInfo.Config.Cmd?.join(' ') || '',
-      Created: containerInfo.Created,
+      Created: parseInt(containerInfo.Created),
+      Ports: Object.entries(containerInfo.NetworkSettings.Ports || {}).map(([key, value]) => {
+        const [port, protocol] = key.split('/');
+        return {
+          PrivatePort: parseInt(port),
+          PublicPort: value?.[0]?.HostPort ? parseInt(value[0].HostPort) : 0,
+          Type: protocol || 'tcp',
+          IP: value?.[0]?.HostIp || '0.0.0.0'
+        };
+      }),
       State: containerInfo.State.Status,
       Status: containerInfo.State.Status,
-      Ports: containerInfo.NetworkSettings.Ports,
-      Labels: containerInfo.Config.Labels,
-      NetworkSettings: containerInfo.NetworkSettings,
-      Mounts: containerInfo.Mounts,
+      Labels: containerInfo.Config.Labels || {},
+      HostConfig: {
+        NetworkMode: containerInfo.HostConfig.NetworkMode || 'default'
+      },
+      NetworkSettings: {
+        Networks: containerInfo.NetworkSettings.Networks,
+        Ports: containerInfo.NetworkSettings.Ports
+      },
+      Mounts: containerInfo.Mounts.map(mount => ({
+        Name: mount.Name,
+        Source: mount.Source,
+        Destination: mount.Destination,
+        Mode: mount.Mode,
+        RW: mount.RW,
+        Propagation: mount.Propagation,
+        Type: 'volume'  // Default to volume type
+      })),
       created_at: dbContainer.created.toISOString(),
       updated_at: new Date().toISOString(),
-      user_id: dbContainer.userId
-    } as Container;
+      user_id: dbContainer.userId,
+      subdomain: config.subdomain
+    };
+    return containerData;
   } catch (error) {
     console.error('Error creating container:', error);
-    throw new Error(`Failed to create container: ${error.message}`);
+    throw new Error(`Failed to create container: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }

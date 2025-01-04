@@ -52,16 +52,34 @@ export async function GET() {
     const docker = getDockerClient();
     const containers = await docker.listContainers({ all: true });
     
-    // Get user's containers from database
+    // Get user's containers from database with names and subdomains
     const userContainers = await prisma.container.findMany({
       where: { userId: session.user.id },
-      select: { id: true },
+      select: { 
+        name: true,
+        subdomain: true 
+      },
     });
     
-    const userContainerIds = new Set(userContainers.map((container: { id: any; }) => container.id));
+    // Create a map of container names to their database info
+    const containerInfoMap = new Map(
+      userContainers.map(container => [container.name, container])
+    );
     
-    // Filter Docker containers to only show user's containers
-    const filteredContainers = containers.filter(container => userContainerIds.has(container.Id));
+    // Filter and enrich Docker containers with database info
+    const filteredContainers = containers
+      .filter(container => {
+        const containerName = container.Names[0]?.replace('/', '');
+        return containerName && containerInfoMap.has(containerName);
+      })
+      .map(container => {
+        const containerName = container.Names[0]?.replace('/', '');
+        const dbInfo = containerInfoMap.get(containerName);
+        return {
+          ...container,
+          subdomain: dbInfo?.subdomain
+        };
+      });
     
     return NextResponse.json({ containers: filteredContainers });
   } catch (error) {
@@ -179,6 +197,7 @@ export async function POST(request: Request) {
         imageId: image,
         status: 'running',
         userId: session.user.id,
+        subdomain,
         ports: { [port]: port },
         volumes: volumes || {},
         env: {

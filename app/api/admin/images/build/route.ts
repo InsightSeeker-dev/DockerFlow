@@ -104,7 +104,6 @@ export async function POST(req: NextRequest) {
                       userId: user.id,
                       name: imageName,
                       tag: tag,
-                      imageId: image.Id,
                       size: image.Size,
                       created: new Date(image.Created),
                     },
@@ -117,7 +116,6 @@ export async function POST(req: NextRequest) {
                       description: `Built image: ${imageName}:${tag}`,
                       userId: user.id,
                       metadata: {
-                        imageId: image.Id,
                         size: image.Size,
                         tag: tag
                       },

@@ -199,7 +199,7 @@ export function ContainerList({
               <TableCell>
                 {container.State.toLowerCase() === 'running' && container.Labels && (
                   <a
-                    href={`${container.Labels['traefik.http.routers.${container.subdomain}.entrypoints'] === 'websecure' ? 'https' : 'http'}://${container.subdomain}.dockersphere.ovh`}
+                    href={`${container.Labels[`traefik.http.routers.${container.Names[0]?.replace('/', '')}.entrypoints`] === 'websecure' ? 'https' : 'http'}://${container.subdomain}.dockersphere.ovh`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"

@@ -15,12 +15,14 @@ export interface Container extends Omit<ContainerInfo, 'NetworkSettings'> {
   created_at: string;
   updated_at: string;
   user_id: string;
+  subdomain?: string;
 }
 
 export interface Port {
   PrivatePort: number;
   PublicPort: number;
   Type: string;
+  IP: string;
 }
 
 export interface NetworkInfo {

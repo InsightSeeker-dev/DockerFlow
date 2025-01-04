@@ -61,7 +61,6 @@ export async function listContainers(): Promise<Container[]> {
         Status: container.Status,
         Ports: container.Ports,
         Labels: container.Labels,
-        Mounts: container.Mounts,
         NetworkSettings: networkSettings,
         created_at: dbContainer?.created.toISOString() || new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -166,40 +165,39 @@ export async function createContainer(config: CreateContainerConfig): Promise<Co
       Image: containerInfo.Config.Image,
       ImageID: containerInfo.Image,
       Command: containerInfo.Config.Cmd?.join(' ') || '',
-      Created: parseInt(containerInfo.Created),
-      Ports: Object.entries(containerInfo.NetworkSettings.Ports || {}).map(([key, value]) => {
-        const [port, protocol] = key.split('/');
-        return {
+      Created: Number(new Date(containerInfo.Created).getTime() / 1000),
+      Ports: Object.entries(containerInfo.NetworkSettings.Ports || {}).flatMap(([portProto, bindings]) => {
+        const [port, proto] = portProto.split('/');
+        return (bindings || []).map(binding => ({
+          IP: binding.HostIp,
           PrivatePort: parseInt(port),
-          PublicPort: value?.[0]?.HostPort ? parseInt(value[0].HostPort) : 0,
-          Type: protocol || 'tcp',
-          IP: value?.[0]?.HostIp || '0.0.0.0'
-        };
+          PublicPort: parseInt(binding.HostPort),
+          Type: proto
+        }));
       }),
-      State: containerInfo.State.Status,
-      Status: containerInfo.State.Status,
       Labels: containerInfo.Config.Labels || {},
-      HostConfig: {
-        NetworkMode: containerInfo.HostConfig.NetworkMode || 'default'
-      },
-      NetworkSettings: {
-        Networks: containerInfo.NetworkSettings.Networks,
-        Ports: containerInfo.NetworkSettings.Ports
-      },
+      NetworkSettings: containerInfo.NetworkSettings,
       Mounts: containerInfo.Mounts.map(mount => ({
+        Type: 'bind',
         Name: mount.Name,
         Source: mount.Source,
         Destination: mount.Destination,
+        Driver: 'local',
         Mode: mount.Mode,
         RW: mount.RW,
-        Propagation: mount.Propagation,
-        Type: 'volume'  // Default to volume type
+        Propagation: mount.Propagation
       })),
+      HostConfig: {
+        NetworkMode: containerInfo.HostConfig.NetworkMode || 'default'
+      },
+      State: containerInfo.State.Status,
+      Status: containerInfo.State.Status,
       created_at: dbContainer.created.toISOString(),
       updated_at: new Date().toISOString(),
       user_id: dbContainer.userId,
-      subdomain: config.subdomain
+      subdomain: dbContainer.subdomain
     };
+
     return containerData;
   } catch (error) {
     console.error('Error creating container:', error);

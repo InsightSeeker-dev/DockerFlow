@@ -1,0 +1,33 @@
+http:
+  services:
+    nextapp:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:3000"
+
+  routers:
+    nextjs:
+      rule: "Host(`dockerflow.dockersphere.ovh`)"
+      service: nextapp
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+      middlewares:
+        - cors
+
+  middlewares:
+    cors:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        accessControlAllowHeaders:
+          - "*"
+        accessControlAllowOriginList:
+          - "https://dockerflow.dockersphere.ovh"
+        accessControlMaxAge: 100
+        addVaryHeader: true

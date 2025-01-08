@@ -117,22 +117,44 @@ export const alertActivity = {
 // Fonctions spécifiques pour les utilisateurs
 export const userActivity = {
   async update(userId: string, details: string, metadata?: any) {
-    await logActivity({
+    return logActivity({
       type: ActivityType.USER_UPDATE,
-      description: `Profile updated: ${details}`,
+      description: details,
       userId,
       metadata,
     });
   },
-
   async delete(userId: string, username: string, metadata?: any) {
-    await logActivity({
+    return logActivity({
       type: ActivityType.USER_DELETE,
       description: `User deleted: ${username}`,
       userId,
       metadata,
     });
   },
+  async resetPassword(userId: string, targetUserId: string, metadata?: any) {
+    return logActivity({
+      type: ActivityType.USER_UPDATE,
+      description: `Password reset initiated for user`,
+      userId,
+      metadata: {
+        ...metadata,
+        action: 'reset_password',
+        targetUserId
+      },
+    });
+  },
+  async resetPasswordComplete(userId: string, metadata?: any) {
+    return logActivity({
+      type: ActivityType.USER_UPDATE,
+      description: `Password reset completed`,
+      userId,
+      metadata: {
+        ...metadata,
+        action: 'reset_password_complete'
+      },
+    });
+  }
 };
 
 // Fonctions spécifiques pour le système

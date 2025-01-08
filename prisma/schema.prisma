@@ -227,15 +227,16 @@ model Alert {
 }
 
 model Activity {
-  id          String      @id @default(auto()) @map("_id") @db.ObjectId
+  id          String       @id @default(auto()) @map("_id") @db.ObjectId
   type        ActivityType
   description String
-  userId      String      @db.ObjectId
   metadata    Json?
   ipAddress   String?
   userAgent   String?
-  createdAt   DateTime    @default(now())
-  user        User        @relation(fields: [userId], references: [id])
+  userId      String       @db.ObjectId
+  user        User         @relation(fields: [userId], references: [id])
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime?    @updatedAt
 
   @@map("activities")
 }

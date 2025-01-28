@@ -1,27 +1,15 @@
 'use client';
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Container, User, AlertTriangle, Box, Play, Square, Trash2, Download, RefreshCw, Bell, CheckCircle, ActivityIcon } from "lucide-react";
+import { Container, User, AlertTriangle, Box, Play, Square, Trash2, Download, RefreshCw, Bell, CheckCircle, ActivityIcon, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { formatDistanceToNow } from 'date-fns';
+import { fr } from 'date-fns/locale';
 import { ActivityType } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import { useSession } from "next-auth/react";
 import { Activity } from "@/types/activity";
 import { cn } from "@/lib/utils";
-
-interface ActivityItem {
-  id: string;
-  type: ActivityType;
-  description: string;
-  createdAt: string;
-  user: {
-    username: string;
-    email: string;
-    role: string;
-  };
-  metadata?: any;
-}
 
 const getActivityIcon = (type: ActivityType) => {
   switch (type) {
@@ -107,102 +95,105 @@ export function OverviewRecentActivities() {
     }
   };
 
-  useEffect(() => {
-    if (session?.user?.role === 'ADMIN') {
-      fetchActivities();
-    }
-  }, [session, page]);
-
-  if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-xl font-bold">Recent Activities</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-center p-4">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
-          </div>
-        </CardContent>
-      </Card>
-    );
+useEffect(() => {
+  if (session?.user) {
+    fetchActivities();
   }
 
-  if (error) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-xl font-bold">Recent Activities</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col items-center justify-center p-4 space-y-4">
-            <AlertTriangle className="h-8 w-8 text-red-500" />
-            <p className="text-red-500">{error}</p>
-            <Button onClick={fetchActivities}>Retry</Button>
-          </div>
-        </CardContent>
-      </Card>
-    );
+  // Rafraîchir les activités toutes les minutes
+  const interval = setInterval(() => {
+    if (session?.user) {
+      fetchActivities();
+    }
+  }, 60000);
+
+  return () => clearInterval(interval);
+}, [session, page]);
+
+  if (!session?.user) {
+    return null;
   }
 
   return (
-    <Card>
+    <Card className="col-span-3">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-base font-semibold">
-          Recent Activities
-          {total > 0 && <span className="ml-2 text-sm text-gray-500">({total})</span>}
+        <CardTitle className="text-lg font-medium">
+          Activités Récentes
+          {total > 0 && <span className="text-sm text-muted-foreground ml-2">({total})</span>}
         </CardTitle>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => fetchActivities()}
+          disabled={isLoading}
+        >
+          <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
+        </Button>
       </CardHeader>
       <CardContent>
-        <div className="space-y-2">
-          {activities.map((activity) => (
-            <div
-              key={activity.id}
-              className="flex items-center gap-3 p-3 rounded-lg bg-card border shadow-sm hover:bg-accent/50 transition-colors"
-            >
-              <div className={cn(
-                "p-2 rounded-full",
-                getActivityColor(activity.type).replace('text-', 'bg-').replace('500', '500/10')
-              )}>
-                {getActivityIcon(activity.type)}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium truncate">
-                  {activity.description}
-                </p>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>{activity.user.username || activity.user.email}</span>
-                  <span>•</span>
-                  <span>{formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}</span>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-6">
+            <Loader2 className="h-6 w-6 animate-spin text-gray-500" />
+          </div>
+        ) : error ? (
+          <div className="flex items-center justify-center py-6 text-red-500">
+            <AlertTriangle className="h-6 w-6 mr-2" />
+            <span>{error}</span>
+          </div>
+        ) : activities.length === 0 ? (
+          <div className="text-center py-6 text-gray-500">
+            Aucune activité récente
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {activities.map((activity) => (
+              <div
+                key={activity.id}
+                className="flex items-start space-x-4 p-3 rounded-lg hover:bg-accent/50 transition-colors"
+              >
+                <div className={cn(
+                  "p-2 rounded-full bg-accent/10",
+                  getActivityColor(activity.type)
+                )}>
+                  {getActivityIcon(activity.type)}
+                </div>
+                <div className="flex-1 space-y-1">
+                  <p className="text-sm font-medium">
+                    {activity.description}
+                  </p>
+                  <div className="flex items-center text-xs text-muted-foreground">
+                    <span>{activity.user?.username}</span>
+                    <span className="mx-1">•</span>
+                    <span>
+                      {formatDistanceToNow(new Date(activity.createdAt), {
+                        addSuffix: true,
+                        locale: fr
+                      })}
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-          {activities.length === 0 && (
-            <div className="flex flex-col items-center justify-center p-6 text-muted-foreground bg-secondary/20 rounded-lg">
-              <ActivityIcon className="h-8 w-8 mb-2 opacity-50" />
-              <p className="text-sm">No recent activities</p>
-            </div>
-          )}
-        </div>
-        {total > pageSize && (
-          <div className="flex justify-center space-x-2 mt-4">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage(p => p + 1)}
-              disabled={page * pageSize >= total}
-            >
-              Next
-            </Button>
+            ))}
+            {total > pageSize && (
+              <div className="flex justify-center space-x-2 mt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1 || isLoading}
+                >
+                  Précédent
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(p => p + 1)}
+                  disabled={page * pageSize >= total || isLoading}
+                >
+                  Suivant
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </CardContent>

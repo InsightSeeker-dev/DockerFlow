@@ -38,6 +38,13 @@ import {
   Terminal,
   Settings,
   MoreVertical,
+  Cpu,
+  HardDrive,
+  Signal,
+  ExternalLink,
+  Network,
+  Globe,
+  Calendar,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -71,6 +78,11 @@ interface ContainerLogs {
   type: 'stdout' | 'stderr';
 }
 
+interface AvailableImage {
+  id: string;
+  tags: string[];
+}
+
 export default function ContainerManager() {
   const [containers, setContainers] = useState<Container[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,6 +101,8 @@ export default function ContainerManager() {
   });
   const [subdomainError, setSubdomainError] = useState<string | null>(null);
   const [isCheckingSubdomain, setIsCheckingSubdomain] = useState(false);
+  const [availableImages, setAvailableImages] = useState<AvailableImage[]>([]);
+  const [isLoadingImages, setIsLoadingImages] = useState(false);
 
   useEffect(() => {
     fetchContainers();
@@ -310,6 +324,18 @@ export default function ContainerManager() {
       });
   };
 
+  const formatPort = (port: any) => {
+    if (typeof port === 'object') {
+      const { PrivatePort, PublicPort, Type } = port;
+      return {
+        privatePort: PrivatePort,
+        publicPort: PublicPort,
+        type: Type?.toLowerCase() || 'tcp'
+      };
+    }
+    return { privatePort: port, publicPort: port, type: 'tcp' };
+  };
+
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case 'running':
@@ -322,6 +348,30 @@ export default function ContainerManager() {
         return 'bg-gray-500/10 text-gray-500';
     }
   };
+
+  const fetchAvailableImages = async () => {
+    setIsLoadingImages(true);
+    try {
+      const response = await fetch('/api/admin/images');
+      if (response.ok) {
+        const data = await response.json();
+        setAvailableImages(data);
+      } else {
+        throw new Error('Failed to fetch images');
+      }
+    } catch (error) {
+      console.error('Failed to fetch images:', error);
+      toast.error('Failed to fetch available images');
+    } finally {
+      setIsLoadingImages(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isCreateDialogOpen) {
+      fetchAvailableImages();
+    }
+  }, [isCreateDialogOpen]);
 
   if (loading) {
     return <div>Loading...</div>;
@@ -339,105 +389,207 @@ export default function ContainerManager() {
       </div>
 
       <Card>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableHeader>Name</TableHeader>
-              <TableHeader>Image</TableHeader>
-              <TableHeader>Status</TableHeader>
-              <TableHeader>Subdomain</TableHeader>
-              <TableHeader>Created</TableHeader>
-              <TableHeader>Actions</TableHeader>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {containers.map((container) => (
-              <TableRow key={container.id}>
-                <TableCell className="font-medium">{container.name}</TableCell>
-                <TableCell>{container.imageId}</TableCell>
-                <TableCell>
-                  <Badge
-                    variant={
-                      container.status === 'running'
-                        ? 'default'
-                        : container.status === 'stopped'
-                        ? 'secondary'
-                        : 'destructive'
-                    }
-                    className={
-                      container.status === 'running'
-                        ? 'bg-green-500/10 text-green-500'
-                        : container.status === 'stopped'
-                        ? 'bg-yellow-500/10 text-yellow-500'
-                        : 'bg-red-500/10 text-red-500'
-                    }
-                  >
-                    {container.status}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  {container.subdomain ? (
-                    <a
-                      href={`https://${container.subdomain}.dockersphere.ovh`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-500 hover:underline"
-                    >
-                      {container.subdomain}.dockersphere.ovh
-                    </a>
-                  ) : (
-                    '-'
-                  )}
-                </TableCell>
-                <TableCell>
-                  {new Date(container.created).toLocaleDateString()}
-                </TableCell>
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" className="h-8 w-8 p-0">
-                        <MoreVertical className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={() => handleContainerAction(container.id, 'start')}
+        <CardHeader>
+          <CardTitle>Containers</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="font-semibold">Name</TableHead>
+                  <TableHead className="font-semibold">Image</TableHead>
+                  <TableHead className="font-semibold">Status</TableHead>
+                  <TableHead className="font-semibold">
+                    <div className="flex items-center space-x-2">
+                      <Cpu className="h-4 w-4" />
+                      <span>Resources</span>
+                    </div>
+                  </TableHead>
+                  <TableHead className="font-semibold">
+                    <div className="flex items-center space-x-2">
+                      <Signal className="h-4 w-4" />
+                      <span>Ports</span>
+                    </div>
+                  </TableHead>
+                  <TableHead className="font-semibold">
+                    <div className="flex items-center space-x-2">
+                      <Network className="h-4 w-4" />
+                      <span>Network</span>
+                    </div>
+                  </TableHead>
+                  <TableHead className="font-semibold">
+                    <div className="flex items-center space-x-2">
+                      <Globe className="h-4 w-4" />
+                      <span>Subdomain</span>
+                    </div>
+                  </TableHead>
+                  <TableHead className="font-semibold">
+                    <div className="flex items-center space-x-2">
+                      <Calendar className="h-4 w-4" />
+                      <span>Created</span>
+                    </div>
+                  </TableHead>
+                  <TableHead className="w-[100px]">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {containers.map((container) => (
+                  <TableRow key={container.id} className="hover:bg-muted/50">
+                    <TableCell className="font-medium">
+                      <div className="flex items-center space-x-2">
+                        <div className={`h-2 w-2 rounded-full ${
+                          container.status === 'running' 
+                            ? 'bg-green-500' 
+                            : container.status === 'paused'
+                            ? 'bg-yellow-500'
+                            : 'bg-red-500'
+                        }`} />
+                        <span>{container.name}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium">{container.imageId}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={
+                          container.status === 'running'
+                            ? 'bg-green-500/10 text-green-500 border-green-500/20'
+                            : container.status === 'paused'
+                            ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'
+                            : 'bg-red-500/10 text-red-500 border-red-500/20'
+                        }
                       >
-                        <Play className="mr-2 h-4 w-4" />
-                        Start
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => handleContainerAction(container.id, 'stop')}
-                      >
-                        <Square className="mr-2 h-4 w-4" />
-                        Stop
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => handleViewLogs(container)}
-                      >
-                        <Terminal className="mr-2 h-4 w-4" />
-                        View Logs
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={() => {
-                          setSelectedContainer(container);
-                          setIsDeleteDialogOpen(true);
-                        }}
-                        className="text-red-600"
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+                        {container.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col space-y-1">
+                        <div className="flex items-center space-x-2">
+                          <Cpu className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-sm">{container.cpuLimit || 'Unlimited'}</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <HardDrive className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-sm">
+                            {container.memoryLimit 
+                              ? `${Math.round(container.memoryLimit / (1024 * 1024))}MB` 
+                              : 'Unlimited'}
+                          </span>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col space-y-1">
+                        {Object.entries(container.ports || {}).map(([hostPort, containerPort], index) => {
+                          const port = formatPort(containerPort);
+                          return (
+                            <div key={index} className="flex items-center space-x-2">
+                              <Badge 
+                                variant="outline" 
+                                className="text-xs px-2 py-0 border-blue-200 bg-blue-50/50"
+                              >
+                                {port.type}
+                              </Badge>
+                              <span className="text-sm font-mono">
+                                {port.publicPort}:{port.privatePort}
+                              </span>
+                            </div>
+                          );
+                        })}
+                        {(!container.ports || Object.keys(container.ports).length === 0) && (
+                          <span className="text-sm text-muted-foreground">No ports</span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center space-x-2">
+                        <Signal className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm">proxy</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {container.subdomain ? (
+                        <a
+                          href={`https://${container.subdomain}.dockersphere.ovh`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center space-x-2 text-blue-500 hover:text-blue-600"
+                        >
+                          <span className="text-sm">{container.subdomain}.dockersphere.ovh</span>
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <span className="text-sm">
+                          {new Date(container.created).toLocaleDateString()}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(container.created).toLocaleTimeString()}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreVertical className="h-4 w-4" />
+                            <span className="sr-only">Open menu</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-[160px]">
+                          <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => handleContainerAction(container.id, 'start')}
+                          >
+                            <Play className="mr-2 h-4 w-4" />
+                            <span>Start</span>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleContainerAction(container.id, 'stop')}
+                          >
+                            <Square className="mr-2 h-4 w-4" />
+                            <span>Stop</span>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleContainerAction(container.id, 'restart')}
+                          >
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            <span>Restart</span>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleViewLogs(container)}>
+                            <Terminal className="mr-2 h-4 w-4" />
+                            <span>View Logs</span>
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setSelectedContainer(container);
+                              setIsDeleteDialogOpen(true);
+                            }}
+                            className="text-red-600"
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            <span>Delete</span>
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
       </Card>
 
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
@@ -512,14 +664,43 @@ export default function ContainerManager() {
               <Label htmlFor="image" className="text-right">
                 Image
               </Label>
-              <Input
-                id="image"
-                value={newContainer.image}
-                onChange={(e) =>
-                  setNewContainer({ ...newContainer, image: e.target.value })
-                }
-                className="col-span-3"
-              />
+              <div className="col-span-3 space-y-2">
+                <Select
+                  value={newContainer.image}
+                  onValueChange={(value) =>
+                    setNewContainer({ ...newContainer, image: value })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select an image" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {isLoadingImages ? (
+                      <SelectItem value="loading" disabled>
+                        Loading images...
+                      </SelectItem>
+                    ) : (
+                      availableImages.map((image) => {
+                        const displayName = image.tags && image.tags.length > 0 
+                          ? image.tags[0] 
+                          : image.id.substring(0, 12);
+                        return (
+                          <SelectItem key={image.id} value={image.id}>
+                            <span className="font-mono">
+                              {displayName}
+                            </span>
+                          </SelectItem>
+                        );
+                      })
+                    )}
+                  </SelectContent>
+                </Select>
+                {newContainer.image && (
+                  <p className="text-xs text-muted-foreground">
+                    Selected image: {newContainer.image}
+                  </p>
+                )}
+              </div>
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="subdomain" className="text-right">
@@ -552,50 +733,83 @@ export default function ContainerManager() {
               <Label htmlFor="ports" className="text-right">
                 Ports
               </Label>
-              <Input
-                id="ports"
-                value={newContainer.ports}
-                onChange={(e) =>
-                  setNewContainer({ ...newContainer, ports: e.target.value })
-                }
-                className="col-span-3"
-                placeholder="80:80, 443:443"
-              />
+              <div className="col-span-3 space-y-2">
+                <Input
+                  id="ports"
+                  value={newContainer.ports}
+                  onChange={(e) =>
+                    setNewContainer({ ...newContainer, ports: e.target.value })
+                  }
+                  placeholder="80:80, 443:443"
+                  className="flex-1"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Format: hostPort:containerPort, comma separated (e.g., 80:80, 443:443)
+                </p>
+              </div>
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="volumes" className="text-right">
                 Volumes
               </Label>
-              <Input
-                id="volumes"
-                value={newContainer.volumes}
-                onChange={(e) =>
-                  setNewContainer({ ...newContainer, volumes: e.target.value })
-                }
-                className="col-span-3"
-                placeholder="/host/path:/container/path"
-              />
+              <div className="col-span-3 space-y-2">
+                <Input
+                  id="volumes"
+                  value={newContainer.volumes}
+                  onChange={(e) =>
+                    setNewContainer({ ...newContainer, volumes: e.target.value })
+                  }
+                  placeholder="/host/path:/container/path"
+                  className="flex-1"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Format: hostPath:containerPath, comma separated
+                </p>
+              </div>
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="env" className="text-right">
-                Env
+                Environment
               </Label>
-              <Input
-                id="env"
-                value={newContainer.env}
-                onChange={(e) =>
-                  setNewContainer({ ...newContainer, env: e.target.value })
-                }
-                className="col-span-3"
-                placeholder="KEY=value,ANOTHER_KEY=value"
-              />
+              <div className="col-span-3 space-y-2">
+                <Input
+                  id="env"
+                  value={newContainer.env}
+                  onChange={(e) =>
+                    setNewContainer({ ...newContainer, env: e.target.value })
+                  }
+                  placeholder="KEY=value,ANOTHER_KEY=value"
+                  className="flex-1"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Format: KEY=value, comma separated
+                </p>
+              </div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsCreateDialogOpen(false);
+                setNewContainer({
+                  name: '',
+                  image: '',
+                  subdomain: '',
+                  ports: '',
+                  volumes: '',
+                  env: '',
+                });
+              }}
+            >
               Cancel
             </Button>
-            <Button onClick={handleCreateContainer}>Create Container</Button>
+            <Button 
+              onClick={handleCreateContainer}
+              disabled={!newContainer.name || !newContainer.image || isCheckingSubdomain}
+            >
+              Create Container
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

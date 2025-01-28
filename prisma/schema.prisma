@@ -148,24 +148,21 @@ model Session {
 }
 
 model Container {
-  id            String   @id @default(auto()) @map("_id") @db.ObjectId
-  name          String
-  imageId       String
-  status        String
-  subdomain     String
-  ports         Json?
-  volumes       Json?
-  env           Json?
-  cpuLimit      Int      @default(0)
-  memoryLimit   Int      @default(0)
-  created       DateTime @default(now())
-  userId        String   @db.ObjectId
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  imageId     String
+  status      String
+  ports       Json?
+  volumes     Json?
+  env         Json?
+  cpuLimit    Int
+  memoryLimit Int
+  subdomain   String   @unique  // Pour l'URL personnalisée (ex: moncontainer34)
+  created     DateTime @default(now())
+  userId      String   @db.ObjectId
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   resourceUsage ResourceUsage[]
 
-  @@unique([name])
-  @@unique([subdomain])
-  @@index([userId])
   @@map("containers")
 }
 
@@ -230,15 +227,16 @@ model Alert {
 }
 
 model Activity {
-  id          String      @id @default(auto()) @map("_id") @db.ObjectId
+  id          String       @id @default(auto()) @map("_id") @db.ObjectId
   type        ActivityType
   description String
-  userId      String      @db.ObjectId
   metadata    Json?
   ipAddress   String?
   userAgent   String?
-  createdAt   DateTime    @default(now())
-  user        User        @relation(fields: [userId], references: [id])
+  userId      String       @db.ObjectId
+  user        User         @relation(fields: [userId], references: [id])
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime?    @updatedAt
 
   @@map("activities")
 }

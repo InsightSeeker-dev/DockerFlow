@@ -63,21 +63,30 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const token = searchParams.get('token');
+    console.log('Received verification request with token:', token);
+    console.log('Request URL:', request.url);
 
     if (!token) {
+      console.log('Token missing in request');
       return NextResponse.redirect(
-        `${process.env.NEXT_PUBLIC_APP_URL}/verify-error?error=Verification token is missing`
+        `${process.env.NEXT_PUBLIC_APP_URL}/auth/verify-error?error=Verification token is missing`
       );
     }
 
+    console.log('Starting email verification process');
     await verifyEmail(token);
+    console.log('Email verification successful, redirecting to success page');
     return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_APP_URL}/verify-success`
+      `${process.env.NEXT_PUBLIC_APP_URL}/auth/verify-success`
     );
   } catch (error) {
     console.error('Verification error:', error);
+    console.error('Full error details:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    });
     return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_APP_URL}/verify-error?error=${encodeURIComponent(error instanceof Error ? error.message : 'Failed to verify email')}`
+      `${process.env.NEXT_PUBLIC_APP_URL}/auth/verify-error?error=${encodeURIComponent(error instanceof Error ? error.message : 'Failed to verify email')}`
     );
   }
 }

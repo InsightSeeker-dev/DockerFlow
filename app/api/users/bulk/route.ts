@@ -71,8 +71,33 @@ export async function POST(req: Request) {
         break;
 
       case 'delete':
-        // Delete users' containers first
+        // Supprimer d'abord toutes les activités des utilisateurs
+        await prisma.activity.deleteMany({
+          where: { userId: { in: userIds } },
+        });
+
+        // Supprimer les conteneurs des utilisateurs
         await prisma.container.deleteMany({
+          where: { userId: { in: userIds } },
+        });
+        
+        // Supprimer les alertes des utilisateurs
+        await prisma.alert.deleteMany({
+          where: { 
+            OR: [
+              { userId: { in: userIds } },
+              { acknowledgedById: { in: userIds } }
+            ]
+          },
+        });
+
+        // Supprimer les sessions du terminal
+        await prisma.terminalSession.deleteMany({
+          where: { userId: { in: userIds } },
+        });
+
+        // Supprimer les tokens de vérification
+        await prisma.verificationToken.deleteMany({
           where: { userId: { in: userIds } },
         });
         
@@ -85,7 +110,7 @@ export async function POST(req: Request) {
           })
         ));
 
-        // Then delete the users
+        // Enfin, supprimer les utilisateurs
         await prisma.user.deleteMany({
           where: { id: { in: userIds } },
         });

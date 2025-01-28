@@ -1,0 +1,15 @@
+http:
+  services:
+    nextapp:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:3000"  # Utilisation de host.docker.internal pour accéder à l'hôte
+
+  routers:
+    nextjs:
+      rule: "Host(`dockerflow.dockersphere.ovh`)"
+      service: nextapp
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt

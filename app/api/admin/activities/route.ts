@@ -2,9 +2,27 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { UserRole, UserStatus, ActivityType } from '@prisma/client';
+import { UserRole, UserStatus, ActivityType, Prisma } from '@prisma/client';
+import { Activity } from '@/types/activity';
 
 export const dynamic = 'force-dynamic';
+
+type ActivityWithUser = Prisma.ActivityGetPayload<{
+  select: {
+    id: true;
+    type: true;
+    description: true;
+    metadata: true;
+    createdAt: true;
+    user: {
+      select: {
+        username: true;
+        email: true;
+        role: true;
+      };
+    };
+  };
+}>;
 
 export async function GET(request: NextRequest) {
   try {
@@ -38,22 +56,25 @@ export async function GET(request: NextRequest) {
     const fiveDaysAgo = new Date();
     fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
 
-    // Récupérer le nombre total d'activités des 5 derniers jours
-    const total = await prisma.activity.count({
-      where: {
-        createdAt: {
-          gte: fiveDaysAgo
-        }
+    const whereCondition: Prisma.ActivityWhereInput = {
+      createdAt: {
+        gte: fiveDaysAgo
+      },
+      userId: {
+        in: await prisma.user.findMany({
+          select: { id: true }
+        }).then(users => users.map(u => u.id))
       }
+    };
+
+    // Récupérer le nombre total d'activités des 5 derniers jours avec utilisateur valide
+    const total = await prisma.activity.count({
+      where: whereCondition
     });
 
     // Récupérer les activités paginées des 5 derniers jours
     const activities = await prisma.activity.findMany({
-      where: {
-        createdAt: {
-          gte: fiveDaysAgo
-        }
-      },
+      where: whereCondition,
       take: pageSize,
       skip: (page - 1) * pageSize,
       orderBy: {
@@ -70,8 +91,22 @@ export async function GET(request: NextRequest) {
       }
     });
 
+    // Transformer les activités pour le format de réponse
+    const formattedActivities = activities.map(activity => ({
+      id: activity.id,
+      type: activity.type,
+      description: activity.description,
+      metadata: activity.metadata,
+      createdAt: activity.createdAt,
+      user: {
+        username: activity.user.username,
+        email: activity.user.email,
+        role: activity.user.role
+      }
+    }));
+
     return NextResponse.json({
-      activities,
+      activities: formattedActivities,
       total,
       page,
       pageSize,
@@ -123,10 +158,39 @@ export async function POST(request: NextRequest) {
         userId: user.id,
         ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
         userAgent: request.headers.get('user-agent') || undefined,
+        createdAt: new Date(),
       },
+      select: {
+        id: true,
+        type: true,
+        description: true,
+        metadata: true,
+        createdAt: true,
+        user: {
+          select: {
+            username: true,
+            email: true,
+            role: true
+          }
+        }
+      }
     });
 
-    return NextResponse.json(activity);
+    // Formater l'activité pour la réponse
+    const formattedActivity = {
+      id: activity.id,
+      type: activity.type,
+      description: activity.description,
+      metadata: activity.metadata,
+      createdAt: activity.createdAt,
+      user: activity.user ? {
+        username: activity.user.username,
+        email: activity.user.email,
+        role: activity.user.role
+      } : null
+    };
+
+    return NextResponse.json(formattedActivity);
   } catch (error) {
     console.error('Error creating activity:', error);
     return NextResponse.json(

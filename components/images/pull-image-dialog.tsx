@@ -1,203 +1,196 @@
-'use client';
-
-import { useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { z } from 'zod';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { useState } from "react";
 import { Input } from '@/components/ui/input';
-import { useToast } from '@/components/ui/use-toast';
+import { Alert } from '@/components/ui/alert';
 import { UploadIcon, Loader2 } from 'lucide-react';
-import { PullProgress } from './pull-progress';
+import { toast } from 'sonner';
 
-const pullImageSchema = z.object({
-  image: z.string().min(1, 'Image name is required'),
-  tag: z.string().default('latest'),
-});
+const MAX_MESSAGES = 100;
 
-type FormData = z.infer<typeof pullImageSchema>;
-
-interface PullImageDialogProps {
-  onSuccess: () => void;
+interface PullMessage {
+  status?: string;
+  error?: string;
+  progress?: string;
+  id?: string;
 }
 
-export function PullImageDialog({ onSuccess }: PullImageDialogProps) {
+export function PullImageDialog({ onSuccess }: { onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [pullMessages, setPullMessages] = useState<string[]>([]);
-  const { toast } = useToast();
-  const form = useForm<FormData>({
-    resolver: zodResolver(pullImageSchema),
-    defaultValues: {
-      image: '',
-      tag: 'latest',
-    },
-  });
+  const [imageRef, setImageRef] = useState("");
+  const [error, setError] = useState("");
 
-  async function onSubmit(data: FormData) {
-    if (isLoading) return;
-    
+  const handleClickOpen = () => {
+    setOpen(true);
+  };
+
+  const handleClose = () => {
+    if (!isLoading) {
+      setOpen(false);
+      setImageRef("");
+      setPullMessages([]);
+      setError("");
+    }
+  };
+
+  const isValidImageRef = (ref: string) => {
+    return ref.trim().length > 0;
+  };
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!isValidImageRef(imageRef)) {
+      setError("Please enter a valid image reference");
+      return;
+    }
+
     setIsLoading(true);
     setPullMessages([]);
+    setError("");
+
     try {
       const response = await fetch('/api/images/pull', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ image: imageRef }),
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to pull image');
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      // Lire le stream de réponse
       const reader = response.body?.getReader();
-      if (reader) {
-        let isPullComplete = false;
-        while (!isPullComplete) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          
-          // Traiter les messages du stream
-          const text = new TextDecoder().decode(value);
-          const lines = text.split('\n').filter(line => line.trim());
-          
-          setPullMessages(prev => [...prev, ...lines]);
-          
-          // Vérifier chaque ligne pour détecter la fin du pull
-          for (const line of lines) {
+      if (!reader) {
+        throw new Error("No reader available");
+      }
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = new TextDecoder().decode(value);
+        const lines = chunk.split("\n");
+
+        lines.forEach((line) => {
+          if (line.trim()) {
             try {
-              const event = JSON.parse(line);
-              if (event.error) {
-                throw new Error(event.error);
+              const message = JSON.parse(line) as PullMessage;
+              let displayMessage = "";
+
+              if (message.status) {
+                displayMessage = message.status;
               }
-              // Détecter si c'est le message de fin
-              if (event.status === 'Pull completed successfully') {
-                isPullComplete = true;
-                break;
+              if (message.progress) {
+                displayMessage = `${message.status}: ${message.progress}`;
               }
-            } catch (e) {
-              console.error('Error parsing stream:', e);
+              if (message.error) {
+                displayMessage = `Error: ${message.error}`;
+              }
+
+              if (displayMessage) {
+                setPullMessages((prev) => {
+                  const newMessages = [...prev, displayMessage];
+                  return newMessages.slice(-MAX_MESSAGES);
+                });
+              }
+            } catch (parseError) {
+              setPullMessages((prev) => {
+                const newMessages = [...prev, `Error parsing message: ${String(parseError)}`];
+                return newMessages.slice(-MAX_MESSAGES);
+              });
             }
           }
-        }
+        });
       }
 
-      toast({
-        title: 'Success',
-        description: 'Image pulled successfully',
-      });
-
-      form.reset();
-      setOpen(false);
+      toast.success("Image pulled successfully");
       onSuccess();
+      setOpen(false);
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'An error occurred',
-        variant: 'destructive',
-      });
+      setError(`Failed to pull image: ${String(error)}`);
     } finally {
       setIsLoading(false);
     }
-  }
+  };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button>
-          <UploadIcon className="mr-2 h-4 w-4" />
-          Pull Image
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Pull Docker Image</DialogTitle>
-          <DialogDescription>
-            Pull a Docker image from a registry.
-          </DialogDescription>
-        </DialogHeader>
+    <div>
+      <button
+        onClick={handleClickOpen}
+        className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
+      >
+        <UploadIcon className="mr-2 h-4 w-4" />
+        Pull Image
+      </button>
 
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="image"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Image Name</FormLabel>
-                  <FormControl>
-                    <Input placeholder="nginx" {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    Enter the name of the Docker image you want to pull.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
+      {open && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm">
+          <div className="fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 sm:rounded-lg">
+            <div className="flex flex-col space-y-2 text-center sm:text-left">
+              <h2 className="text-lg font-semibold">Pull Docker Image</h2>
+              <p className="text-sm text-muted-foreground">
+                Enter the image reference to pull from Docker Hub or another registry.
+              </p>
+            </div>
+
+            <form onSubmit={handleSubmit}>
+              {error && (
+                <Alert variant="destructive">
+                  <p>{error}</p>
+                </Alert>
               )}
-            />
 
-            <FormField
-              control={form.control}
-              name="tag"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Tag</FormLabel>
-                  <FormControl>
-                    <Input placeholder="latest" {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    Specify the tag of the image (default: latest).
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Image Reference</label>
+                <Input
+                  value={imageRef}
+                  onChange={(e) => setImageRef(e.target.value)}
+                  placeholder="e.g., nginx:latest"
+                  disabled={isLoading}
+                />
+                <p className="text-sm text-gray-500">
+                  Enter the full image reference (e.g., nginx:latest, ubuntu:20.04).
+                </p>
+              </div>
+
+              {pullMessages.length > 0 && (
+                <div className="max-h-60 overflow-y-auto border rounded p-2 bg-gray-50">
+                  {pullMessages.map((msg, idx) => (
+                    <div key={idx} className="text-sm">
+                      {msg}
+                    </div>
+                  ))}
+                </div>
               )}
-            />
 
-            {isLoading && pullMessages.length > 0 && (
-              <PullProgress messages={pullMessages} />
-            )}
-
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setOpen(false)} type="button">
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isLoading}>
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Pulling...
-                  </>
-                ) : (
-                  <>
-                    <UploadIcon className="mr-2 h-4 w-4" />
-                    Pull Image
-                  </>
-                )}
-              </Button>
-            </DialogFooter>
-          </form>
-        </Form>
-      </DialogContent>
-    </Dialog>
+              <div className="mt-4 flex justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={handleClose}
+                  className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
+                  disabled={isLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Pulling...
+                    </>
+                  ) : (
+                    'Pull'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

@@ -1,7 +1,22 @@
 import { getDockerClient } from './client';
-import { DockerImage } from './types';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { ImageInfo } from 'dockerode';
+
+interface DockerImageInspectInfo {
+  Id: string;
+  RepoTags: string[];
+  Config: {
+    ExposedPorts?: { [key: string]: {} };
+    Volumes?: { [key: string]: {} };
+  };
+}
+
+interface DockerImage {
+  Id: string;
+  RepoTags: string[];
+  RepoDigests: string[];
+}
 
 function transformImageInfo(image: ImageInfo): DockerImage {
   return {
@@ -77,5 +92,51 @@ export async function removeImage(userId: string, imageId: string): Promise<void
   } catch (error) {
     console.error('Error removing image:', error);
     throw new Error('Failed to remove image');
+  }
+}
+
+export async function getImageExposedPorts(imageName: string): Promise<number[]> {
+  try {
+    const docker = getDockerClient();
+    
+    // Pull l'image si elle n'existe pas
+    try {
+      await docker.pull(imageName);
+    } catch (error) {
+      console.error(`Failed to pull image ${imageName}:`, error);
+    }
+
+    // Inspecter l'image
+    const image = await docker.getImage(imageName).inspect() as DockerImageInspectInfo;
+    
+    // Extraire les ports exposés du Config
+    const exposedPorts = image.Config.ExposedPorts || {};
+    const ports = Object.keys(exposedPorts).map(port => {
+      // Convertir "80/tcp" en 80
+      const portNumber = parseInt(port.split('/')[0]);
+      return isNaN(portNumber) ? null : portNumber;
+    }).filter((port): port is number => port !== null);
+
+    // Si aucun port n'est exposé, retourner une liste vide
+    return ports.length > 0 ? ports : [];
+  } catch (error) {
+    console.error(`Failed to get exposed ports for image ${imageName}:`, error);
+    return [];
+  }
+}
+
+export async function getImageVolumes(imageName: string): Promise<string[]> {
+  try {
+    const docker = getDockerClient();
+    
+    // Inspecter l'image
+    const image = await docker.getImage(imageName).inspect() as DockerImageInspectInfo;
+    
+    // Extraire les volumes du Config
+    const volumes = image.Config.Volumes || {};
+    return Object.keys(volumes);
+  } catch (error) {
+    console.error(`Failed to get volumes for image ${imageName}:`, error);
+    return [];
   }
 }

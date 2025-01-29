@@ -8,10 +8,9 @@ import { checkStorageLimit, getImageSize } from '@/lib/docker/storage';
 import { pullImage } from '@/lib/docker/images';
 import { Session } from 'next-auth';
 import { Prisma, ActivityType } from '@prisma/client';
-import { containerActivity } from '@/lib/activity';
 import { ovhDNSService } from '@/lib/ovh/dns-service';
-
-export const dynamic = 'force-dynamic';
+import { ContainerCreateOptions, ContainerInfo } from 'dockerode';
+import { suggestAlternativePort } from '@/lib/docker/ports';
 
 interface ExtendedSession extends Session {
   user: {
@@ -21,18 +20,42 @@ interface ExtendedSession extends Session {
   } & Session['user']
 }
 
+interface DockerPort {
+  IP: string;
+  PrivatePort: number;
+  PublicPort: number;
+  Type: string;
+}
+
+interface ExtendedHostConfig {
+  NetworkMode: string;
+  NanoCpus?: number;
+  Memory?: number;
+}
+
+interface ExtendedContainerInfo extends Omit<ContainerInfo, 'HostConfig'> {
+  HostConfig?: ExtendedHostConfig;
+}
+
 const createContainerSchema = z.object({
-  name: z.string().min(1).max(63).regex(/^[a-zA-Z0-9-]+$/, 'Container name must contain only letters, numbers, and hyphens'),
+  name: z.string(),
   image: z.string(),
   subdomain: z.string().min(3).max(63).regex(/^[a-zA-Z0-9-]+$/, 'Subdomain must contain only letters, numbers, and hyphens'),
-  port: z.number().min(1),
-  enableHttps: z.boolean().default(true),
-  labels: z.record(z.string()).optional(),
-  env: z.record(z.string()).optional(),
-  volumes: z.record(z.string()).optional(),
-  cpuLimit: z.number().optional(),
-  memoryLimit: z.number().optional(),
+  ports: z.array(z.object({
+    hostPort: z.number(),
+    containerPort: z.number()
+  })),
+  volumes: z.array(z.object({
+    name: z.string(),
+    mountPath: z.string()
+  })),
+  env: z.array(z.object({
+    key: z.string(),
+    value: z.string()
+  })).optional()
 });
+
+type CreateContainerRequest = z.infer<typeof createContainerSchema>;
 
 const containerActionSchema = z.object({
   action: z.enum(['start', 'stop', 'remove']),
@@ -50,7 +73,9 @@ export async function GET() {
     }
 
     const docker = getDockerClient();
-    const containers = await docker.listContainers({ all: true });
+    const containers = await docker.listContainers({ all: true }) as unknown as ExtendedContainerInfo[];
+    
+    console.log('Raw containers data:', JSON.stringify(containers, null, 2));
     
     // Get user's containers from database with names and subdomains
     const userContainers = await prisma.container.findMany({
@@ -75,12 +100,33 @@ export async function GET() {
       .map(container => {
         const containerName = container.Names[0]?.replace('/', '');
         const dbInfo = containerInfoMap.get(containerName);
+
+        // Transformer les ports Docker en format attendu
+        console.log('Container ports before transform:', container.Ports);
+        const ports = container.Ports?.map(port => {
+          console.log('Processing port:', port);
+          return {
+            hostPort: port.PublicPort,
+            containerPort: port.PrivatePort
+          };
+        }) || [];
+        console.log('Transformed ports:', ports);
+
         return {
-          ...container,
-          subdomain: dbInfo?.subdomain
+          id: container.Id,
+          name: containerName,
+          imageId: container.Image,
+          status: container.State,
+          created: container.Created,
+          ports,
+          network: container.HostConfig?.NetworkMode,
+          subdomain: dbInfo?.subdomain,
+          cpuLimit: container.HostConfig?.NanoCpus ? container.HostConfig.NanoCpus / 1e9 : 0,
+          memoryLimit: container.HostConfig?.Memory || 0
         };
       });
     
+    console.log('Final filtered containers:', JSON.stringify(filteredContainers, null, 2));
     return NextResponse.json({ containers: filteredContainers });
   } catch (error) {
     console.error('Container API error:', error);
@@ -111,14 +157,14 @@ export async function POST(request: Request) {
       );
     }
 
-    const { name, image: imageName, subdomain, port, enableHttps, labels, env, volumes, cpuLimit, memoryLimit } = result.data;
+    const { name, image: imageName, subdomain, ports, volumes, env } = result.data;
 
     // Vérifier si le sous-domaine est déjà utilisé
     const existingContainer = await prisma.container.findFirst({
       where: {
         OR: [
           { name },
-          { env: { equals: { VIRTUAL_HOST: `${subdomain}.dockersphere.ovh` } } }
+          { subdomain }
         ]
       }
     });
@@ -130,83 +176,79 @@ export async function POST(request: Request) {
       );
     }
 
-    // Vérifier la limite de stockage avant de créer le conteneur
+    // Vérifier la limite de stockage
     const imageSize = await getImageSize(imageName);
     const hasSpace = await checkStorageLimit(session.user.id, imageSize);
     
     if (!hasSpace) {
       return NextResponse.json(
-        { error: 'Storage limit exceeded. Please remove some containers or images to free up space.' },
+        { error: 'Storage limit exceeded' },
         { status: 400 }
       );
     }
 
-    // S'assurer que l'image est disponible
-    const image = imageName.includes(':') ? imageName : `${imageName}:latest`;
-    await pullImage(image, session.user.id);
+    // Trouver un port disponible pour chaque port demandé
+    const mappedPorts = await Promise.all(ports.map(async (port) => ({
+      ...port,
+      hostPort: await suggestAlternativePort(port.containerPort)
+    })));
 
-    // Créer le sous-domaine DNS chez OVH
-    try {
-      await ovhDNSService.addSubdomain(subdomain);
-    } catch (error) {
-      console.error('Erreur lors de la création du sous-domaine:', error);
-      return NextResponse.json(
-        { error: 'Failed to create subdomain. Please try again.' },
-        { status: 500 }
-      );
+    const docker = getDockerClient();
+
+    // Créer les volumes Docker si nécessaire
+    for (const volume of volumes) {
+      try {
+        await docker.createVolume({
+          Name: volume.name,
+          Driver: 'local'
+        });
+      } catch (error) {
+        console.error(`Failed to create volume ${volume.name}:`, error);
+      }
     }
 
-    // Créer le conteneur avec la configuration Traefik
-    const docker = getDockerClient();
-    const containerConfig = {
-      Image: image,
+    // Préparer la configuration du conteneur
+    const containerConfig: ContainerCreateOptions = {
+      Image: imageName,
       name,
+      ExposedPorts: mappedPorts.reduce((acc, { containerPort }) => ({
+        ...acc,
+        [`${containerPort}/tcp`]: {}
+      }), {} as Record<string, {}>),
+      HostConfig: {
+        PortBindings: mappedPorts.reduce((acc, { hostPort, containerPort }) => ({
+          ...acc,
+          [`${containerPort}/tcp`]: [{ HostPort: hostPort.toString() }]
+        }), {} as Record<string, Array<{ HostPort: string }>>),
+        Binds: volumes.map(v => `${v.name}:${v.mountPath}`),
+      },
+      Env: env ? env.map(e => `${e.key}=${e.value}`) : [],
       Labels: {
-        ...labels,
         'traefik.enable': 'true',
         [`traefik.http.routers.${name}.rule`]: `Host(\`${subdomain}.dockersphere.ovh\`)`,
-        [`traefik.http.routers.${name}.entrypoints`]: enableHttps ? 'websecure' : 'web',
-        [`traefik.http.routers.${name}.tls.certresolver`]: enableHttps ? 'letsencrypt' : '',
-      },
-      ExposedPorts: {
-        [`${port}/tcp`]: {}
-      },
-      HostConfig: {
-        PortBindings: {
-          [`${port}/tcp`]: [{ HostPort: '0' }]
-        },
-        Binds: volumes ? Object.entries(volumes).map(([host, container]) => `${host}:${container}`) : [],
-        RestartPolicy: {
-          Name: 'unless-stopped'
-        }
-      },
-      Env: [
-        ...Object.entries(env || {}).map(([key, value]) => `${key}=${value}`),
-        `VIRTUAL_HOST=${subdomain}.dockersphere.ovh`,
-        enableHttps ? `LETSENCRYPT_HOST=${subdomain}.dockersphere.ovh` : ''
-      ]
+        [`traefik.http.services.${name}.loadbalancer.server.port`]: mappedPorts[0].containerPort.toString()
+      }
     };
 
+    // Créer et démarrer le conteneur
     const container = await docker.createContainer(containerConfig);
     await container.start();
 
-    // Créer l'entrée dans la base de données
-    const dbContainer = await prisma.container.create({
+    // Enregistrer le conteneur dans la base de données
+    await prisma.container.create({
       data: {
+        id: container.id,
         name,
-        imageId: image,
-        status: 'running',
-        userId: session.user.id,
+        imageId: imageName,
         subdomain,
-        ports: { [port]: port },
-        volumes: volumes || {},
-        env: {
-          ...(env || {}),
-          VIRTUAL_HOST: `${subdomain}.dockersphere.ovh`,
-          LETSENCRYPT_HOST: enableHttps ? `${subdomain}.dockersphere.ovh` : ''
-        },
-        cpuLimit: cpuLimit || 0,
-        memoryLimit: memoryLimit || 0
+        userId: session.user.id,
+        status: 'running',
+        created: new Date(),
+        ports: mappedPorts as Prisma.JsonValue,
+        volumes: volumes as Prisma.JsonValue,
+        env: env as Prisma.JsonValue,
+        cpuLimit: 0,
+        memoryLimit: 0
       }
     });
 
@@ -215,28 +257,26 @@ export async function POST(request: Request) {
       data: {
         type: ActivityType.CONTAINER_CREATE,
         userId: session.user.id,
-        description: `Created container ${name} with subdomain ${subdomain}.dockersphere.ovh`,
+        description: `Created container ${name} with ports ${mappedPorts.map(p => `${p.hostPort}->${p.containerPort}`).join(', ')}`,
         metadata: {
           containerId: container.id,
           containerName: name,
-          image,
-          subdomain: `${subdomain}.dockersphere.ovh`
+          image: imageName,
+          ports: mappedPorts
         }
       }
     });
 
-    return NextResponse.json({
-      container: {
-        id: container.id,
-        name,
-        subdomain: `${subdomain}.dockersphere.ovh`,
-        status: 'running'
-      }
+    return NextResponse.json({ 
+      id: container.id,
+      ports: mappedPorts
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating container:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Failed to create container';
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message || 'Failed to create container' },
+      { status: 500 }
+    );
   }
 }
 

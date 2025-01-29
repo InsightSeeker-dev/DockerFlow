@@ -23,10 +23,47 @@ export async function GET(req: NextRequest) {
     }
 
     const docker = new Docker();
-    const images = await docker.listImages();
+    const images = await docker.listImages({ all: true });
 
-    // Trier les images par date de création (plus récentes en premier)
-    const sortedImages = images.sort((a, b) => b.Created - a.Created);
+    // Traiter les images pour extraire les noms et tags
+    const processedImages = images.map(image => {
+      const repoTags = image.RepoTags || [];
+      const repoDigests = image.RepoDigests || [];
+      
+      // Si l'image n'a pas de tag mais a un digest, créer un tag à partir du digest
+      if (repoTags.length === 0 && repoDigests.length > 0) {
+        const digest = repoDigests[0];
+        const [name] = digest.split('@');
+        if (name && name !== '<none>') {
+          repoTags.push(`${name}:latest`);
+        }
+      }
+
+      // Si toujours pas de tag, utiliser l'ID court
+      const tags = repoTags.length > 0 ? repoTags : [];
+      const shortId = image.Id.substring(7, 19);
+
+      return {
+        ...image,
+        // Ne jamais renvoyer un tableau vide de tags
+        RepoTags: tags.length > 0 ? tags : [`sha256:${shortId}`],
+        // Ajouter des champs pour faciliter l'affichage
+        displayName: tags.length > 0 ? tags[0].split(':')[0] : `sha256:${shortId}`,
+        displayTag: tags.length > 0 ? tags[0].split(':')[1] || 'latest' : 'latest'
+      };
+    });
+
+    // Trier les images : d'abord celles avec des tags, puis par date
+    const sortedImages = processedImages.sort((a, b) => {
+      // Priorité aux images avec des vrais tags
+      const aHasTag = a.RepoTags.length > 0 && !a.RepoTags[0].startsWith('sha256:');
+      const bHasTag = b.RepoTags.length > 0 && !b.RepoTags[0].startsWith('sha256:');
+      if (aHasTag !== bHasTag) {
+        return aHasTag ? -1 : 1;
+      }
+      // Ensuite par date
+      return b.Created - a.Created;
+    });
 
     return new NextResponse(JSON.stringify(sortedImages), {
       headers: { 'Content-Type': 'application/json' }

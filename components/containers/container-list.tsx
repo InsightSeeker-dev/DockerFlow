@@ -1,12 +1,16 @@
-// /DockerFlow/components/containers/container-list.tsx
 'use client';
 
-import { useState, useMemo } from 'react';
-import { Container } from '@/lib/docker/types';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
-import { StatusBadge } from '@/components/ui/status-badge';
 import {
   Select,
   SelectContent,
@@ -14,32 +18,38 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useToast } from '@/components/ui/use-toast';
 import {
-  RefreshCw,
-  Search as SearchIcon,
-  Filter as FilterIcon,
-  SortAsc as SortAscIcon,
-  ExternalLink as ExternalLinkIcon,
-  Play,
-  Square,
+  Dialog,
+  DialogContent,
+} from '@/components/ui/dialog';
+import { ContainerCreation } from './container-creation';
+import { ContainerLogs } from './container-logs';
+import { StatusBadge } from './status-badge';
+import { EmptyState } from './empty-state';
+import { Container } from '@/lib/docker/types';
+import { cn } from '@/lib/utils';
+import { 
+  Plus, 
+  RefreshCw, 
+  Play, 
+  Square, 
+  RotateCw, 
+  ScrollText, 
   Trash2,
   Box,
+  Loader2
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { ContainerDetails } from './container-details';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
 
 interface ContainerListProps {
   containers: Container[];
   isLoading: boolean;
-  error: string | null;
+  error?: string | null;
   onRefresh: () => void;
+  onStart?: (id: string) => void;
+  onStop?: (id: string) => void;
+  onDelete?: (id: string) => void;
+  onLogs?: (id: string) => void;
 }
 
 export function ContainerList({
@@ -47,308 +57,275 @@ export function ContainerList({
   isLoading,
   error,
   onRefresh,
+  onStart,
+  onStop,
+  onDelete,
+  onLogs,
 }: ContainerListProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<'name' | 'status' | 'created'>('created');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [selectedContainer, setSelectedContainer] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [selectedContainer, setSelectedContainer] = useState<Container | null>(null);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const { toast } = useToast();
+
+  // Rafraîchir automatiquement toutes les 10 secondes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      console.log('Auto-refreshing container list...');
+      onRefresh();
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [onRefresh]);
+
+  // Rafraîchir après la création d'un conteneur
+  const handleCreateSuccess = useCallback(() => {
+    console.log('Container created, refreshing list...');
+    setShowCreateDialog(false);
+    onRefresh();
+  }, [onRefresh]);
 
   // Filter and sort containers
   const filteredContainers = useMemo(() => {
+    if (!Array.isArray(containers)) {
+      console.error('Containers is not an array:', containers);
+      return [];
+    }
+    
     return containers
       .filter((container) => {
-        const containerName = container.Names[0].replace(/^\//, '');
-        const matchesSearch = containerName
-          .toLowerCase()
-          .includes(searchQuery.toLowerCase());
-        const matchesStatus =
-          statusFilter === 'all' || container.State.toLowerCase() === statusFilter;
+        const name = container.Names[0].replace(/^\//, '');
+        const image = container.Image;
+        const searchLower = searchQuery.toLowerCase();
+        
+        // Filter by search query
+        const matchesSearch = 
+          name.toLowerCase().includes(searchLower) ||
+          image.toLowerCase().includes(searchLower);
+
+        // Filter by status
+        const matchesStatus = 
+          statusFilter === 'all' || 
+          container.State.toLowerCase() === statusFilter;
+
         return matchesSearch && matchesStatus;
       })
-      .sort((a, b) => {
-        let comparison = 0;
-        switch (sortBy) {
-          case 'name':
-            comparison = a.Names[0].localeCompare(b.Names[0]);
-            break;
-          case 'status':
-            comparison = a.State.localeCompare(b.State);
-            break;
-          case 'created':
-            comparison = a.Created - b.Created;
-            break;
-        }
-        return sortOrder === 'asc' ? comparison : -comparison;
-      });
-  }, [containers, searchQuery, statusFilter, sortBy, sortOrder]);
-
-  const handleAction = async (containerId: string, action: 'start' | 'stop' | 'delete') => {
-    if (action === 'delete' && !window.confirm('Êtes-vous sûr de vouloir supprimer ce conteneur ?')) {
-      return;
-    }
-
-    try {
-      setActionLoading(containerId);
-      const response = await fetch(`/api/containers/${containerId}/${action}`, {
-        method: 'POST',
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to ${action} container`);
-      }
-      
-      onRefresh();
-    } catch (error) {
-      console.error(`Failed to ${action} container:`, error);
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center p-8 space-y-4 border-2 border-red-200 rounded-lg bg-red-50 dark:border-red-800 dark:bg-red-950">
-        <div className="text-red-500">
-          <span className="font-semibold">Erreur:</span> {error}
-        </div>
-        <Button onClick={onRefresh} variant="outline" size="sm">
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Réessayer
-        </Button>
-      </div>
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center p-8 space-y-4">
-        <RefreshCw className="h-8 w-8 animate-spin text-blue-500" />
-        <p className="text-lg text-muted-foreground">Chargement des conteneurs...</p>
-      </div>
-    );
-  }
-
-  if (filteredContainers.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center p-8 space-y-4 border-2 border-dashed rounded-lg">
-        <div className="p-4 rounded-full bg-muted">
-          <Box className="h-8 w-8 text-muted-foreground" />
-        </div>
-        <div className="text-center">
-          <h3 className="text-lg font-semibold">Aucun conteneur trouvé</h3>
-          <p className="text-sm text-muted-foreground">
-            {searchQuery || statusFilter !== 'all' 
-              ? "Aucun conteneur ne correspond à vos critères de recherche" 
-              : "Commencez par créer un nouveau conteneur"}
-          </p>
-        </div>
-      </div>
-    );
-  }
+      .sort((a, b) => b.Created - a.Created);
+  }, [containers, searchQuery, statusFilter]);
 
   return (
-    <div className="space-y-4">
-      <Dialog open={!!selectedContainer} onOpenChange={() => setSelectedContainer(null)}>
-        <DialogContent className="max-w-4xl">
-          {selectedContainer && (
-            <ContainerDetails
-              containerId={selectedContainer}
-              onClose={() => setSelectedContainer(null)}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
-
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-1 items-center space-x-2">
-          <div className="relative flex-1">
-            <SearchIcon className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Rechercher des conteneurs..."
-              className="pl-8"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
+    <div className="container mx-auto p-4 space-y-6">
+      {/* Header with refresh and create buttons - only visible when there are containers */}
+      {Array.isArray(containers) && containers.length > 0 && (
+        <div className="flex justify-end items-center">
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => onRefresh()}
+              variant="outline"
+              size="icon"
+              className="relative dark:border-gray-700 dark:hover:bg-gray-800"
+              disabled={isLoading}
+            >
+              <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
+            </Button>
+            <Button 
+              onClick={() => setShowCreateDialog(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-medium"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Créer un conteneur
+            </Button>
           </div>
-          <Select
-            value={statusFilter}
-            onValueChange={(value) => setStatusFilter(value)}
-          >
-            <SelectTrigger className="w-[130px]">
-              <FilterIcon className="mr-2 h-4 w-4" />
-              <SelectValue placeholder="Filtrer par statut" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tous</SelectItem>
-              <SelectItem value="running">En cours</SelectItem>
-              <SelectItem value="exited">Arrêtés</SelectItem>
-              <SelectItem value="created">Créés</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
-        <div className="flex items-center space-x-2">
-          <Select value={sortBy} onValueChange={(value: any) => setSortBy(value)}>
-            <SelectTrigger className="w-[130px]">
-              <SortAscIcon className="mr-2 h-4 w-4" />
-              <SelectValue placeholder="Trier par" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="name">Nom</SelectItem>
-              <SelectItem value="status">Statut</SelectItem>
-              <SelectItem value="created">Date de création</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-          >
-            <SortAscIcon
-              className={cn('h-4 w-4 transition-transform', {
-                'rotate-180': sortOrder === 'desc',
-              })}
-            />
-          </Button>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={onRefresh}
-                  className="shrink-0"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Rafraîchir la liste</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+      )}
+      {/* Main content */}
+      {isLoading ? (
+        <div className="flex justify-center items-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
         </div>
-      </div>
-      
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[200px]">Nom</TableHead>
-              <TableHead className="w-[100px]">Statut</TableHead>
-              <TableHead>Image</TableHead>
-              <TableHead className="w-[150px]">Créé le</TableHead>
-              <TableHead className="w-[120px]">Ports</TableHead>
-              <TableHead>URL</TableHead>
-              <TableHead className="text-right w-[100px]">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredContainers.map((container) => (
-              <TableRow 
-                key={container.Id}
-                className="cursor-pointer hover:bg-muted/50"
-                onClick={() => setSelectedContainer(container.Id)}
-              >
-                <TableCell className="font-medium">
-                  {container.Names[0].replace(/^\//, '')}
-                </TableCell>
-                <TableCell>
-                  <StatusBadge status={container.State} />
-                </TableCell>
-                <TableCell className="font-mono text-sm truncate max-w-[200px]">
-                  {container.Image}
-                </TableCell>
-                <TableCell className="text-muted-foreground text-sm">
-                  {new Date(container.Created * 1000).toLocaleString('fr-FR')}
-                </TableCell>
-                <TableCell className="font-mono text-sm">
-                  {container.Ports?.length > 0 
-                    ? container.Ports.map(port => 
-                        `${port.PublicPort}:${port.PrivatePort}`
-                      ).join(', ')
-                    : '-'
-                  }
-                </TableCell>
-                <TableCell>
-                  {container.State.toLowerCase() === 'running' && container.subdomain && (
-                    <a
-                      href={`http://${container.subdomain}.dockersphere.ovh`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
-                    >
-                      {container.subdomain}.dockersphere.ovh
-                      <ExternalLinkIcon className="h-3 w-3" />
-                    </a>
-                  )}
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end space-x-2">
-                    <TooltipProvider>
-                      {container.State.toLowerCase() !== 'running' ? (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleAction(container.Id, 'start')}
-                              disabled={actionLoading === container.Id}
-                            >
-                              {actionLoading === container.Id ? (
-                                <RefreshCw className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Play className="h-4 w-4" />
+      ) : !Array.isArray(containers) || containers.length === 0 ? (
+        <EmptyState onCreateClick={() => setShowCreateDialog(true)} />
+      ) : (
+        // Container list with filters
+        <div className="space-y-6">
+          {/* Filters */}
+          <div className="flex gap-4 items-center">
+            <div className="flex-1">
+              <Input
+                placeholder="Rechercher un conteneur..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="max-w-sm dark:bg-gray-900 dark:border-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
+              />
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[180px] dark:bg-gray-900 dark:border-gray-700 dark:text-gray-200">
+                <SelectValue placeholder="Filtrer par statut" />
+              </SelectTrigger>
+              <SelectContent className="dark:bg-gray-900 dark:border-gray-700">
+                <SelectItem value="all">Tous les statuts</SelectItem>
+                <SelectItem value="running">En cours</SelectItem>
+                <SelectItem value="exited">Arrêté</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Container list */}
+          {filteredContainers.length > 0 ? (
+            <div className="rounded-md border border-gray-800">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-gray-800">
+                    <TableHead className="text-gray-400">Nom</TableHead>
+                    <TableHead className="text-gray-400">Image</TableHead>
+                    <TableHead className="text-gray-400">Statut</TableHead>
+                    <TableHead className="text-gray-400">Ports</TableHead>
+                    <TableHead className="text-gray-400">Sous-domaine</TableHead>
+                    <TableHead className="text-gray-400">Créé par</TableHead>
+                    <TableHead className="text-gray-400">Créé le</TableHead>
+                    <TableHead className="text-gray-400 text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredContainers.map((container) => {
+                    const name = container.Names[0].replace(/^\//, '');
+                    const isRunning = container.State === 'running';
+                    const ports = container.customConfig?.ports || [];
+                    const createdDate = new Date(container.Created * 1000).toLocaleString();
+                    const subdomain = container.customConfig?.subdomain;
+                    const user = container.user;
+                    const traefikEnabled = container.traefik?.enabled;
+
+                    return (
+                      <TableRow key={container.Id} className="border-gray-800">
+                        <TableCell className="font-medium text-gray-200">
+                          {name}
+                        </TableCell>
+                        <TableCell className="text-gray-400">
+                          {container.Image}
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge status={container.State} />
+                        </TableCell>
+                        <TableCell className="text-gray-400">
+                          {ports.map((port, index) => (
+                            <div key={index} className="flex items-center gap-1">
+                              <span className="text-gray-500">host:</span>{port.hostPort}
+                              <span className="text-gray-500">→</span>
+                              <span className="text-gray-500">container:</span>{port.containerPort}
+                            </div>
+                          ))}
+                        </TableCell>
+                        <TableCell className="text-gray-400">
+                          {subdomain && (
+                            <div className="flex items-center gap-2">
+                              <span>{subdomain}.dockersphere.ovh</span>
+                              {traefikEnabled && (
+                                <span className="text-xs bg-green-950 text-green-400 px-2 py-0.5 rounded">
+                                  HTTPS
+                                </span>
                               )}
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Démarrer le conteneur</TooltipContent>
-                        </Tooltip>
-                      ) : (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleAction(container.Id, 'stop')}
-                              disabled={actionLoading === container.Id}
-                            >
-                              {actionLoading === container.Id ? (
-                                <RefreshCw className="h-4 w-4 animate-spin" />
-                              ) : (
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-gray-400">
+                          <div className="flex items-center gap-2">
+                            <span>{user?.name || user?.email}</span>
+                            <span className={cn(
+                              "text-xs px-2 py-0.5 rounded",
+                              user?.role === 'ADMIN' 
+                                ? "bg-purple-950 text-purple-400"
+                                : "bg-blue-950 text-blue-400"
+                            )}>
+                              {user?.role}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-gray-400">
+                          {createdDate}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end items-center space-x-2">
+                            {isRunning ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex items-center gap-1"
+                                onClick={() => onStop?.(container.Id)}
+                              >
                                 <Square className="h-4 w-4" />
-                              )}
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Arrêter le conteneur</TooltipContent>
-                        </Tooltip>
-                      )}
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleAction(container.Id, 'delete')}
-                            disabled={actionLoading === container.Id}
-                            className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
-                          >
-                            {actionLoading === container.Id ? (
-                              <RefreshCw className="h-4 w-4 animate-spin" />
+                                Arrêter
+                              </Button>
                             ) : (
-                              <Trash2 className="h-4 w-4" />
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex items-center gap-1"
+                                onClick={() => onStart?.(container.Id)}
+                              >
+                                <Play className="h-4 w-4" />
+                                Démarrer
+                              </Button>
                             )}
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Supprimer le conteneur</TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex items-center gap-1"
+                              onClick={() => onLogs?.(container.Id)}
+                            >
+                              <ScrollText className="h-4 w-4" />
+                              Logs
+                            </Button>
+                            {subdomain && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex items-center gap-1"
+                                asChild
+                              >
+                                <a
+                                  href={`https://${subdomain}.dockersphere.ovh`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  <Box className="h-4 w-4" />
+                                  Accéder
+                                </a>
+                              </Button>
+                            )}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex items-center gap-1 text-red-500 hover:text-red-600"
+                              onClick={() => onDelete?.(container.Id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Supprimer
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          ) : (
+            <div className="flex justify-center items-center h-64">
+              <p className="text-gray-400">
+                Aucun conteneur ne correspond à vos critères de recherche
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Create container dialog */}
+      <ContainerCreation
+        open={showCreateDialog}
+        onOpenChange={setShowCreateDialog}
+        onSuccess={handleCreateSuccess}
+      />
     </div>
   );
 }

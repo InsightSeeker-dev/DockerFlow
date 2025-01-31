@@ -149,7 +149,7 @@ model Session {
 
 model Container {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  name        String
+  name        String   @unique
   imageId     String
   status      String
   ports       Json?
@@ -157,7 +157,7 @@ model Container {
   env         Json?
   cpuLimit    Int
   memoryLimit Int
-  subdomain   String   @unique  // Pour l'URL personnalisée (ex: moncontainer34)
+  subdomain   String   @unique
   created     DateTime @default(now())
   userId      String   @db.ObjectId
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)

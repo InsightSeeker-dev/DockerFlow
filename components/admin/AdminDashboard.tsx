@@ -1,44 +1,32 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import ContainerManager from './ContainerManager';
+import { useToast } from '@/components/ui/use-toast';
+import { ContainerList } from '../containers/container-list';
+import { Container } from '@/lib/docker/types';
 import ImageManager from './ImageManager';
 import NetworkManager from './NetworkManager';
 import AlertCenter from './AlertCenter';
+import AdminSettings from './AdminSettings';
 import { UserManager } from './UserManager';
-import { useToast } from '@/components/ui/use-toast';
+import { DashboardOverview } from './DashboardOverview';
+import { getSystemStats } from '@/lib/api';
+import { SystemStats } from '@/types/system';
+import { Button } from '@/components/ui/button';
+import { motion } from 'framer-motion';
 import {
-  Container,
-  Image,
-  Network,
+  Container as ContainerIcon,
+  Image as ImageIcon,
+  Network as NetworkIcon,
   Bell,
   Settings,
   Users,
-  Activity,
   LayoutDashboard,
-  UserCheck,
-  UserPlus,
-  UserX,
-  Play,
-  Square,
-  AlertTriangle,
-  Cpu,
-  CircuitBoard,
-  HardDrive,
-  Signal,
+  LogOut
 } from 'lucide-react';
-import AdminSettings from './AdminSettings';
-import { SystemStats } from '@/types/system';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Logo } from '@/components/ui/logo';
-import { Button } from '@/components/ui/button';
-import { LogOut } from 'lucide-react';
 import { signOut } from 'next-auth/react';
-import { motion } from 'framer-motion';
-import { DashboardOverview } from './DashboardOverview';
-import { getSystemStats } from '@/lib/api';
 
 interface RecentActivity {
   id: string;
@@ -50,6 +38,11 @@ interface RecentActivity {
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [containers, setContainers] = useState<Container[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
+  
   const [systemStats, setSystemStats] = useState<SystemStats>({
     containers: 0,
     containersRunning: 0,
@@ -99,9 +92,29 @@ export default function AdminDashboard() {
 
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const { toast } = useToast();
+
+  const fetchContainers = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/containers');
+      if (!response.ok) {
+        throw new Error('Failed to fetch containers');
+      }
+      const data = await response.json();
+      setContainers(data);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An error occurred while fetching containers';
+      setError(errorMessage);
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -111,14 +124,11 @@ export default function AdminDashboard() {
         setError(null);
       } catch (error) {
         console.error('Error fetching system stats:', error);
-        setError('Failed to load system statistics');
         toast({
           title: 'Error',
           description: 'Failed to load system statistics',
           variant: 'destructive',
         });
-      } finally {
-        setIsLoading(false);
       }
     };
 
@@ -131,15 +141,21 @@ export default function AdminDashboard() {
     return () => clearInterval(interval);
   }, [toast]);
 
+  useEffect(() => {
+    if (activeTab === 'containers') {
+      fetchContainers();
+    }
+  }, [activeTab]);
+
   return (
     <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
-      <div className="flex items-center justify-between space-y-2">
+      <div className="flex items-center justify-between">
         <motion.div 
-          className="flex items-center justify-center"
+          className="flex items-center"
           whileHover={{ scale: 1.05 }}
         >
-          <Container className="text-blue-500 mr-3" size={40} />
-          <div className="flex flex-col items-start">
+          <ContainerIcon className="text-blue-500 mr-3" size={40} />
+          <div className="flex flex-col">
             <h1 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-blue-600">
               DockerFlow
             </h1>
@@ -157,6 +173,7 @@ export default function AdminDashboard() {
           Déconnexion
         </Button>
       </div>
+
       <Tabs defaultValue={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList className="inline-flex h-10 items-center justify-center rounded-md bg-muted p-1">
           <TabsTrigger value="dashboard" className="flex items-center gap-2">
@@ -164,15 +181,15 @@ export default function AdminDashboard() {
             <span>Overview</span>
           </TabsTrigger>
           <TabsTrigger value="containers" className="flex items-center gap-2">
-            <Container className="h-4 w-4" />
+            <ContainerIcon className="h-4 w-4" />
             <span>Containers</span>
           </TabsTrigger>
           <TabsTrigger value="images" className="flex items-center gap-2">
-            <Image className="h-4 w-4" />
+            <ImageIcon className="h-4 w-4" />
             <span>Images</span>
           </TabsTrigger>
           <TabsTrigger value="networks" className="flex items-center gap-2">
-            <Network className="h-4 w-4" />
+            <NetworkIcon className="h-4 w-4" />
             <span>Networks</span>
           </TabsTrigger>
           <TabsTrigger value="users" className="flex items-center gap-2">
@@ -196,28 +213,75 @@ export default function AdminDashboard() {
           />
         </TabsContent>
 
-        <TabsContent value="containers">
-          <ContainerManager />
+        <TabsContent value="containers" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Container Management</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ContainerList 
+                containers={containers}
+                isLoading={isLoading}
+                error={error}
+                onRefresh={fetchContainers}
+              />
+            </CardContent>
+          </Card>
         </TabsContent>
 
-        <TabsContent value="images">
-          <ImageManager />
+        <TabsContent value="images" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Image Management</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ImageManager />
+            </CardContent>
+          </Card>
         </TabsContent>
 
-        <TabsContent value="networks">
-          <NetworkManager />
+        <TabsContent value="networks" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Network Management</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <NetworkManager />
+            </CardContent>
+          </Card>
         </TabsContent>
 
-        <TabsContent value="users">
-          <UserManager onUserSelect={setSelectedUserId} />
+        <TabsContent value="users" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>User Management</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <UserManager onUserSelect={setSelectedUserId} />
+            </CardContent>
+          </Card>
         </TabsContent>
 
-        <TabsContent value="alerts">
-          <AlertCenter />
+        <TabsContent value="alerts" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Alert Center</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AlertCenter />
+            </CardContent>
+          </Card>
         </TabsContent>
 
-        <TabsContent value="settings">
-          <AdminSettings />
+        <TabsContent value="settings" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Settings</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AdminSettings />
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

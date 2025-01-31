@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { docker } from '@/lib/docker';
+import { docker, getTraefikConfig } from '@/lib/docker';
 import { isAdmin } from '@/lib/utils/auth-helpers';
 import { getContainerStats } from '@/lib/utils/docker-helpers';
 import { z } from 'zod';
@@ -27,42 +27,69 @@ export async function GET(request: Request) {
     const search = searchParams.get('search');
 
     const containers = await docker.listContainers({ all: true });
-    const containerPromises = containers.map(async (container) => {
-      const containerInstance = docker.getContainer(container.Id);
-      const inspectData = await containerInstance.inspect();
-      const stats = await getContainerStats(containerInstance);
+    const containerPromises = containers
+      .filter(container => {
+        const name = container.Names[0].replace(/^\//, '');
+        // Exclure les conteneurs système
+        return !name.includes('traefik') && !name.includes('dockerflow_traefik-init');
+      })
+      .map(async (container) => {
+        const containerInstance = docker.getContainer(container.Id);
+        const inspectData = await containerInstance.inspect();
+        const stats = await getContainerStats(containerInstance);
 
-      const containerInfo = {
-        id: container.Id,
-        name: container.Names[0].replace(/^\//, ''),
-        image: container.Image,
-        state: container.State,
-        status: container.Status,
-        created: new Date(container.Created * 1000).toISOString(),
-        ports: container.Ports,
-        stats,
-        ...inspectData,
-      };
+        // Extraire le sous-domaine des labels Traefik
+        const labels = inspectData.Config?.Labels || {};
+        let subdomain = '';
+        let fullHostname = '';
 
-      // Filter by status if provided
-      if (status && containerInfo.state !== status) {
-        return null;
-      }
+        // Chercher le sous-domaine dans les labels Traefik
+        for (const [key, value] of Object.entries(labels)) {
+          if (key.includes('traefik.http.routers') && key.endsWith('.rule')) {
+            const match = value.match(/Host\(`([^`]+)`\)/);
+            if (match) {
+              fullHostname = match[1];
+              // Extraire le sous-domaine de l'URL complète (ex: grafana.dockersphere.ovh -> grafana)
+              subdomain = match[1].split('.')[0];
+              break;
+            }
+          }
+        }
 
-      // Filter by search term if provided
-      if (search) {
-        const searchTerm = search.toLowerCase();
-        const matchesName = containerInfo.name.toLowerCase().includes(searchTerm);
-        const matchesImage = containerInfo.image.toLowerCase().includes(searchTerm);
-        const matchesId = containerInfo.id.toLowerCase().includes(searchTerm);
+        const containerInfo = {
+          id: container.Id,
+          name: container.Names[0].replace(/^\//, ''),
+          image: container.Image,
+          state: container.State,
+          status: container.Status,
+          created: new Date(container.Created * 1000).toISOString(),
+          ports: container.Ports,
+          subdomain: subdomain,
+          fullHostname: fullHostname,
+          stats,
+          ...inspectData,
+        };
 
-        if (!matchesName && !matchesImage && !matchesId) {
+        // Filter by status if provided
+        if (status && containerInfo.state !== status) {
           return null;
         }
-      }
 
-      return containerInfo;
-    });
+        // Filter by search term if provided
+        if (search) {
+          const searchLower = search.toLowerCase();
+          const matchesSearch = 
+            containerInfo.name.toLowerCase().includes(searchLower) ||
+            containerInfo.image.toLowerCase().includes(searchLower) ||
+            containerInfo.subdomain.toLowerCase().includes(searchLower);
+          
+          if (!matchesSearch) {
+            return null;
+          }
+        }
+
+        return containerInfo;
+      });
 
     const results = (await Promise.all(containerPromises)).filter(Boolean);
     return NextResponse.json(results);
@@ -126,10 +153,7 @@ export async function POST(req: Request) {
       Image: image,
       name,
       Labels: {
-        'traefik.enable': 'true',
-        [`traefik.http.routers.${name}.rule`]: `Host(\`${subdomain}.dockersphere.ovh\`)`,
-        [`traefik.http.routers.${name}.entrypoints`]: 'websecure',
-        [`traefik.http.routers.${name}.tls.certresolver`]: 'letsencrypt'
+        ...getTraefikConfig(name, subdomain, ports[0][1]), // Utiliser le premier port comme port principal
       },
       ExposedPorts: ports.reduce((acc, [_, containerPort]) => ({
         ...acc,
@@ -143,12 +167,11 @@ export async function POST(req: Request) {
         Binds: volumes?.map(([host, container]) => `${host}:${container}`) || [],
         RestartPolicy: {
           Name: 'unless-stopped'
-        }
+        },
+        NetworkMode: 'proxy' // Utiliser le réseau proxy de Traefik
       },
       Env: [
-        ...(env?.map(([key, value]) => `${key}=${value}`) || []),
-        `VIRTUAL_HOST=${subdomain}.dockersphere.ovh`,
-        `LETSENCRYPT_HOST=${subdomain}.dockersphere.ovh`
+        ...(env?.map(([key, value]) => `${key}=${value}`) || [])
       ]
     };
 

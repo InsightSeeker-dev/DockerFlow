@@ -10,7 +10,7 @@ import { Search, RefreshCwIcon, Database, Tag, Clock, HardDrive } from 'lucide-r
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Badge } from '@/components/ui/badge';
-import { CreateContainerForm } from '@/components/containers/create-container-form';
+import { ContainerCreation } from '@/components/containers';
 import { cn } from '@/lib/utils';
 
 interface ImageListProps {
@@ -27,6 +27,7 @@ export function ImageList({
   onRefresh 
 }: ImageListProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
 
   const filteredImages = useMemo(() => {
     if (!searchQuery.trim()) return images;
@@ -36,6 +37,11 @@ export function ImageList({
       image.Id.toLowerCase().includes(query)
     );
   }, [images, searchQuery]);
+
+  const onContainerCreated = () => {
+    setIsCreateDialogOpen(false);
+    onRefresh();
+  };
 
   if (isLoading) {
     return <Loading />;
@@ -115,9 +121,11 @@ export function ImageList({
 
                 <div className="mt-4 flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <CreateContainerForm 
-                      image={image} 
-                      onSuccess={onRefresh}
+                    <ContainerCreation
+                      open={isCreateDialogOpen}
+                      onOpenChange={setIsCreateDialogOpen}
+                      preSelectedImage={image}
+                      onSuccess={onContainerCreated}
                     />
                     <Button
                       variant="outline"

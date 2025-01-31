@@ -29,8 +29,18 @@ function transformImageInfo(image: ImageInfo): DockerImage {
 export async function listImages(): Promise<DockerImage[]> {
   const docker = getDockerClient();
   try {
-    const images = await docker.listImages();
-    return images.map(transformImageInfo);
+    console.log('Listing Docker images...');
+    const images = await docker.listImages({ all: true });
+    console.log('Raw Docker images:', images);
+    
+    const formattedImages = images.map(image => ({
+      Id: image.Id,
+      RepoTags: image.RepoTags || [],
+      RepoDigests: image.RepoDigests || []
+    }));
+    
+    console.log('Formatted Docker images:', formattedImages);
+    return formattedImages;
   } catch (error) {
     console.error('Error listing images:', error);
     throw new Error('Failed to list images');

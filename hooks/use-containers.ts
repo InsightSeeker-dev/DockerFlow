@@ -13,15 +13,18 @@ export function useContainers() {
       setIsLoading(true);
       setError(null);
       const response = await fetch('/api/containers');
-      const data = await response.json();
       
       if (!response.ok) {
+        const data = await response.json();
         throw new Error(data.error || 'Failed to fetch containers');
       }
       
-      setContainers(data.containers);
+      const data = await response.json();
+      // L'API renvoie directement le tableau de conteneurs
+      setContainers(Array.isArray(data) ? data : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
+      console.error('Error fetching containers:', err);
     } finally {
       setIsLoading(false);
     }

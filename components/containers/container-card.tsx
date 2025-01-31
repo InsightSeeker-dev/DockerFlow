@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Container, ContainerStats, Port } from '@/lib/docker/types';
+import { Container, ContainerState, DockerStats, Port } from '@/lib/docker/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
@@ -37,12 +37,36 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 
-interface ContainerCardProps {
-  container: Container;
-  onStatusChange: () => void;
+interface ContainerStats {
+  cpu: number;
+  memory: {
+    usage: number;
+    limit: number;
+    percentage: number;
+  };
+  network: {
+    rx_bytes: number;
+    tx_bytes: number;
+  };
 }
 
-export function ContainerCard({ container, onStatusChange }: ContainerCardProps) {
+interface ContainerCardProps {
+  container: Container;
+  onStatusChange?: () => void;
+  onStart?: (id: string) => void;
+  onStop?: (id: string) => void;
+  onDelete?: (id: string) => void;
+  onLogs?: (id: string) => void;
+}
+
+export function ContainerCard({ 
+  container,
+  onStatusChange,
+  onStart,
+  onStop,
+  onDelete,
+  onLogs,
+}: ContainerCardProps) {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [stats, setStats] = useState<ContainerStats | null>(null);
@@ -56,17 +80,7 @@ export function ContainerCard({ container, onStatusChange }: ContainerCardProps)
   const createdDate = new Date(container.Created * 1000).toLocaleString();
 
   // Format ports for display
-  const formattedPorts: Port[] = Object.entries(container.NetworkSettings.Ports || {})
-    .flatMap(([key, bindings]) => {
-      if (!bindings) return [];
-      const [privatePort, protocol] = key.split('/');
-      return bindings.map(binding => ({
-        PrivatePort: parseInt(privatePort),
-        PublicPort: parseInt(binding.HostPort),
-        Type: protocol,
-        IP: binding.HostIp || '0.0.0.0'
-      }));
-    });
+  const formattedPorts = container.Ports || [];
 
   useEffect(() => {
     let mounted = true;
@@ -79,9 +93,30 @@ export function ContainerCard({ container, onStatusChange }: ContainerCardProps)
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
-        const data = await response.json();
+        const rawStats: DockerStats = await response.json();
+        
         if (mounted) {
-          setStats(data);
+          // Calculer les statistiques formatées
+          const cpuDelta = rawStats.cpu_stats.cpu_usage.total_usage - rawStats.precpu_stats.cpu_usage.total_usage;
+          const systemDelta = rawStats.cpu_stats.system_cpu_usage - rawStats.precpu_stats.system_cpu_usage;
+          const cpuPercent = (cpuDelta / systemDelta) * rawStats.cpu_stats.online_cpus * 100;
+
+          const memoryUsage = rawStats.memory_stats.usage - (rawStats.memory_stats.stats?.cache || 0);
+          const memoryLimit = rawStats.memory_stats.limit;
+          const memoryPercent = (memoryUsage / memoryLimit) * 100;
+
+          // Calculer les statistiques réseau
+          const networkStats = rawStats.networks ? Object.values(rawStats.networks)[0] : { rx_bytes: 0, tx_bytes: 0 };
+
+          setStats({
+            cpu: cpuPercent,
+            memory: {
+              usage: memoryUsage,
+              limit: memoryLimit,
+              percentage: memoryPercent,
+            },
+            network: networkStats,
+          });
         }
       } catch (error) {
         console.error('Failed to fetch container stats:', error);
@@ -129,7 +164,7 @@ export function ContainerCard({ container, onStatusChange }: ContainerCardProps)
         description: `Container ${action}ed successfully`,
       });
 
-      onStatusChange();
+      onStatusChange?.();
     } catch (error) {
       toast({
         title: 'Error',
@@ -222,7 +257,7 @@ export function ContainerCard({ container, onStatusChange }: ContainerCardProps)
             <Button
               variant="outline"
               size="sm"
-              onClick={() => handleAction('stop')}
+              onClick={() => onStop?.(container.Id)}
               disabled={isLoading}
             >
               <StopIcon className="mr-1 h-4 w-4" />
@@ -232,7 +267,7 @@ export function ContainerCard({ container, onStatusChange }: ContainerCardProps)
             <Button
               variant="outline"
               size="sm"
-              onClick={() => handleAction('start')}
+              onClick={() => onStart?.(container.Id)}
               disabled={isLoading}
             >
               <PlayIcon className="mr-1 h-4 w-4" />
@@ -258,7 +293,7 @@ export function ContainerCard({ container, onStatusChange }: ContainerCardProps)
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
-                  onClick={() => handleAction('remove')}
+                  onClick={() => onDelete?.(container.Id)}
                   className="bg-red-500 hover:bg-red-600"
                 >
                   Remove
@@ -300,17 +335,18 @@ function ContainerStatus({ state }: { state: string }) {
     running: 'bg-green-500/10 text-green-500 border-green-500/20',
     exited: 'bg-red-500/10 text-red-500 border-red-500/20',
     created: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
-    default: 'bg-gray-500/10 text-gray-500 border-gray-500/20',
+    restarting: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20',
+    removing: 'bg-orange-500/10 text-orange-500 border-orange-500/20',
+    paused: 'bg-purple-500/10 text-purple-500 border-purple-500/20',
+    dead: 'bg-gray-500/10 text-gray-500 border-gray-500/20',
   };
-
-  const normalizedState = state.toLowerCase();
 
   return (
     <Badge
       variant="outline"
       className={cn(
         'capitalize',
-        variants[normalizedState as keyof typeof variants] || variants.default
+        variants[state.toLowerCase() as keyof typeof variants] || variants.dead
       )}
     >
       {state}

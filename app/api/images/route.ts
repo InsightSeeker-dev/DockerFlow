@@ -38,36 +38,27 @@ export async function GET() {
     }
 
     const docker = getDockerClient();
-    const images = await docker.listImages();
-    const storageUsage = await getUserStorageUsage(session.user.id);
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id }
-    });
+    const images = await docker.listImages({ all: true });
+    
+    // Transformer les images pour inclure les informations nécessaires
+    const formattedImages = images.map(image => ({
+      id: image.Id,
+      displayName: image.RepoTags?.[0]?.split(':')[0] || 'unknown',
+      displayTag: image.RepoTags?.[0]?.split(':')[1] || 'latest',
+      RepoTags: image.RepoTags || [],
+      Created: image.Created,
+      Size: image.Size,
+      VirtualSize: image.VirtualSize
+    }));
 
-    if (!user) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
-    }
+    // Log pour le débogage
+    console.log('Docker images retrieved:', formattedImages);
 
-    return NextResponse.json({
-      images: images.map(image => ({
-        id: image.Id,
-        name: image.RepoTags?.[0]?.split(':')[0] || 'none',
-        tag: image.RepoTags?.[0]?.split(':')[1] || 'latest',
-        size: image.Size,
-        created: image.Created,
-      })),
-      storageUsage: {
-        used: storageUsage,
-        total: user.storageLimit,
-      }
-    });
+    return NextResponse.json(formattedImages);
   } catch (error) {
-    console.error('List images error:', error);
+    console.error('Error fetching images:', error);
     return NextResponse.json(
-      { error: 'Failed to list images' },
+      { error: 'Failed to fetch images' },
       { status: 500 }
     );
   }

@@ -17,6 +17,8 @@ interface ExtendedSession extends Session {
     id: string;
     email: string;
     role: string;
+    cpuLimit?: number;
+    memoryLimit?: number;
   } & Session['user']
 }
 
@@ -33,26 +35,31 @@ interface ExtendedHostConfig {
   Memory?: number;
 }
 
+interface CustomConfig {
+  subdomain: string;
+  ports: any;
+  volumes: any;
+  env: any;
+  cpuLimit: number;
+  memoryLimit: number;
+}
+
+interface ExtendedConfig {
+  subdomain?: string;
+  ports?: any;
+  volumes?: any;
+  env?: any;
+}
+
 interface ExtendedContainerInfo extends Omit<ContainerInfo, 'HostConfig'> {
   HostConfig?: ExtendedHostConfig;
+  customConfig?: CustomConfig;
 }
 
 const createContainerSchema = z.object({
   name: z.string(),
   image: z.string(),
   subdomain: z.string().min(3).max(63).regex(/^[a-zA-Z0-9-]+$/, 'Subdomain must contain only letters, numbers, and hyphens'),
-  ports: z.array(z.object({
-    hostPort: z.number(),
-    containerPort: z.number()
-  })),
-  volumes: z.array(z.object({
-    name: z.string(),
-    mountPath: z.string()
-  })),
-  env: z.array(z.object({
-    key: z.string(),
-    value: z.string()
-  })).optional()
 });
 
 type CreateContainerRequest = z.infer<typeof createContainerSchema>;
@@ -65,71 +72,69 @@ const containerActionSchema = z.object({
 export async function GET() {
   try {
     const session = await getServerSession(authOptions) as ExtendedSession | null;
+    
     if (!session?.user?.id) {
+      console.log('No session or user ID found');
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       );
     }
 
-    const docker = getDockerClient();
-    const containers = await docker.listContainers({ all: true }) as unknown as ExtendedContainerInfo[];
-    
-    console.log('Raw containers data:', JSON.stringify(containers, null, 2));
-    
-    // Get user's containers from database with names and subdomains
+    console.log('Fetching containers for user:', session.user.id);
+
+    // Déterminer si l'utilisateur est admin
+    const isAdmin = session.user.role === 'ADMIN';
+
+    // 1. Récupérer les conteneurs selon le rôle
     const userContainers = await prisma.container.findMany({
-      where: { userId: session.user.id },
-      select: { 
-        name: true,
-        subdomain: true 
-      },
+      where: isAdmin ? {} : { userId: session.user.id },
+      include: {
+        user: {
+          select: {
+            name: true,
+            email: true,
+            role: true
+          }
+        }
+      }
     });
-    
-    // Create a map of container names to their database info
-    const containerInfoMap = new Map(
-      userContainers.map(container => [container.name, container])
-    );
-    
-    // Filter and enrich Docker containers with database info
-    const filteredContainers = containers
-      .filter(container => {
-        const containerName = container.Names[0]?.replace('/', '');
-        return containerName && containerInfoMap.has(containerName);
-      })
-      .map(container => {
-        const containerName = container.Names[0]?.replace('/', '');
-        const dbInfo = containerInfoMap.get(containerName);
 
-        // Transformer les ports Docker en format attendu
-        console.log('Container ports before transform:', container.Ports);
-        const ports = container.Ports?.map(port => {
-          console.log('Processing port:', port);
-          return {
-            hostPort: port.PublicPort,
-            containerPort: port.PrivatePort
-          };
-        }) || [];
-        console.log('Transformed ports:', ports);
+    // 2. Récupérer les conteneurs Docker
+    const docker = getDockerClient();
+    const dockerContainers = await docker.listContainers({ all: true });
 
-        return {
-          id: container.Id,
-          name: containerName,
-          imageId: container.Image,
-          status: container.State,
-          created: container.Created,
-          ports,
-          network: container.HostConfig?.NetworkMode,
-          subdomain: dbInfo?.subdomain,
-          cpuLimit: container.HostConfig?.NanoCpus ? container.HostConfig.NanoCpus / 1e9 : 0,
-          memoryLimit: container.HostConfig?.Memory || 0
-        };
-      });
-    
-    console.log('Final filtered containers:', JSON.stringify(filteredContainers, null, 2));
-    return NextResponse.json({ containers: filteredContainers });
+    // 3. Fusionner les informations
+    const enrichedContainers = dockerContainers.map(dockerContainer => {
+      const dbContainer = userContainers.find(
+        db => db.name === dockerContainer.Names[0].replace(/^\//, '')
+      );
+
+      if (!dbContainer) return null;
+
+      return {
+        ...dockerContainer,
+        customConfig: {
+          subdomain: dbContainer.subdomain,
+          ports: dbContainer.ports,
+          volumes: dbContainer.volumes,
+          env: dbContainer.env,
+          cpuLimit: dbContainer.cpuLimit,
+          memoryLimit: dbContainer.memoryLimit,
+        },
+        user: dbContainer.user,
+        traefik: {
+          enabled: true,
+          rule: `Host(\`${dbContainer.subdomain}.dockersphere.ovh\`)`,
+          tls: true,
+          certresolver: 'letsencrypt'
+        }
+      };
+    }).filter(Boolean);
+
+    return NextResponse.json(enrichedContainers);
   } catch (error) {
-    console.error('Container API error:', error);
+    console.error('Error fetching containers:', error);
     return NextResponse.json(
       { error: 'Failed to fetch containers' },
       { status: 500 }
@@ -139,25 +144,31 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    console.log('Starting container creation process...');
     const session = await getServerSession(authOptions) as ExtendedSession | null;
     if (!session?.user?.id) {
+      console.error('No session found, unauthorized');
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       );
     }
+    console.log('User authenticated:', session.user.id);
 
     const body = await request.json();
-    const result = createContainerSchema.safeParse(body);
+    console.log('Received request body:', JSON.stringify(body, null, 2));
     
+    const result = createContainerSchema.safeParse(body);
     if (!result.success) {
+      console.error('Validation failed:', JSON.stringify(result.error.issues, null, 2));
       return NextResponse.json(
         { error: 'Invalid request data', details: result.error.issues },
         { status: 400 }
       );
     }
 
-    const { name, image: imageName, subdomain, ports, volumes, env } = result.data;
+    const { name, image: imageName, subdomain } = result.data;
+    console.log('Validated data:', { name, imageName, subdomain });
 
     // Vérifier si le sous-domaine est déjà utilisé
     const existingContainer = await prisma.container.findFirst({
@@ -170,106 +181,145 @@ export async function POST(request: Request) {
     });
 
     if (existingContainer) {
+      console.error('Container name or subdomain already exists:', existingContainer);
       return NextResponse.json(
         { error: 'Container name or subdomain already in use' },
         { status: 400 }
       );
     }
-
-    // Vérifier la limite de stockage
-    const imageSize = await getImageSize(imageName);
-    const hasSpace = await checkStorageLimit(session.user.id, imageSize);
-    
-    if (!hasSpace) {
-      return NextResponse.json(
-        { error: 'Storage limit exceeded' },
-        { status: 400 }
-      );
-    }
-
-    // Trouver un port disponible pour chaque port demandé
-    const mappedPorts = await Promise.all(ports.map(async (port) => ({
-      ...port,
-      hostPort: await suggestAlternativePort(port.containerPort)
-    })));
+    console.log('No existing container found with same name/subdomain');
 
     const docker = getDockerClient();
+    console.log('Docker client initialized');
 
-    // Créer les volumes Docker si nécessaire
-    for (const volume of volumes) {
-      try {
-        await docker.createVolume({
-          Name: volume.name,
-          Driver: 'local'
-        });
-      } catch (error) {
-        console.error(`Failed to create volume ${volume.name}:`, error);
-      }
+    // Inspecter l'image pour obtenir les ports exposés
+    console.log('Getting image info for:', imageName);
+    const image = await docker.getImage(imageName);
+    console.log('Got image reference');
+    const imageInfo = await image.inspect();
+    console.log('Image inspection completed');
+    
+    // Vérifier les ports exposés dans Config ET ContainerConfig
+    const configPorts = imageInfo.Config.ExposedPorts || {};
+    const containerConfigPorts = imageInfo.ContainerConfig?.ExposedPorts || {};
+    const exposedPorts = { ...configPorts, ...containerConfigPorts };
+    
+    console.log('Detected exposed ports:', JSON.stringify(exposedPorts, null, 2));
+
+    // Créer un volume unique pour ce conteneur
+    const volumeName = `${name}-data`;
+    console.log('Creating volume:', volumeName);
+    await docker.createVolume({
+      Name: volumeName,
+      Driver: 'local'
+    });
+    console.log('Volume created successfully');
+
+    // Constants pour la gestion des ports
+    const DEFAULT_PORT_RANGE_START = 3000;  // Port de départ pour les conteneurs sans ports exposés
+    const DEFAULT_PORT_RANGE_END = 4000;    // Port de fin pour la plage par défaut
+
+    // Mapper les ports exposés à des ports hôtes disponibles
+    const portBindings: Record<string, Array<{ HostPort: string }>> = {};
+    const exposedPortsList: Array<{ containerPort: number, hostPort: number }> = [];
+    const containerExposedPorts: Record<string, {}> = {};
+    
+    console.log('Starting port mapping process...');
+    for (const port in exposedPorts) {
+      const containerPort = parseInt(port.split('/')[0]);
+      console.log(`Finding available host port for container port ${containerPort}...`);
+      const hostPort = await suggestAlternativePort(containerPort);
+      console.log(`Selected host port ${hostPort} for container port ${containerPort}`);
+      const portKey = `${containerPort}/tcp`;
+      
+      portBindings[portKey] = [{ HostPort: hostPort.toString() }];
+      containerExposedPorts[portKey] = {};
+      exposedPortsList.push({ containerPort, hostPort });
+    }
+
+    // Si aucun port n'est exposé, utiliser un port dans la plage par défaut
+    if (Object.keys(exposedPorts).length === 0) {
+      const defaultContainerPort = DEFAULT_PORT_RANGE_START;
+      console.log(`No exposed ports, finding available port starting from ${DEFAULT_PORT_RANGE_START}...`);
+      const hostPort = await suggestAlternativePort(DEFAULT_PORT_RANGE_START);
+      console.log(`Selected default host port: ${hostPort}`);
+      const portKey = `${defaultContainerPort}/tcp`;
+      
+      portBindings[portKey] = [{ HostPort: hostPort.toString() }];
+      containerExposedPorts[portKey] = {};
+      exposedPortsList.push({ 
+        containerPort: defaultContainerPort, 
+        hostPort 
+      });
     }
 
     // Préparer la configuration du conteneur
-    const containerConfig: ContainerCreateOptions = {
+    const containerConfig = {
       Image: imageName,
       name,
-      ExposedPorts: mappedPorts.reduce((acc, { containerPort }) => ({
-        ...acc,
-        [`${containerPort}/tcp`]: {}
-      }), {} as Record<string, {}>),
+      ExposedPorts: containerExposedPorts,
       HostConfig: {
-        PortBindings: mappedPorts.reduce((acc, { hostPort, containerPort }) => ({
-          ...acc,
-          [`${containerPort}/tcp`]: [{ HostPort: hostPort.toString() }]
-        }), {} as Record<string, Array<{ HostPort: string }>>),
-        Binds: volumes.map(v => `${v.name}:${v.mountPath}`),
+        PortBindings: portBindings,
+        Binds: [`${volumeName}:/data`],
       },
-      Env: env ? env.map(e => `${e.key}=${e.value}`) : [],
       Labels: {
         'traefik.enable': 'true',
         [`traefik.http.routers.${name}.rule`]: `Host(\`${subdomain}.dockersphere.ovh\`)`,
-        [`traefik.http.services.${name}.loadbalancer.server.port`]: mappedPorts[0].containerPort.toString()
+        [`traefik.http.routers.${name}.tls`]: 'true',
+        [`traefik.http.routers.${name}.tls.certresolver`]: 'letsencrypt',
+        [`traefik.http.services.${name}.loadbalancer.server.port`]: exposedPortsList[0].containerPort.toString()
       }
     };
 
     // Créer et démarrer le conteneur
+    console.log('Creating Docker container with config:', JSON.stringify(containerConfig, null, 2));
     const container = await docker.createContainer(containerConfig);
+    console.log('Docker container created with ID:', container.id);
+    
     await container.start();
+    console.log('Docker container started');
 
     // Enregistrer le conteneur dans la base de données
-    await prisma.container.create({
+    console.log('Saving container to database...');
+    const dbContainer = await prisma.container.create({
       data: {
-        id: container.id,
         name,
         imageId: imageName,
         subdomain,
         userId: session.user.id,
         status: 'running',
-        created: new Date(),
-        ports: mappedPorts as Prisma.JsonValue,
-        volumes: volumes as Prisma.JsonValue,
-        env: env as Prisma.JsonValue,
-        cpuLimit: 0,
-        memoryLimit: 0
+        ports: exposedPortsList as Prisma.JsonValue,
+        volumes: [{
+          name: volumeName,
+          mountPath: '/data'
+        }] as Prisma.JsonValue,
+        cpuLimit: session.user.cpuLimit || 4000,
+        memoryLimit: session.user.memoryLimit || 8589934592
       }
     });
+    console.log('Container saved to database:', dbContainer);
 
     // Enregistrer l'activité
+    console.log('Recording activity...');
     await prisma.activity.create({
       data: {
         type: ActivityType.CONTAINER_CREATE,
         userId: session.user.id,
-        description: `Created container ${name} with ports ${mappedPorts.map(p => `${p.hostPort}->${p.containerPort}`).join(', ')}`,
+        description: `Created container ${name} with automatic port mapping`,
         metadata: {
           containerId: container.id,
           containerName: name,
           image: imageName,
-          ports: mappedPorts
-        }
+          ports: exposedPortsList
+        } as Prisma.JsonValue
       }
     });
 
     return NextResponse.json({ 
-      id: container.id,
-      ports: mappedPorts
+      id: dbContainer.id,
+      name: dbContainer.name,
+      subdomain: dbContainer.subdomain,
+      ports: exposedPortsList
     });
   } catch (error: any) {
     console.error('Error creating container:', error);
@@ -278,6 +328,47 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+}
+
+async function findAvailablePort(startPort: number, preferredEndPort?: number): Promise<number> {
+  const docker = getDockerClient();
+  const containers = await docker.listContainers({ all: true });
+  const usedPorts = new Set<number>();
+  
+  // Collecter tous les ports utilisés
+  containers.forEach(container => {
+    container.Ports?.forEach(port => {
+      if (port.PublicPort) {
+        usedPorts.add(port.PublicPort);
+      }
+    });
+  });
+
+  // D'abord, essayer dans la plage préférée
+  let port = startPort;
+  const maxPreferredPort = preferredEndPort || 65535;
+
+  while (port <= maxPreferredPort) {
+    if (!usedPorts.has(port)) {
+      console.log(`Found available port ${port} within preferred range ${startPort}-${maxPreferredPort}`);
+      return port;
+    }
+    port++;
+  }
+
+  // Si aucun port n'est disponible dans la plage préférée, continuer après la plage
+  console.log(`No ports available in preferred range ${startPort}-${maxPreferredPort}, searching beyond...`);
+  port = maxPreferredPort + 1;
+  
+  while (port <= 65535) {
+    if (!usedPorts.has(port)) {
+      console.log(`Found available port ${port} outside preferred range`);
+      return port;
+    }
+    port++;
+  }
+
+  throw new Error('No available ports found in entire valid port range (1-65535)');
 }
 
 export async function PATCH(request: Request) {

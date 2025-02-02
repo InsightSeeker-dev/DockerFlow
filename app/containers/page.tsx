@@ -99,9 +99,9 @@ export default function ContainersPage() {
           </Button>
           <Button
             onClick={() => setShowCreateDialog(true)}
-            className="bg-blue-600 hover:bg-blue-700"
+            className="flex items-center gap-2"
           >
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="h-4 w-4" />
             Créer un conteneur
           </Button>
         </div>
@@ -115,6 +115,10 @@ export default function ContainersPage() {
         onStart={(id) => handleContainerAction('start', id)}
         onStop={(id) => handleContainerAction('stop', id)}
         onDelete={(id) => handleContainerAction('remove', id)}
+        onLogs={(id) => {
+          // TODO: Implémenter l'affichage des logs
+          console.log('Afficher les logs pour:', id);
+        }}
       />
 
       <ContainerCreation

@@ -38,8 +38,22 @@ import {
   ScrollText, 
   Trash2,
   Box,
-  Loader2
+  Loader2,
+  MoreVertical,
+  ExternalLink
 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 interface ContainerListProps {
   containers: Container[];
@@ -64,7 +78,7 @@ export function ContainerList({
 }: ContainerListProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [selectedContainer, setSelectedContainer] = useState<Container | null>(null);
+  const [selectedContainerId, setSelectedContainerId] = useState<string | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const { toast } = useToast();
 
@@ -84,6 +98,35 @@ export function ContainerList({
     setShowCreateDialog(false);
     onRefresh();
   }, [onRefresh]);
+
+  const handleAction = async (action: string, containerId: string) => {
+    try {
+      const response = await fetch(`/api/containers/${containerId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to perform action');
+      }
+
+      onRefresh?.();
+      toast({
+        title: "Action réussie",
+        description: `L'action ${action} a été effectuée avec succès.`,
+      });
+    } catch (error) {
+      console.error(`Error performing ${action}:`, error);
+      toast({
+        title: "Erreur",
+        description: `Impossible d'effectuer l'action ${action}.`,
+        variant: "destructive",
+      });
+    }
+  };
 
   // Filter and sort containers
   const filteredContainers = useMemo(() => {
@@ -245,64 +288,114 @@ export function ContainerList({
                           {createdDate}
                         </TableCell>
                         <TableCell className="text-right">
-                          <div className="flex justify-end items-center space-x-2">
-                            {isRunning ? (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="flex items-center gap-1"
-                                onClick={() => onStop?.(container.Id)}
-                              >
-                                <Square className="h-4 w-4" />
-                                Arrêter
-                              </Button>
-                            ) : (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="flex items-center gap-1"
-                                onClick={() => onStart?.(container.Id)}
-                              >
-                                <Play className="h-4 w-4" />
-                                Démarrer
-                              </Button>
-                            )}
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="flex items-center gap-1"
-                              onClick={() => onLogs?.(container.Id)}
-                            >
-                              <ScrollText className="h-4 w-4" />
-                              Logs
-                            </Button>
-                            {subdomain && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="flex items-center gap-1"
-                                asChild
-                              >
-                                <a
-                                  href={`https://${subdomain}.dockersphere.ovh`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
+                          <TooltipProvider>
+                            <DropdownMenu>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 text-gray-400"
+                                    >
+                                      <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Actions du conteneur</p>
+                                </TooltipContent>
+                              </Tooltip>
+                              <DropdownMenuContent align="end" className="w-56">
+                                {container.State === 'running' && (
+                                  <>
+                                    <DropdownMenuItem
+                                      onClick={() => handleAction('stop', container.Id)}
+                                      className="text-gray-200"
+                                    >
+                                      <Square className="mr-2 h-4 w-4 text-gray-500" />
+                                      <div>
+                                        <div>Arrêter</div>
+                                        <span className="text-xs text-gray-400">
+                                          Arrête le conteneur
+                                        </span>
+                                      </div>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => handleAction('restart', container.Id)}
+                                      className="text-gray-200"
+                                    >
+                                      <RefreshCw className="mr-2 h-4 w-4 text-blue-500" />
+                                      <div>
+                                        <div>Redémarrer</div>
+                                        <span className="text-xs text-gray-400">
+                                          Redémarre le conteneur
+                                        </span>
+                                      </div>
+                                    </DropdownMenuItem>
+                                  </>
+                                )}
+                                {container.State !== 'running' && (
+                                  <DropdownMenuItem
+                                    onClick={() => handleAction('start', container.Id)}
+                                    className="text-gray-200"
+                                  >
+                                    <Play className="mr-2 h-4 w-4 text-green-500" />
+                                    <div>
+                                      <div>Démarrer</div>
+                                      <span className="text-xs text-gray-400">
+                                        Démarre le conteneur
+                                      </span>
+                                    </div>
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setSelectedContainerId(container.Id);
+                                    onLogs?.(container.Id);
+                                  }}
+                                  className="text-gray-200"
                                 >
-                                  <Box className="h-4 w-4" />
-                                  Accéder
-                                </a>
-                              </Button>
-                            )}
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="flex items-center gap-1 text-red-500 hover:text-red-600"
-                              onClick={() => onDelete?.(container.Id)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              Supprimer
-                            </Button>
-                          </div>
+                                  <ScrollText className="mr-2 h-4 w-4 text-blue-500" />
+                                  <div>
+                                    <div>Logs</div>
+                                    <span className="text-xs text-gray-400">
+                                      Affiche les journaux du conteneur
+                                    </span>
+                                  </div>
+                                </DropdownMenuItem>
+                                {subdomain && (
+                                  <DropdownMenuItem asChild className="text-gray-200">
+                                    <a
+                                      href={`https://${subdomain}.dockersphere.ovh`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                    >
+                                      <ExternalLink className="mr-2 h-4 w-4 text-purple-500" />
+                                      <div>
+                                        <div>Accéder</div>
+                                        <span className="text-xs text-gray-400">
+                                          Ouvre l'interface web du conteneur
+                                        </span>
+                                      </div>
+                                    </a>
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuItem
+                                  onClick={() => handleAction('remove', container.Id)}
+                                  className="text-red-500 hover:text-red-400"
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  <div>
+                                    <div>Supprimer</div>
+                                    <span className="text-xs opacity-75">
+                                      Supprime le conteneur et ses données
+                                    </span>
+                                  </div>
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TooltipProvider>
                         </TableCell>
                       </TableRow>
                     );
@@ -325,6 +418,10 @@ export function ContainerList({
         open={showCreateDialog}
         onOpenChange={setShowCreateDialog}
         onSuccess={handleCreateSuccess}
+      />
+      <ContainerLogs
+        containerId={selectedContainerId}
+        onClose={() => setSelectedContainerId(null)}
       />
     </div>
   );

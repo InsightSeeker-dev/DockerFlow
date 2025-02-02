@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
+import { getDockerClient } from '@/lib/docker/client';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getContainerLogs } from '@/lib/docker/container-service';
+import { prisma } from '@/lib/prisma';
 
 export async function GET(
   request: Request,
@@ -9,27 +10,71 @@ export async function GET(
 ) {
   try {
     const session = await getServerSession(authOptions);
+    
     if (!session?.user?.id) {
-      return new NextResponse('Unauthorized', { status: 401 });
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
-    const { searchParams } = new URL(request.url);
-    const tail = searchParams.get('tail');
-    const since = searchParams.get('since');
-    const timestamps = searchParams.get('timestamps');
+    // Récupérer le conteneur Docker directement
+    const docker = getDockerClient();
+    const dockerContainer = docker.getContainer(params.id);
 
-    const options = {
-      tail: tail ? parseInt(tail) : undefined,
-      since: since ? parseInt(since) : undefined,
-      timestamps: timestamps === 'true',
-    };
+    // Vérifier que le conteneur existe
+    try {
+      const containerInfo = await dockerContainer.inspect();
+      
+      // Vérifier que l'utilisateur a accès au conteneur
+      const dbContainer = await prisma.container.findFirst({
+        where: {
+          name: containerInfo.Name.replace(/^\//, ''),
+          OR: [
+            { userId: session.user.id },
+            { user: { role: 'ADMIN' } }
+          ]
+        }
+      });
 
-    const logs = await getContainerLogs(session.user.id, params.id, options);
-    return NextResponse.json(logs);
+      if (!dbContainer && session.user.role !== 'ADMIN') {
+        return NextResponse.json(
+          { error: 'Access denied' },
+          { status: 403 }
+        );
+      }
+    } catch (error) {
+      return NextResponse.json(
+        { error: 'Container not found' },
+        { status: 404 }
+      );
+    }
+
+    // Récupérer les logs
+    const logStream = await dockerContainer.logs({
+      stdout: true,
+      stderr: true,
+      tail: 1000,
+      timestamps: true,
+      follow: false
+    });
+
+    // Convertir le stream en tableau de lignes
+    const logs = logStream
+      .toString('utf-8')
+      .split('\n')
+      .filter(Boolean)
+      .map(line => {
+        // Enlever les caractères de contrôle Docker
+        const cleanLine = line.slice(8);
+        return cleanLine;
+      });
+
+    return NextResponse.json({ logs });
   } catch (error) {
-    console.error('Error getting container logs:', error);
-    return new NextResponse(
-      error instanceof Error ? error.message : 'Internal Server Error',
+    console.error('Error fetching container logs:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch container logs' },
       { status: 500 }
     );
   }

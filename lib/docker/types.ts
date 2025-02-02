@@ -72,6 +72,20 @@ export interface DockerHostConfig {
 }
 
 /**
+ * Montage Docker
+ */
+export interface Mount {
+  Type: 'volume' | 'bind' | 'tmpfs' | 'npipe';
+  Name?: string;
+  Source: string;
+  Destination: string;
+  Driver?: string;
+  Mode: string;
+  RW: boolean;
+  Propagation: string;
+}
+
+/**
  * Informations sur un conteneur
  */
 // Extend ContainerInfo from Dockerode to include our custom properties
@@ -90,4 +104,5 @@ export interface Container extends ContainerInfo {
   customConfig?: CustomConfig;
   user?: User;
   traefik?: TraefikConfig;
+  Mounts: Mount[];
 }

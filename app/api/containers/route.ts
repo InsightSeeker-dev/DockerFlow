@@ -56,6 +56,17 @@ interface ExtendedContainerInfo extends Omit<ContainerInfo, 'HostConfig'> {
   customConfig?: CustomConfig;
 }
 
+interface Mount {
+  Type?: string;
+  Name?: string;
+  Source: string;
+  Destination: string;
+  Driver?: string;
+  Mode: string;
+  RW: boolean;
+  Propagation: string;
+}
+
 const createContainerSchema = z.object({
   name: z.string(),
   image: z.string(),
@@ -261,10 +272,12 @@ export async function POST(request: Request) {
       HostConfig: {
         PortBindings: portBindings,
         Binds: [`${volumeName}:/data`],
+        NetworkMode: 'proxy'  // Ajout de la connexion au réseau proxy
       },
       Labels: {
         'traefik.enable': 'true',
         [`traefik.http.routers.${name}.rule`]: `Host(\`${subdomain}.dockersphere.ovh\`)`,
+        [`traefik.http.routers.${name}.entrypoints`]: 'websecure',  // Ajout de l'entrypoint
         [`traefik.http.routers.${name}.tls`]: 'true',
         [`traefik.http.routers.${name}.tls.certresolver`]: 'letsencrypt',
         [`traefik.http.services.${name}.loadbalancer.server.port`]: exposedPortsList[0].containerPort.toString()
@@ -426,6 +439,9 @@ export async function PATCH(request: Request) {
         break;
 
       case 'remove':
+        // Récupérer les informations détaillées du conteneur
+        const containerInspectInfo = await container.inspect();
+
         // Supprimer le sous-domaine DNS
         try {
           const env = containerInfo.Config.Env || [];
@@ -438,12 +454,33 @@ export async function PATCH(request: Request) {
           console.error('Erreur lors de la suppression du sous-domaine:', error);
         }
 
-        await container.remove({ force: true });
+        // Supprimer le conteneur avec l'option v pour supprimer les volumes anonymes
+        await container.remove({ 
+          force: true,
+          v: true
+        });
+
+        // Supprimer les volumes nommés associés
+        if (containerInspectInfo.Mounts) {
+          const docker = getDockerClient();
+          for (const mount of containerInspectInfo.Mounts as Mount[]) {
+            if (mount.Type === 'volume' && mount.Name) {
+              try {
+                const volume = docker.getVolume(mount.Name);
+                await volume.remove();
+                console.log(`Volume ${mount.Name} supprimé avec succès`);
+              } catch (error) {
+                console.error(`Erreur lors de la suppression du volume ${mount.Name}:`, error);
+              }
+            }
+          }
+        }
+
         await prisma.activity.create({
           data: {
             type: ActivityType.CONTAINER_DELETE,
             userId: session.user.id,
-            description: `Removed container ${containerName}`,
+            description: `Removed container ${containerName} and associated volumes`,
             metadata: {
               containerId,
               containerName,

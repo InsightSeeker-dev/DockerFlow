@@ -3,13 +3,17 @@ version: '3'
 volumes:
   traefik-acme:
     driver: local
+  traefik-logs:
+    driver: local
 
 services:
   traefik-init:
     image: alpine
-    command: sh -c "mkdir -p /letsencrypt && touch /letsencrypt/acme.json && chmod 600 /letsencrypt/acme.json"
+    container_name: traefik-init
+    command: sh -c "mkdir -p /letsencrypt && touch /letsencrypt/acme.json && chmod 600 /letsencrypt/acme.json && tail -f /dev/null"
     volumes:
       - traefik-acme:/letsencrypt
+    restart: unless-stopped
 
   traefik:
     image: traefik:v2.10
@@ -20,42 +24,31 @@ services:
     security_opt:
       - no-new-privileges:true
     ports:
-      - "80:80"     # HTTP
-      - "443:443"    # HTTPS
-      - "8080:8080"   # Dashboard Traefik
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - traefik-acme:/letsencrypt:rw
+      - traefik-logs:/var/log/traefik:rw
       - ./traefik_dynamic.yml:/traefik_dynamic.yml:ro
     networks:
       - proxy
     extra_hosts:
-      - "host.docker.internal:195.15.240.76"
+      - "host.docker.internal:host-gateway"
     environment:
       - TZ=Europe/Paris
       - OVH_APPLICATION_KEY=${OVH_APPLICATION_KEY}
       - OVH_APPLICATION_SECRET=${OVH_APPLICATION_SECRET}
       - OVH_CONSUMER_KEY=${OVH_CONSUMER_KEY}
       - OVH_ENDPOINT=ovh-eu
-    labels:
-      - "traefik.enable=true"
-      # Dashboard configuration
-      - "traefik.http.routers.dashboard.rule=Host(`traefik.dockersphere.ovh`)"
-      - "traefik.http.routers.dashboard.entrypoints=websecure"
-      - "traefik.http.routers.dashboard.service=api@internal"
-      - "traefik.http.routers.dashboard.tls=true"
-      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
-      - "traefik.http.middlewares.auth.basicauth.users=admin:$$apr1$$O7TOR0Eq$$uqqmZk/Dh4FxjDE7dd1yA0"
-      - "traefik.http.routers.dashboard.middlewares=auth"
-      # HTTP to HTTPS redirect
-      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
-      - "traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true"
-      - "traefik.http.routers.http-catchall.rule=hostregexp(`{host:.+}`)"
-      - "traefik.http.routers.http-catchall.entrypoints=web"
-      - "traefik.http.routers.http-catchall.middlewares=redirect-to-https"
+      - OVH_TTL=60
+      - TRAEFIK_LOG_LEVEL=DEBUG
     command:
       - --api.dashboard=true
       - --log.level=DEBUG
+      - --accesslog=true
+      - --accesslog.filepath=/var/log/traefik/access.log
       - --providers.file.filename=/traefik_dynamic.yml
       - --entrypoints.web.address=:80
       - --entrypoints.websecure.address=:443
@@ -63,12 +56,30 @@ services:
       - --certificatesresolvers.letsencrypt.acme.dnschallenge.provider=ovh
       - --certificatesresolvers.letsencrypt.acme.email=dynastie.amoussou.etu@gmail.com
       - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.letsencrypt.acme.dnschallenge.delaybeforecheck=30
+      - --certificatesresolvers.letsencrypt.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
       - --providers.docker.network=proxy
       - --providers.docker.endpoint=unix:///var/run/docker.sock
-      - --serverstransport.insecureskipverify=true
       - --providers.docker.defaultRule=Host(`{{ normalize .Name }}.dockersphere.ovh`)
+      - --serverstransport.insecureskipverify=true
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.dockersphere.ovh`)"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.tls=true"
+      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.dashboard.tls.domains[0].main=dockersphere.ovh"
+      - "traefik.http.routers.dashboard.tls.domains[0].sans=*.dockersphere.ovh"
+      - "traefik.http.middlewares.auth.basicauth.users=admin:$$apr1$$O7TOR0Eq$$uqqmZk/Dh4FxjDE7dd1yA0"
+      - "traefik.http.routers.dashboard.middlewares=auth"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true"
+      - "traefik.http.routers.http-catchall.rule=hostregexp(`{host:.+}`)"
+      - "traefik.http.routers.http-catchall.entrypoints=web"
+      - "traefik.http.routers.http-catchall.middlewares=redirect-to-https"
 
 networks:
   proxy:

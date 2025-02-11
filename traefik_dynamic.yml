@@ -12,12 +12,27 @@ http:
         stsIncludeSubdomains: true
         stsPreload: true
         stsSeconds: 31536000
+        customFrameOptionsValue: "SAMEORIGIN"
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        permissionsPolicy: "camera=(), microphone=(), geolocation=(), payment=()"
+        customResponseHeaders:
+          X-Robots-Tag: "none,noarchive,nosnippet,notranslate,noimageindex"
+          Server: ""
+
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 50
+        period: 1s
 
   services:
     nextapp:
       loadBalancer:
+        passHostHeader: true
         servers:
-          - url: "http://host.docker.internal:3000"  # Utilisation de host.docker.internal pour accéder à l'hôte
+          - url: "http://172.17.0.1:3000"  # IP du réseau docker host
 
   routers:
     nextjs:
@@ -27,8 +42,10 @@ http:
         - websecure
       tls:
         certResolver: letsencrypt
+        options: default
       middlewares:
         - secure-headers
+        - rate-limit
 
 tls:
   options:
@@ -42,3 +59,8 @@ tls:
         - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
         - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305
         - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305
+      curvePreferences:
+        - CurveP521
+        - CurveP384
+      clientAuth:
+        clientAuthType: NoClientCert

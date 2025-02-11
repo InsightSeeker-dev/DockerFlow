@@ -33,6 +33,9 @@ interface ExtendedHostConfig {
   NetworkMode: string;
   NanoCpus?: number;
   Memory?: number;
+  RestartPolicy?: {
+    Name: string;
+  }
 }
 
 interface CustomConfig {
@@ -79,6 +82,27 @@ const containerActionSchema = z.object({
   action: z.enum(['start', 'stop', 'remove']),
   containerId: z.string(),
 });
+
+function generateTraefikLabels(name: string, port: number): Record<string, string> {
+  const subdomain = name.toLowerCase();
+  return {
+    'traefik.enable': 'true',
+    // Router configuration
+    [`traefik.http.routers.${name}.rule`]: `Host(\`${subdomain}.dockersphere.ovh\`)`,
+    [`traefik.http.routers.${name}.entrypoints`]: 'websecure',
+    [`traefik.http.routers.${name}.tls`]: 'true',
+    [`traefik.http.routers.${name}.tls.certresolver`]: 'letsencrypt',
+    [`traefik.http.routers.${name}.tls.domains[0].main`]: 'dockersphere.ovh',
+    [`traefik.http.routers.${name}.tls.domains[0].sans`]: '*.dockersphere.ovh',
+    
+    // Service configuration
+    [`traefik.http.services.${name}.loadbalancer.server.port`]: port.toString(),
+    [`traefik.http.services.${name}.loadbalancer.passHostHeader`]: 'true',
+    
+    // Utilisation des middlewares globaux depuis traefik_dynamic.yml
+    [`traefik.http.routers.${name}.middlewares`]: 'secure-headers@file',
+  };
+}
 
 export async function GET() {
   try {
@@ -272,15 +296,13 @@ export async function POST(request: Request) {
       HostConfig: {
         PortBindings: portBindings,
         Binds: [`${volumeName}:/data`],
-        NetworkMode: 'proxy'  // Ajout de la connexion au réseau proxy
+        NetworkMode: 'proxy',
+        RestartPolicy: {
+          Name: 'unless-stopped'
+        }
       },
       Labels: {
-        'traefik.enable': 'true',
-        [`traefik.http.routers.${name}.rule`]: `Host(\`${subdomain}.dockersphere.ovh\`)`,
-        [`traefik.http.routers.${name}.entrypoints`]: 'websecure',  // Ajout de l'entrypoint
-        [`traefik.http.routers.${name}.tls`]: 'true',
-        [`traefik.http.routers.${name}.tls.certresolver`]: 'letsencrypt',
-        [`traefik.http.services.${name}.loadbalancer.server.port`]: exposedPortsList[0].containerPort.toString()
+        ...generateTraefikLabels(name, exposedPortsList[0].containerPort),
       }
     };
 

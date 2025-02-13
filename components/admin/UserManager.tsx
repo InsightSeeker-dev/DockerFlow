@@ -121,56 +121,51 @@ export function UserManager({ onUserSelect }: UserManagerProps) {
   }
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-2xl font-bold flex items-center gap-2">
-            <UsersIcon className="h-6 w-6" />
-            User Management
-          </CardTitle>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setRefreshKey(prev => prev + 1)}
-            >
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-            <Button onClick={() => setIsCreateDialogOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Add New User
-            </Button>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search users..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-          </div>
-
-          <UsersTable
-            users={filteredUsers}
-            onUserAction={handleUserAction}
-            onBulkAction={handleBulkAction}
-            onUserSelect={onUserSelect}
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <Input
+            placeholder="Search users..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-64"
           />
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setRefreshKey(prev => prev + 1)}
+            disabled={loading}
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          </Button>
         </div>
+        <Button onClick={() => setIsCreateDialogOpen(true)}>
+          <Plus className="mr-2 h-4 w-4" /> Add User
+        </Button>
+      </div>
 
-        <CreateUserDialog
-          open={isCreateDialogOpen}
-          onOpenChange={setIsCreateDialogOpen}
-          onSubmit={handleCreateUser}
+      {loading ? (
+        <div className="flex items-center justify-center p-8">
+          <Loader2 className="h-8 w-8 animate-spin" />
+        </div>
+      ) : (
+        <UsersTable
+          users={filteredUsers}
+          onUserAction={handleUserAction}
+          onBulkAction={handleBulkAction}
+          onUserSelect={onUserSelect}
         />
-      </CardContent>
-    </Card>
+      )}
+
+      <CreateUserDialog
+        open={isCreateDialogOpen}
+        onOpenChange={setIsCreateDialogOpen}
+        onSubmit={async (data) => {
+          await handleCreateUser(data);
+          setRefreshKey(prev => prev + 1);
+          setIsCreateDialogOpen(false);
+        }}
+      />
+    </div>
   );
 }

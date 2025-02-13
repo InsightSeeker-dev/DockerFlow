@@ -169,6 +169,7 @@ export default function AlertCenter() {
     .filter((alert) => {
       if (filter === 'all') return true;
       if (filter === 'unacknowledged') return !alert.acknowledged;
+      if (filter === 'acknowledged') return alert.acknowledged;
       return alert.type === filter;
     })
     .filter(
@@ -182,35 +183,29 @@ export default function AlertCenter() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-3xl font-bold tracking-tight">Alert Center</h2>
-        <Button>
-          <Plus className="mr-2 h-4 w-4" /> Create Alert Rule
-        </Button>
-      </div>
-
-      <div className="flex gap-4 items-center">
-        <div className="flex-1">
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-4">
           <Input
             placeholder="Search alerts..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-64"
           />
+          <Select value={filter} onValueChange={setFilter}>
+            <SelectTrigger className="w-32">
+              <SelectValue placeholder="All Alerts" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Alerts</SelectItem>
+              <SelectItem value="unacknowledged">Unacknowledged</SelectItem>
+              <SelectItem value="acknowledged">Acknowledged</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-        <Select value={filter} onValueChange={setFilter}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Filter alerts" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Alerts</SelectItem>
-            <SelectItem value="unacknowledged">Unacknowledged</SelectItem>
-            <SelectItem value="error">Error</SelectItem>
-            <SelectItem value="warning">Warning</SelectItem>
-            <SelectItem value="info">Info</SelectItem>
-            <SelectItem value="success">Success</SelectItem>
-          </SelectContent>
-        </Select>
+        <Button>
+          <Plus className="mr-2 h-4 w-4" /> Create Alert Rule
+        </Button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">

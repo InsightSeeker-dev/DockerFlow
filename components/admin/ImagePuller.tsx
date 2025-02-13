@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Download, RefreshCcw, Plus, Settings2 } from 'lucide-react';
+import { Download, RefreshCcw, Plus, Settings2, Check, X } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -24,7 +24,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
-
 interface Registry {
   id: string;
   name: string;
@@ -46,6 +45,7 @@ export default function ImagePuller({ onImagePulled }: ImagePullerProps) {
   const [selectedRegistry, setSelectedRegistry] = useState('docker.io');
   const [isPulling, setIsPulling] = useState(false);
   const [pullProgress, setPullProgress] = useState<{[key: string]: string}>({});
+  const [pullStatus, setPullStatus] = useState<'idle' | 'pulling' | 'completed' | 'error'>('idle');
   const [registries, setRegistries] = useState<Registry[]>([]);
   const [newRegistry, setNewRegistry] = useState<Registry>({
     id: '',
@@ -162,10 +162,11 @@ export default function ImagePuller({ onImagePulled }: ImagePullerProps) {
     }
 
     setIsPulling(true);
+    setPullStatus('pulling');
     setPullProgress({});
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
 
     try {
-      // Récupérer les credentials du registre sélectionné
       const selectedRegistryConfig = registries.find(r => r.url === selectedRegistry);
       const auth = selectedRegistryConfig?.username ? {
         username: selectedRegistryConfig.username,
@@ -189,14 +190,22 @@ export default function ImagePuller({ onImagePulled }: ImagePullerProps) {
         throw new Error(errorData.message || 'Failed to pull image');
       }
 
-      const reader = response.body?.getReader();
+      reader = response.body?.getReader();
       if (!reader) {
         throw new Error('No response stream');
       }
 
-      while (true) {
+      let isComplete = false;
+      while (!isComplete) {
         const { done, value } = await reader.read();
-        if (done) break;
+        
+        if (done) {
+          isComplete = true;
+          // Si on arrive à la fin du stream sans erreur, c'est un succès
+          setPullStatus('completed');
+          setIsPulling(false);
+          break;
+        }
 
         const text = new TextDecoder().decode(value);
         const lines = text.split('\n').filter(line => line.trim());
@@ -206,20 +215,43 @@ export default function ImagePuller({ onImagePulled }: ImagePullerProps) {
             const data = JSON.parse(line);
             
             if (data.error) {
-              // Gérer les erreurs de pull
+              isComplete = true;
+              setPullStatus('error');
+              setIsPulling(false);
               toast.error(data.message || 'Failed to pull image');
               break;
-            } else if (data.success) {
-              // Gérer le succès
+            } else if (data.status === 'Image pulled successfully' || data.success) {
+              isComplete = true;
+              setPullStatus('completed');
+              setIsPulling(false);
               toast.success('Image pulled successfully');
               onImagePulled?.();
               break;
             } else {
-              // Mettre à jour la progression
-              setPullProgress(prev => ({
-                ...prev,
-                [data.id || 'status']: data.status + (data.progress ? `: ${data.progress}` : ''),
-              }));
+              setPullProgress(prev => {
+                const newProgress = {
+                  ...prev,
+                  [data.id || 'status']: data.status + (data.progress ? `: ${data.progress}` : ''),
+                };
+                
+                // Vérifie si toutes les étapes sont complètes
+                const allComplete = Object.values(newProgress).every(
+                  (status): boolean => {
+                    const statusStr = String(status);
+                    return statusStr.includes('complete');
+                  }
+                );
+                
+                if (allComplete && data.status.includes('complete')) {
+                  isComplete = true;
+                  setPullStatus('completed');
+                  setIsPulling(false);
+                  toast.success('Image pulled successfully');
+                  onImagePulled?.();
+                }
+                
+                return newProgress;
+              });
             }
           } catch (e) {
             console.error('Failed to parse pull progress:', e);
@@ -228,17 +260,32 @@ export default function ImagePuller({ onImagePulled }: ImagePullerProps) {
       }
     } catch (error: any) {
       console.error('Failed to pull image:', error);
+      setPullStatus('error');
       toast.error(error.message || 'Failed to pull image');
     } finally {
+      if (reader) {
+        reader.cancel();
+      }
       setIsPulling(false);
     }
+  };
+
+  const renderProgressIcon = (status: { toString(): string }) => {
+    const statusText = status.toString();
+    if (statusText.includes('complete') || pullStatus === 'completed') {
+      return <Check className="h-4 w-4 text-green-500" />;
+    }
+    if (pullStatus === 'error') {
+      return <X className="h-4 w-4 text-red-500" />;
+    }
+    return <RefreshCcw className="h-4 w-4 animate-spin" />;
   };
 
   const resetForm = () => {
     setImageUrl('');
     setSelectedRegistry('docker.io');
     setPullProgress({});
-    toast.success('Form reset successfully');
+    setPullStatus('idle');
   };
 
   return (
@@ -293,13 +340,29 @@ export default function ImagePuller({ onImagePulled }: ImagePullerProps) {
                 onClick={handlePull}
                 disabled={isPulling || !imageUrl}
                 className="w-32"
+                variant={pullStatus === 'completed' ? 'secondary' : pullStatus === 'error' ? 'destructive' : 'default'}
               >
                 {isPulling ? (
-                  <RefreshCcw className="mr-2 h-4 w-4 animate-spin" />
+                  <>
+                    <RefreshCcw className="mr-2 h-4 w-4 animate-spin" />
+                    Pulling...
+                  </>
+                ) : pullStatus === 'completed' ? (
+                  <>
+                    <Check className="mr-2 h-4 w-4" />
+                    Done
+                  </>
+                ) : pullStatus === 'error' ? (
+                  <>
+                    <X className="mr-2 h-4 w-4" />
+                    Failed
+                  </>
                 ) : (
-                  <Download className="mr-2 h-4 w-4" />
+                  <>
+                    <Download className="mr-2 h-4 w-4" />
+                    Pull
+                  </>
                 )}
-                Pull
               </Button>
             </div>
           </div>
@@ -307,10 +370,12 @@ export default function ImagePuller({ onImagePulled }: ImagePullerProps) {
           {Object.keys(pullProgress).length > 0 && (
             <div className="mt-4 space-y-2">
               <Label>Pull Progress</Label>
-              <div className="rounded-lg border p-4 space-y-2">
+              <div className="rounded-lg border p-4 space-y-2 max-h-48 overflow-y-auto">
                 {Object.entries(pullProgress).map(([id, status]) => (
-                  <div key={id} className="text-sm">
-                    <span className="font-medium">{id}:</span> {status}
+                  <div key={id} className="text-sm flex items-center space-x-2">
+                    {renderProgressIcon(status)}
+                    <span className="font-medium">{id}:</span>
+                    <span className="text-muted-foreground">{status}</span>
                   </div>
                 ))}
               </div>

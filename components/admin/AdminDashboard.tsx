@@ -230,11 +230,8 @@ export default function AdminDashboard() {
         </TabsContent>
 
         <TabsContent value="images" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Image Management</CardTitle>
-            </CardHeader>
-            <CardContent>
+          <Card className="border-none shadow-none bg-transparent">
+            <CardContent className="p-0">
               <ImageManager />
             </CardContent>
           </Card>

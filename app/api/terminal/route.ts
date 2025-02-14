@@ -20,8 +20,7 @@ export async function GET(req: Request) {
   }
 
   const { searchParams } = new URL(req.url);
-  const rawContainerId = searchParams.get('containerId');
-  const containerId = rawContainerId || undefined; // Conversion de null en undefined
+  const containerId = searchParams.get('containerId');
   const upgrade = req.headers.get('upgrade');
 
   if (upgrade?.toLowerCase() !== 'websocket') {
@@ -34,10 +33,9 @@ export async function GET(req: Request) {
     socket.onopen = async () => {
       console.log('Terminal client connected');
 
-      let cleanup = () => {};
-
-      if (containerId) {
-        try {
+      try {
+        // Si un containerId est fourni, on se connecte au conteneur
+        if (containerId) {
           const container = docker.getContainer(containerId);
           const exec = await container.exec({
             AttachStdin: true,
@@ -53,12 +51,12 @@ export async function GET(req: Request) {
           });
 
           stream.on('data', (chunk) => {
-            if (socket.readyState === 1) { // OPEN
+            if (socket.readyState === 1) {
               socket.send(chunk.toString());
             }
           });
 
-          socket.onmessage = (event: { data: string | Buffer; type: string }) => {
+          socket.onmessage = (event: MessageEvent) => {
             const data = event.data.toString();
             if (data.startsWith('RESIZE:')) {
               const [rows, cols] = data.substring(7).split('x').map(Number);
@@ -68,64 +66,62 @@ export async function GET(req: Request) {
             }
           };
 
-          cleanup = () => {
+          socket.onclose = () => {
             stream.end();
+            console.log('Terminal client disconnected');
           };
-        } catch (error) {
-          console.error('Failed to connect to container:', error);
-          socket.close();
-          return;
+        } else {
+          // Si pas de containerId, on se connecte à un conteneur par défaut
+          const container = await docker.createContainer({
+            Image: 'alpine:latest',
+            Tty: true,
+            OpenStdin: true,
+            Cmd: ['/bin/sh'],
+            HostConfig: {
+              AutoRemove: true
+            }
+          });
+
+          await container.start();
+
+          const exec = await container.exec({
+            AttachStdin: true,
+            AttachStdout: true,
+            AttachStderr: true,
+            Tty: true,
+            Cmd: ['/bin/sh']
+          });
+
+          const stream = await exec.start({
+            hijack: true,
+            stdin: true
+          });
+
+          stream.on('data', (chunk) => {
+            if (socket.readyState === 1) {
+              socket.send(chunk.toString());
+            }
+          });
+
+          socket.onmessage = (event: MessageEvent) => {
+            const data = event.data.toString();
+            if (data.startsWith('RESIZE:')) {
+              const [rows, cols] = data.substring(7).split('x').map(Number);
+              exec.resize({ h: rows, w: cols }).catch(console.error);
+            } else {
+              stream.write(data);
+            }
+          };
+
+          socket.onclose = () => {
+            stream.end();
+            container.stop().catch(console.error);
+            console.log('Terminal client disconnected');
+          };
         }
-      } else {
-        // Terminal système par défaut
-        const shell = process.platform === 'win32' ? 'powershell.exe' : 'bash';
-        const pty = require('node-pty').spawn(shell, [], {
-          name: 'xterm-color',
-          cols: 80,
-          rows: 24,
-          cwd: process.cwd(),
-          env: process.env
-        });
-
-        pty.onData((data: string) => {
-          if (socket.readyState === 1) { // OPEN
-            socket.send(data);
-          }
-        });
-
-        socket.onmessage = (event: { data: string | Buffer; type: string }) => {
-          const data = event.data.toString();
-          if (data.startsWith('RESIZE:')) {
-            const [rows, cols] = data.substring(7).split('x').map(Number);
-            pty.resize(cols, rows);
-          } else {
-            pty.write(data);
-          }
-        };
-
-        cleanup = () => {
-          pty.kill();
-        };
-      }
-
-      clients.set(socket, { containerId, cleanup });
-    };
-
-    socket.onclose = () => {
-      const client = clients.get(socket);
-      if (client) {
-        client.cleanup();
-        clients.delete(socket);
-      }
-      console.log('Terminal client disconnected');
-    };
-
-    socket.onerror = (error: any) => {
-      console.error('WebSocket error:', error);
-      const client = clients.get(socket);
-      if (client) {
-        client.cleanup();
-        clients.delete(socket);
+      } catch (error) {
+        console.error('Failed to setup terminal:', error);
+        socket.close();
       }
     };
 

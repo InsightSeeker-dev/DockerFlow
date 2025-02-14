@@ -26,9 +26,19 @@ const WebTerminal: React.FC<WebTerminalProps> = ({ containerId }) => {
   const [terminal, setTerminal] = useState<Terminal | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (terminalRef.current) {
+    setIsMounted(true);
+    return () => setIsMounted(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isMounted || !terminalRef.current) return;
+
+    try {
+      console.log('Initializing terminal...');
       const term = new Terminal({
         cursorBlink: true,
         fontSize: 14,
@@ -48,19 +58,25 @@ const WebTerminal: React.FC<WebTerminalProps> = ({ containerId }) => {
       term.loadAddon(webLinksAddon);
       term.loadAddon(searchAddon);
 
+      console.log('Opening terminal...');
       term.open(terminalRef.current);
       fitAddon.fit();
+      term.write('Connecting to terminal...\r\n');
 
       setTerminal(term);
 
       // Connexion WebSocket
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${wsProtocol}//${window.location.host}/api/terminal${containerId ? `?containerId=${containerId}` : ''}`;
+      console.log('Connecting to WebSocket:', wsUrl);
+      
       const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
+        console.log('WebSocket connected');
         setIsConnected(true);
         term.write('\r\n🚀 Connected to terminal\r\n');
+        setError(null);
       };
 
       ws.onmessage = (event) => {
@@ -68,8 +84,15 @@ const WebTerminal: React.FC<WebTerminalProps> = ({ containerId }) => {
       };
 
       ws.onclose = () => {
+        console.log('WebSocket disconnected');
         setIsConnected(false);
         term.write('\r\n🔌 Disconnected from terminal\r\n');
+      };
+
+      ws.onerror = (event) => {
+        console.error('WebSocket error:', event);
+        setError('Failed to connect to terminal');
+        term.write('\r\n❌ Error: Failed to connect to terminal\r\n');
       };
 
       socketRef.current = ws;
@@ -90,18 +113,33 @@ const WebTerminal: React.FC<WebTerminalProps> = ({ containerId }) => {
       };
 
       window.addEventListener('resize', handleResize);
+      // Initial resize
+      setTimeout(handleResize, 100);
 
       return () => {
+        console.log('Cleaning up terminal...');
         term.dispose();
         ws.close();
         window.removeEventListener('resize', handleResize);
       };
+    } catch (err) {
+      console.error('Error initializing terminal:', err);
+      setError(err instanceof Error ? err.message : 'Failed to initialize terminal');
     }
-  }, [containerId]);
+  }, [isMounted, containerId]);
+
+  if (!isMounted) {
+    return <div className="h-full w-full bg-black" />;
+  }
 
   return (
-    <div className="w-full h-full min-h-[400px] bg-gray-900 rounded-lg overflow-hidden">
+    <div className="relative w-full h-full">
       <div ref={terminalRef} className="w-full h-full" />
+      {error && (
+        <div className="absolute top-0 left-0 right-0 bg-red-500/90 text-white px-4 py-2 text-sm">
+          {error}
+        </div>
+      )}
     </div>
   );
 };

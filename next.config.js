@@ -19,6 +19,12 @@ const nextConfig = {
 
     return config;
   },
+  // Ajouter la configuration WebSocket
+  experimental: {
+    webSocketServer: {
+      enable: true,
+    },
+  },
 }
 
 module.exports = nextConfig;

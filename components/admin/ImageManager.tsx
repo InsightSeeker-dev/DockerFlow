@@ -17,7 +17,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/components/ui/use-toast';
@@ -225,122 +224,146 @@ export default function ImageManager() {
 
   return (
     <div className="space-y-6">
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="bg-background/95 p-1">
-          <TabsTrigger value="images">Images</TabsTrigger>
-          <TabsTrigger value="search">Search Image</TabsTrigger>
-          <TabsTrigger value="pull">Pull Image</TabsTrigger>
-          <TabsTrigger value="build">Build Image</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="images">
-          <div className="space-y-4">
-            <div className="flex gap-4">
-              <div className="flex-1">
-                <ImageSearch
-                  mode="local"
-                  searchTerm={localSearch.term}
-                  onSearchChange={handleLocalSearchChange}
-                  sortBy={localSearch.sortBy}
-                  onSortChange={handleLocalSortChange}
-                />
-              </div>
-              <Button
-                variant="outline"
-                className="h-10"
-                onClick={() => resetFilters('local')}
-              >
-                <RefreshCcw className="h-4 w-4 mr-2" />
-                Reset
-              </Button>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {filteredImages.map((image) => (
-                <Card key={image.Id}>
-                  <CardHeader>
-                    <CardTitle className="font-mono text-sm">
-                      {image.RepoTags?.[0] || 'Untitled'}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      <div className="flex items-center space-x-2">
-                        <code className="text-xs">{image.Id.substring(7, 19)}</code>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-4 w-4"
-                          onClick={() => copyToClipboard(image.Id)}
-                        >
-                          <Copy className="h-3 w-3" />
-                        </Button>
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        Size: {formatSize(image.Size)}
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        Created: {formatDate(image.Created)}
-                      </div>
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        {image.RepoTags?.map((tag) => (
-                          <Badge key={tag} variant="secondary">
-                            {tag}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  </CardContent>
-                  <CardFooter className="flex justify-end space-x-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => {
-                        setSelectedImage(image);
-                        setShowImageInfo(true);
-                      }}
-                    >
-                      <Info className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => {
-                        setSelectedImage(image);
-                        setShowDeleteConfirm(true);
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </CardFooter>
-                </Card>
-              ))}
-            </div>
+      <div className="bg-[#0B1120] rounded-lg">
+        <div className="flex h-10 items-center border-b border-border">
+          <div className="flex items-center">
+            <button
+              onClick={() => setActiveTab('images')}
+              className={`h-10 px-4 ${activeTab === 'images' ? 'bg-[#1e293b] text-foreground' : 'text-muted-foreground'}`}
+            >
+              Images
+            </button>
+            <button
+              onClick={() => setActiveTab('search')}
+              className={`h-10 px-4 ${activeTab === 'search' ? 'bg-[#1e293b] text-foreground' : 'text-muted-foreground'}`}
+            >
+              Search Image
+            </button>
+            <button
+              onClick={() => setActiveTab('pull')}
+              className={`h-10 px-4 ${activeTab === 'pull' ? 'bg-[#1e293b] text-foreground' : 'text-muted-foreground'}`}
+            >
+              Pull Image
+            </button>
+            <button
+              onClick={() => setActiveTab('build')}
+              className={`h-10 px-4 ${activeTab === 'build' ? 'bg-[#1e293b] text-foreground' : 'text-muted-foreground'}`}
+            >
+              Build Image
+            </button>
           </div>
-        </TabsContent>
+        </div>
 
-        <TabsContent value="search">
-          <ImageSearch
-            mode="hub"
-            searchTerm={hubSearch.term}
-            onSearchChange={handleHubSearchChange}
-            sortBy={hubSearch.sortBy}
-            onSortChange={handleHubSortChange}
-            onPullImage={handlePullImage}
-          />
-        </TabsContent>
+        <div className="p-6">
+          {activeTab === 'images' && (
+            <div className="space-y-4">
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <ImageSearch
+                    mode="local"
+                    searchTerm={localSearch.term}
+                    onSearchChange={handleLocalSearchChange}
+                    sortBy={localSearch.sortBy}
+                    onSortChange={handleLocalSortChange}
+                  />
+                </div>
+                <Button
+                  variant="outline"
+                  className="h-10"
+                  onClick={() => resetFilters('local')}
+                >
+                  <RefreshCcw className="h-4 w-4 mr-2" />
+                  Reset
+                </Button>
+              </div>
 
-        <TabsContent value="pull">
-          <ImagePuller 
-            onImagePulled={fetchImages} 
-            defaultImage={imageToPull}
-          />
-        </TabsContent>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {filteredImages.map((image) => (
+                  <Card key={image.Id}>
+                    <CardHeader>
+                      <CardTitle className="font-mono text-sm">
+                        {image.RepoTags?.[0] || 'Untitled'}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        <div className="flex items-center space-x-2">
+                          <code className="text-xs">{image.Id.substring(7, 19)}</code>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-4 w-4"
+                            onClick={() => copyToClipboard(image.Id)}
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          Size: {formatSize(image.Size)}
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          Created: {formatDate(image.Created)}
+                        </div>
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {image.RepoTags?.map((tag) => (
+                            <Badge key={tag} variant="secondary">
+                              {tag}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    </CardContent>
+                    <CardFooter className="flex justify-end space-x-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setSelectedImage(image);
+                          setShowImageInfo(true);
+                        }}
+                      >
+                        <Info className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setSelectedImage(image);
+                          setShowDeleteConfirm(true);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </CardFooter>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
 
-        <TabsContent value="build">
-          <UnifiedImageBuilder onImageBuilt={fetchImages} />
-        </TabsContent>
-      </Tabs>
+          {activeTab === 'search' && (
+            <ImageSearch
+              mode="hub"
+              searchTerm={hubSearch.term}
+              onSearchChange={handleHubSearchChange}
+              sortBy={hubSearch.sortBy}
+              onSortChange={handleHubSortChange}
+              onPullImage={handlePullImage}
+            />
+          )}
+
+          {activeTab === 'pull' && (
+            <ImagePuller 
+              onImagePulled={fetchImages} 
+              defaultImage={imageToPull}
+            />
+          )}
+
+          {activeTab === 'build' && (
+            <UnifiedImageBuilder onImageBuilt={fetchImages} />
+          )}
+        </div>
+      </div>
 
       <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
         <DialogContent>

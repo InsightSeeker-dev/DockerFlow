@@ -19,7 +19,7 @@ import { motion } from 'framer-motion';
 import {
   Container as ContainerIcon,
   Image as ImageIcon,
-  Network as NetworkIcon,
+  Terminal as TerminalIcon,
   Bell,
   Settings,
   Users,
@@ -27,6 +27,12 @@ import {
   LogOut
 } from 'lucide-react';
 import { signOut } from 'next-auth/react';
+import dynamic from 'next/dynamic';
+
+const WebTerminal = dynamic(
+  () => import('@/components/terminal/WebTerminal'),
+  { ssr: false }
+);
 
 interface RecentActivity {
   id: string;
@@ -188,9 +194,9 @@ export default function AdminDashboard() {
             <ImageIcon className="h-4 w-4" />
             <span>Images</span>
           </TabsTrigger>
-          <TabsTrigger value="networks" className="flex items-center gap-2">
-            <NetworkIcon className="h-4 w-4" />
-            <span>Networks</span>
+          <TabsTrigger value="terminal" className="flex items-center gap-2">
+            <TerminalIcon className="h-4 w-4" />
+            <span>Terminal</span>
           </TabsTrigger>
           <TabsTrigger value="users" className="flex items-center gap-2">
             <Users className="h-4 w-4" />
@@ -237,13 +243,15 @@ export default function AdminDashboard() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="networks" className="space-y-4">
+        <TabsContent value="terminal" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Network Management</CardTitle>
+              <CardTitle>Terminal Access</CardTitle>
             </CardHeader>
             <CardContent>
-              <NetworkManager />
+              <div className="h-[600px] bg-black rounded-lg overflow-hidden">
+                {activeTab === 'terminal' && <WebTerminal />}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

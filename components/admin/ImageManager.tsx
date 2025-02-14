@@ -185,99 +185,109 @@ export default function ImageManager() {
   }, [searchTerm, sortBy, images]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold tracking-tight">Docker Images</h2>
-      </div>
-
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList>
+    <div className="space-y-6">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="bg-background/95 p-1">
           <TabsTrigger value="images">Images</TabsTrigger>
+          <TabsTrigger value="search">Search Image</TabsTrigger>
           <TabsTrigger value="pull">Pull Image</TabsTrigger>
           <TabsTrigger value="build">Build Image</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="images" className="space-y-4">
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <ImageSearch
-                searchTerm={searchTerm}
-                onSearchChange={setSearchTerm}
-                sortBy={sortBy}
-                onSortChange={setSortBy}
-              />
+        <TabsContent value="images">
+          <div className="space-y-4">
+            <div className="flex gap-4">
+              <div className="flex-1">
+                <ImageSearch
+                  mode="local"
+                  searchTerm={searchTerm}
+                  onSearchChange={setSearchTerm}
+                  sortBy={sortBy}
+                  onSortChange={setSortBy}
+                />
+              </div>
+              <Button
+                variant="outline"
+                className="h-10"
+                onClick={resetFilters}
+              >
+                <RefreshCcw className="h-4 w-4 mr-2" />
+                Reset
+              </Button>
             </div>
-            <Button
-              variant="outline"
-              className="h-12 px-4 bg-white/5 backdrop-blur-sm border-2 border-gray-700 hover:border-gray-600"
-              onClick={resetFilters}
-            >
-              <RefreshCcw className="h-4 w-4 mr-2" />
-              Reset
-            </Button>
-          </div>
 
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {filteredImages.map((image) => (
-              <Card key={image.Id} className="flex flex-col">
-                <CardHeader>
-                  <CardTitle className="font-mono text-sm">
-                    {image.RepoTags?.[0] || 'Untitled'}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="flex-1">
-                  <div className="space-y-2">
-                    <div className="flex items-center space-x-2">
-                      <code className="text-xs">{image.Id.substring(7, 19)}</code>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-4 w-4"
-                        onClick={() => copyToClipboard(image.Id)}
-                      >
-                        <Copy className="h-3 w-3" />
-                      </Button>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {filteredImages.map((image) => (
+                <Card key={image.Id}>
+                  <CardHeader>
+                    <CardTitle className="font-mono text-sm">
+                      {image.RepoTags?.[0] || 'Untitled'}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      <div className="flex items-center space-x-2">
+                        <code className="text-xs">{image.Id.substring(7, 19)}</code>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-4 w-4"
+                          onClick={() => copyToClipboard(image.Id)}
+                        >
+                          <Copy className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        Size: {formatSize(image.Size)}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        Created: {formatDate(image.Created)}
+                      </div>
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {image.RepoTags?.map((tag) => (
+                          <Badge key={tag} variant="secondary">
+                            {tag}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
-                    <div className="text-sm text-muted-foreground">
-                      Size: {formatSize(image.Size)}
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      Created: {formatDate(image.Created)}
-                    </div>
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      {image.RepoTags?.map((tag) => (
-                        <Badge key={tag} variant="secondary">
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                </CardContent>
-                <CardFooter className="flex justify-end space-x-2">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => {
-                      setSelectedImage(image);
-                      setShowImageInfo(true);
-                    }}
-                  >
-                    <Info className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => {
-                      setSelectedImage(image);
-                      setShowDeleteConfirm(true);
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </CardFooter>
-              </Card>
-            ))}
+                  </CardContent>
+                  <CardFooter className="flex justify-end space-x-2">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        setSelectedImage(image);
+                        setShowImageInfo(true);
+                      }}
+                    >
+                      <Info className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        setSelectedImage(image);
+                        setShowDeleteConfirm(true);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </CardFooter>
+                </Card>
+              ))}
+            </div>
           </div>
+        </TabsContent>
+
+        <TabsContent value="search">
+          <ImageSearch
+            mode="hub"
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            sortBy={sortBy}
+            onSortChange={setSortBy}
+          />
         </TabsContent>
 
         <TabsContent value="pull">

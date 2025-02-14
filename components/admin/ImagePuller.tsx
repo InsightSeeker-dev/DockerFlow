@@ -38,10 +38,11 @@ interface Registry {
 
 interface ImagePullerProps {
   onImagePulled?: () => void;
+  defaultImage?: string;
 }
 
-export default function ImagePuller({ onImagePulled }: ImagePullerProps) {
-  const [imageUrl, setImageUrl] = useState('');
+export default function ImagePuller({ onImagePulled, defaultImage = '' }: ImagePullerProps) {
+  const [imageUrl, setImageUrl] = useState(defaultImage);
   const [selectedRegistry, setSelectedRegistry] = useState('docker.io');
   const [isPulling, setIsPulling] = useState(false);
   const [pullProgress, setPullProgress] = useState<{[key: string]: string}>({});
@@ -56,6 +57,12 @@ export default function ImagePuller({ onImagePulled }: ImagePullerProps) {
     enabled: true
   });
   const [isAddingRegistry, setIsAddingRegistry] = useState(false);
+
+  useEffect(() => {
+    if (defaultImage) {
+      setImageUrl(defaultImage);
+    }
+  }, [defaultImage]);
 
   const defaultRegistries = [
     {

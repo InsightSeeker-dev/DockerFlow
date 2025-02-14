@@ -10,14 +10,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Search, ExternalLink } from 'lucide-react';
+import { Search, ExternalLink, Star, Download, RefreshCw } from 'lucide-react';
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
+  CardFooter,
 } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
 
 interface ImageSearchProps {
   mode: 'local' | 'hub';
@@ -25,6 +28,7 @@ interface ImageSearchProps {
   onSearchChange: (value: string) => void;
   sortBy: string;
   onSortChange: (value: string) => void;
+  onPullImage?: (imageName: string) => void;
 }
 
 interface DockerHubResult {
@@ -42,14 +46,17 @@ export default function ImageSearch({
   onSearchChange,
   sortBy,
   onSortChange,
+  onPullImage,
 }: ImageSearchProps) {
   const [dockerHubResults, setDockerHubResults] = useState<DockerHubResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const searchDockerHub = async () => {
     if (!searchTerm) return;
     
     setLoading(true);
+    setError(null);
     try {
       const response = await fetch(`/api/docker/search?term=${encodeURIComponent(searchTerm)}`);
       if (!response.ok) throw new Error('Failed to search Docker Hub');
@@ -57,9 +64,21 @@ export default function ImageSearch({
       setDockerHubResults(data);
     } catch (error) {
       console.error('Error searching Docker Hub:', error);
+      setError('Failed to search Docker Hub. Please try again.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const getDockerHubUrl = (imageName: string, official: boolean) => {
+    if (official) {
+      return `https://hub.docker.com/_/${imageName}`;
+    }
+    // Pour les images non officielles, on extrait le namespace/name
+    const [namespace, name] = imageName.split('/');
+    return name 
+      ? `https://hub.docker.com/r/${namespace}/${name}`
+      : `https://hub.docker.com/r/library/${namespace}`;
   };
 
   // Recherche locale
@@ -106,45 +125,104 @@ export default function ImageSearch({
             className="pl-9"
           />
         </div>
+        <Select value={sortBy} onValueChange={onSortChange}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Sort by" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="stars">Most Stars</SelectItem>
+            <SelectItem value="pulls">Most Downloads</SelectItem>
+            <SelectItem value="updated">Recently Updated</SelectItem>
+          </SelectContent>
+        </Select>
         <Button onClick={searchDockerHub} disabled={loading}>
-          <Search className="h-4 w-4 mr-2" />
+          {loading ? (
+            <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
+            <Search className="h-4 w-4 mr-2" />
+          )}
           Search Hub
         </Button>
       </div>
 
-      {dockerHubResults.length > 0 && (
+      {error && (
+        <div className="bg-destructive/10 text-destructive p-4 rounded-lg">
+          {error}
+        </div>
+      )}
+
+      {loading ? (
         <div className="grid gap-4 md:grid-cols-2">
-          {dockerHubResults.map((image) => (
-            <Card key={image.name}>
+          {[1, 2, 3, 4].map((i) => (
+            <Card key={i}>
               <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span>{image.name}</span>
-                  {image.official && (
-                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                      Official
-                    </span>
-                  )}
-                </CardTitle>
-                <CardDescription>{image.description}</CardDescription>
+                <Skeleton className="h-6 w-3/4" />
+                <Skeleton className="h-4 w-full mt-2" />
               </CardHeader>
               <CardContent>
-                <div className="flex justify-between text-sm">
-                  <span>⭐ {image.stars}</span>
-                  <span>📥 {image.pulls.toLocaleString()}</span>
-                  <Button variant="ghost" size="sm" asChild>
+                <Skeleton className="h-4 w-full" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        dockerHubResults.length > 0 && (
+          <div className="grid gap-4 md:grid-cols-2">
+            {dockerHubResults.map((image) => (
+              <Card key={image.name} className="hover:border-blue-500/50 transition-colors">
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <span className="font-mono text-sm">{image.name}</span>
+                    {image.official && (
+                      <Badge variant="default" className="bg-blue-500">
+                        Official
+                      </Badge>
+                    )}
+                  </CardTitle>
+                  <CardDescription className="line-clamp-2">
+                    {image.description || 'No description available'}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center justify-between text-sm text-muted-foreground">
+                    <div className="flex items-center">
+                      <Star className="h-4 w-4 mr-1 text-yellow-500" />
+                      {image.stars.toLocaleString()}
+                    </div>
+                    <div className="flex items-center">
+                      <Download className="h-4 w-4 mr-1" />
+                      {image.pulls.toLocaleString()}
+                    </div>
+                  </div>
+                </CardContent>
+                <CardFooter className="flex justify-between">
+                  <Button variant="outline" size="sm" asChild>
                     <a
-                      href={`https://hub.docker.com/_/${image.name}`}
+                      href={getDockerHubUrl(image.name, image.official)}
                       target="_blank"
                       rel="noopener noreferrer"
                     >
                       <ExternalLink className="h-4 w-4 mr-2" />
-                      View
+                      View on Hub
                     </a>
                   </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                  <Button 
+                    size="sm"
+                    onClick={() => onPullImage?.(image.name)}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Pull Image
+                  </Button>
+                </CardFooter>
+              </Card>
+            ))}
+          </div>
+        )
+      )}
+
+      {!loading && !error && searchTerm && dockerHubResults.length === 0 && (
+        <div className="text-center p-8 text-muted-foreground">
+          No images found matching "{searchTerm}"
         </div>
       )}
     </div>

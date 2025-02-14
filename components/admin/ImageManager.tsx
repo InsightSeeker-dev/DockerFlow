@@ -46,8 +46,21 @@ export default function ImageManager() {
   const [selectedImage, setSelectedImage] = useState<DockerImage | null>(null);
   const [showImageInfo, setShowImageInfo] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState('newest');
+
+  // État séparé pour la recherche locale
+  const [localSearch, setLocalSearch] = useState({
+    term: '',
+    sortBy: 'newest'
+  });
+
+  // État séparé pour la recherche Docker Hub
+  const [hubSearch, setHubSearch] = useState({
+    term: '',
+    sortBy: 'stars'
+  });
+
+  // État pour l'image à pull
+  const [imageToPull, setImageToPull] = useState('');
 
   const formatSize = (size: number) => {
     const units = ['B', 'KB', 'MB', 'GB'];
@@ -71,7 +84,7 @@ export default function ImageManager() {
       if (!response.ok) throw new Error('Failed to fetch images');
       const data = await response.json();
       setImages(data);
-      filterAndSortImages(data, searchTerm, sortBy);
+      filterAndSortImages(data, localSearch.term, localSearch.sortBy);
       toast({
         title: 'Images refreshed',
         description: `Successfully loaded ${data.length} images`,
@@ -167,13 +180,39 @@ export default function ImageManager() {
     }
   };
 
-  const resetFilters = () => {
-    setSearchTerm('');
-    setSortBy('newest');
-    toast({
-      title: 'Filters Reset',
-      description: 'Search filters have been reset to default values',
-    });
+  // Réinitialiser les filtres selon le mode
+  const resetFilters = (mode: 'local' | 'hub') => {
+    if (mode === 'local') {
+      setLocalSearch({ term: '', sortBy: 'newest' });
+      filterAndSortImages(images, '', 'newest');
+    } else {
+      setHubSearch({ term: '', sortBy: 'stars' });
+    }
+  };
+
+  // Gestionnaires d'événements séparés pour chaque mode
+  const handleLocalSearchChange = (term: string) => {
+    setLocalSearch(prev => ({ ...prev, term }));
+    filterAndSortImages(images, term, localSearch.sortBy);
+  };
+
+  const handleLocalSortChange = (sortBy: string) => {
+    setLocalSearch(prev => ({ ...prev, sortBy }));
+    filterAndSortImages(images, localSearch.term, sortBy);
+  };
+
+  const handleHubSearchChange = (term: string) => {
+    setHubSearch(prev => ({ ...prev, term }));
+  };
+
+  const handleHubSortChange = (sortBy: string) => {
+    setHubSearch(prev => ({ ...prev, sortBy }));
+  };
+
+  // Fonction pour gérer le pull d'une image
+  const handlePullImage = (imageName: string) => {
+    setImageToPull(imageName);
+    setActiveTab('pull');
   };
 
   useEffect(() => {
@@ -181,8 +220,8 @@ export default function ImageManager() {
   }, []);
 
   useEffect(() => {
-    filterAndSortImages(images, searchTerm, sortBy);
-  }, [searchTerm, sortBy, images]);
+    filterAndSortImages(images, localSearch.term, localSearch.sortBy);
+  }, [localSearch.term, localSearch.sortBy, images]);
 
   return (
     <div className="space-y-6">
@@ -200,16 +239,16 @@ export default function ImageManager() {
               <div className="flex-1">
                 <ImageSearch
                   mode="local"
-                  searchTerm={searchTerm}
-                  onSearchChange={setSearchTerm}
-                  sortBy={sortBy}
-                  onSortChange={setSortBy}
+                  searchTerm={localSearch.term}
+                  onSearchChange={handleLocalSearchChange}
+                  sortBy={localSearch.sortBy}
+                  onSortChange={handleLocalSortChange}
                 />
               </div>
               <Button
                 variant="outline"
                 className="h-10"
-                onClick={resetFilters}
+                onClick={() => resetFilters('local')}
               >
                 <RefreshCcw className="h-4 w-4 mr-2" />
                 Reset
@@ -283,15 +322,19 @@ export default function ImageManager() {
         <TabsContent value="search">
           <ImageSearch
             mode="hub"
-            searchTerm={searchTerm}
-            onSearchChange={setSearchTerm}
-            sortBy={sortBy}
-            onSortChange={setSortBy}
+            searchTerm={hubSearch.term}
+            onSearchChange={handleHubSearchChange}
+            sortBy={hubSearch.sortBy}
+            onSortChange={handleHubSortChange}
+            onPullImage={handlePullImage}
           />
         </TabsContent>
 
         <TabsContent value="pull">
-          <ImagePuller onImagePulled={fetchImages} />
+          <ImagePuller 
+            onImagePulled={fetchImages} 
+            defaultImage={imageToPull}
+          />
         </TabsContent>
 
         <TabsContent value="build">

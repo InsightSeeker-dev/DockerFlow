@@ -9,22 +9,18 @@ const nextConfig = {
     config.resolve.fallback = {
       ...config.resolve.fallback,
       'ssh2': false,
-    };
+    }
 
-    // Add the rule for handling .node files
     config.module.rules.push({
       test: /\.node$/,
       use: 'node-loader',
-    });
+    })
 
-    return config;
+    return config
   },
-  // Ajouter la configuration WebSocket
   experimental: {
-    webSocketServer: {
-      enable: true,
-    },
-  },
+    serverActions: true,
+  }
 }
 
-module.exports = nextConfig;
+module.exports = nextConfig

@@ -15,6 +15,7 @@ import { DashboardOverview } from './DashboardOverview';
 import { getSystemStats } from '@/lib/api';
 import { SystemStats } from '@/types/system';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { motion } from 'framer-motion';
 import {
   Container as ContainerIcon,
@@ -24,15 +25,24 @@ import {
   Settings,
   Users,
   LayoutDashboard,
-  LogOut
+  LogOut,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import { signOut } from 'next-auth/react';
 import dynamic from 'next/dynamic';
 
 const WebTerminal = dynamic(
-  () => import('@/components/terminal/WebTerminal'),
+  () => import('@/components/terminal/WebTerminal').then(mod => mod.default),
   { ssr: false }
 );
+
+interface ContainerInfo extends Container {
+  Names: string[];
+  Id: string;
+  Status: string;
+  State: string;
+}
 
 interface RecentActivity {
   id: string;
@@ -44,11 +54,11 @@ interface RecentActivity {
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [containers, setContainers] = useState<Container[]>([]);
+  const [containers, setContainers] = useState<ContainerInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { toast } = useToast();
-  
+  const [activeTerminals, setActiveTerminals] = useState<string[]>([]);
+  const [maximizedTerminal, setMaximizedTerminal] = useState<string | null>(null);
   const [systemStats, setSystemStats] = useState<SystemStats>({
     containers: 0,
     containersRunning: 0,
@@ -95,10 +105,10 @@ export default function AdminDashboard() {
 
     performanceHistory: []
   });
-
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
-
+  const { toast } = useToast();
+  
   const fetchContainers = async () => {
     setIsLoading(true);
     setError(null);
@@ -249,8 +259,83 @@ export default function AdminDashboard() {
               <CardTitle>Terminal Access</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="h-[600px] bg-black rounded-lg overflow-hidden">
-                {activeTab === 'terminal' && <WebTerminal />}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {isLoading ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <Card key={i} className="overflow-hidden animate-pulse">
+                      <CardHeader className="h-[60px] bg-muted" />
+                      <CardContent className="h-[100px] bg-muted" />
+                    </Card>
+                  ))
+                ) : containers.length === 0 ? (
+                  <div className="col-span-3 text-center py-12">
+                    <p className="text-muted-foreground">No containers found</p>
+                  </div>
+                ) : (
+                  containers.map((container) => (
+                    <Card key={container.Id} className="overflow-hidden">
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">
+                          {container.Names[0].replace(/^\//, '')}
+                        </CardTitle>
+                        <div className="flex items-center gap-2">
+                          <Badge className={
+                            container.State === 'running' 
+                              ? 'bg-green-500/20 text-green-500'
+                              : container.State === 'stopped' || container.State === 'exited'
+                              ? 'bg-red-500/20 text-red-500'
+                              : 'bg-gray-500/20 text-gray-500'
+                          }>
+                            {container.State}
+                          </Badge>
+                          {container.State === 'running' && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                // Ouvrir le terminal dans une nouvelle fenêtre
+                                const width = 800;
+                                const height = 600;
+                                const left = window.screenX + (window.outerWidth - width) / 2;
+                                const top = window.screenY + (window.outerHeight - height) / 2;
+                                
+                                window.open(
+                                  `/terminal?containerId=${container.Id}&name=${encodeURIComponent(container.Names[0].replace(/^\//, ''))}`,
+                                  `terminal_${container.Id}`,
+                                  `width=${width},height=${height},left=${left},top=${top},menubar=no,toolbar=no,location=no,status=no`
+                                );
+                              }}
+                            >
+                              <TerminalIcon className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2">
+                          <div className="text-xs text-muted-foreground">
+                            ID: <span className="font-mono">{container.Id.slice(0, 12)}</span>
+                          </div>
+                          {container.State === 'running' && activeTerminals.includes(container.Id) && (
+                            <div className="relative mt-4">
+                              <div className="h-[300px] rounded-md overflow-hidden">
+                                <WebTerminal containerId={container.Id} />
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="absolute top-2 right-2"
+                                onClick={() => setMaximizedTerminal(container.Id)}
+                              >
+                                <Maximize2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
               </div>
             </CardContent>
           </Card>

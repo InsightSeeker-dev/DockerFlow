@@ -1,136 +1,171 @@
-'use client';
+'use client'
 
-import React, { useEffect, useRef, useState } from 'react';
-import { Terminal } from 'xterm';
-import { FitAddon } from 'xterm-addon-fit';
-import { WebLinksAddon } from 'xterm-addon-web-links';
-import { SearchAddon } from 'xterm-addon-search';
-import { useSession } from 'next-auth/react';
-import { Button } from '@/components/ui/button';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import 'xterm/css/xterm.css';
+import React, { useEffect, useRef, useState } from 'react'
+import { Terminal } from 'xterm'
+import { FitAddon } from 'xterm-addon-fit'
+import { WebLinksAddon } from 'xterm-addon-web-links'
+import { SearchAddon } from 'xterm-addon-search'
+import { io, Socket } from 'socket.io-client'
+import { useSession } from 'next-auth/react'
+import 'xterm/css/xterm.css'
 
 interface WebTerminalProps {
-  containerId?: string;
+  containerId?: string
 }
 
-const WebTerminal: React.FC<WebTerminalProps> = ({ containerId }) => {
-  const { data: session } = useSession();
-  const terminalRef = useRef<HTMLDivElement>(null);
-  const [terminal, setTerminal] = useState<Terminal | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const socketRef = useRef<WebSocket | null>(null);
-  const [isMounted, setIsMounted] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+const WebTerminal: React.FC<WebTerminalProps> = ({ containerId }): JSX.Element => {
+  const { data: session } = useSession()
+  const terminalRef = useRef<HTMLDivElement>(null)
+  const socketRef = useRef<Socket | null>(null)
+  const terminalInstanceRef = useRef<Terminal | null>(null)
+  const fitAddonRef = useRef<FitAddon | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [isConnected, setIsConnected] = useState(false)
+  const [reconnectAttempts, setReconnectAttempts] = useState(0)
+  const maxReconnectAttempts = 3
+  const [isTerminalReady, setIsTerminalReady] = useState(false)
 
+  // Initialiser le terminal
   useEffect(() => {
-    setIsMounted(true);
-    return () => setIsMounted(false);
-  }, []);
+    if (!terminalRef.current || !containerId || terminalInstanceRef.current) return
 
-  useEffect(() => {
-    if (!isMounted || !terminalRef.current) return;
+    const term = new Terminal({
+      cursorBlink: true,
+      fontSize: 14,
+      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+      theme: {
+        background: '#1a1b26',
+        foreground: '#a9b1d6',
+        cursor: '#c0caf5'
+      },
+      allowProposedApi: true,
+      convertEol: true,
+      scrollback: 1000
+    })
+
+    const fitAddon = new FitAddon()
+    term.loadAddon(fitAddon)
+    term.loadAddon(new WebLinksAddon())
+    term.loadAddon(new SearchAddon())
+
+    terminalInstanceRef.current = term
+    fitAddonRef.current = fitAddon
 
     try {
-      console.log('Initializing terminal...');
-      const term = new Terminal({
-        cursorBlink: true,
-        fontSize: 14,
-        fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-        theme: {
-          background: '#1a1b26',
-          foreground: '#a9b1d6',
-          cursor: '#c0caf5'
-        }
-      });
-
-      const fitAddon = new FitAddon();
-      const webLinksAddon = new WebLinksAddon();
-      const searchAddon = new SearchAddon();
-
-      term.loadAddon(fitAddon);
-      term.loadAddon(webLinksAddon);
-      term.loadAddon(searchAddon);
-
-      console.log('Opening terminal...');
-      term.open(terminalRef.current);
-      fitAddon.fit();
-      term.write('Connecting to terminal...\r\n');
-
-      setTerminal(term);
-
-      // Connexion WebSocket
-      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${wsProtocol}//${window.location.host}/api/terminal${containerId ? `?containerId=${containerId}` : ''}`;
-      console.log('Connecting to WebSocket:', wsUrl);
+      term.open(terminalRef.current)
       
-      const ws = new WebSocket(wsUrl);
-
-      ws.onopen = () => {
-        console.log('WebSocket connected');
-        setIsConnected(true);
-        term.write('\r\n🚀 Connected to terminal\r\n');
-        setError(null);
-      };
-
-      ws.onmessage = (event) => {
-        term.write(event.data);
-      };
-
-      ws.onclose = () => {
-        console.log('WebSocket disconnected');
-        setIsConnected(false);
-        term.write('\r\n🔌 Disconnected from terminal\r\n');
-      };
-
-      ws.onerror = (event) => {
-        console.error('WebSocket error:', event);
-        setError('Failed to connect to terminal');
-        term.write('\r\n❌ Error: Failed to connect to terminal\r\n');
-      };
-
-      socketRef.current = ws;
-
-      // Input handling
-      term.onData((data) => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(data);
+      requestAnimationFrame(() => {
+        try {
+          if (fitAddonRef.current) {
+            fitAddonRef.current.fit()
+            setIsTerminalReady(true)
+          }
+        } catch (e) {
+          console.error('Error during initial fit:', e)
         }
-      });
-
-      const handleResize = () => {
-        fitAddon.fit();
-        if (ws.readyState === WebSocket.OPEN) {
-          const dimensions = term.rows + 'x' + term.cols;
-          ws.send(`RESIZE:${dimensions}`);
-        }
-      };
-
-      window.addEventListener('resize', handleResize);
-      // Initial resize
-      setTimeout(handleResize, 100);
-
-      return () => {
-        console.log('Cleaning up terminal...');
-        term.dispose();
-        ws.close();
-        window.removeEventListener('resize', handleResize);
-      };
-    } catch (err) {
-      console.error('Error initializing terminal:', err);
-      setError(err instanceof Error ? err.message : 'Failed to initialize terminal');
+      })
+    } catch (e) {
+      console.error('Error opening terminal:', e)
+      setError('Failed to initialize terminal')
     }
-  }, [isMounted, containerId]);
 
-  if (!isMounted) {
-    return <div className="h-full w-full bg-black" />;
-  }
+    return () => {
+      term.dispose()
+    }
+  }, [containerId])
+
+  // Gérer la connexion socket
+  useEffect(() => {
+    if (!isTerminalReady || !terminalInstanceRef.current || !containerId) return
+
+    const term = terminalInstanceRef.current
+    term.write('Connecting to terminal...\r\n')
+
+    const socket = io({
+      path: '/api/terminal/socket',
+      reconnectionAttempts: maxReconnectAttempts,
+      reconnectionDelay: 1000,
+      timeout: 10000
+    })
+
+    socketRef.current = socket
+
+    socket.on('connect', () => {
+      setIsConnected(true)
+      setReconnectAttempts(0)
+      term.write('\r\n🚀 Connected to terminal\r\n')
+      socket.emit('terminal:start', { containerId })
+    })
+
+    socket.on('disconnect', () => {
+      setIsConnected(false)
+      term.write('\r\n🔌 Disconnected from terminal. Attempting to reconnect...\r\n')
+    })
+
+    socket.on('connect_error', (err) => {
+      console.error('Connection error:', err)
+      setReconnectAttempts(prev => prev + 1)
+      term.write(`\r\n❌ Connection error: ${err.message}\r\n`)
+      
+      if (reconnectAttempts >= maxReconnectAttempts) {
+        term.write('\r\n❌ Failed to connect after multiple attempts. Please refresh the page.\r\n')
+        socket.close()
+      }
+    })
+
+    socket.on('terminal:data', (data) => {
+      term.write(data)
+    })
+
+    socket.on('terminal:error', (data) => {
+      setError(data.message)
+      term.write(`\r\n❌ Error: ${data.message}\r\n`)
+    })
+
+    term.onData((data) => {
+      if (socket.connected) {
+        socket.emit('terminal:input', data)
+      }
+    })
+
+    return () => {
+      socket.close()
+    }
+  }, [containerId, isTerminalReady, reconnectAttempts])
+
+  // Gérer le redimensionnement
+  useEffect(() => {
+    if (!isTerminalReady || !terminalInstanceRef.current || !fitAddonRef.current) return
+
+    const handleResize = () => {
+      try {
+        if (fitAddonRef.current && terminalInstanceRef.current && socketRef.current?.connected) {
+          fitAddonRef.current.fit()
+          socketRef.current.emit('terminal:resize', {
+            rows: terminalInstanceRef.current.rows,
+            cols: terminalInstanceRef.current.cols
+          })
+        }
+      } catch (e) {
+        console.error('Error during resize:', e)
+      }
+    }
+
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [isTerminalReady])
+
+  // Nettoyage lors de la fermeture de la fenêtre
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (socketRef.current) {
+        socketRef.current.close()
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [])
 
   return (
     <div className="relative w-full h-full">
@@ -141,7 +176,7 @@ const WebTerminal: React.FC<WebTerminalProps> = ({ containerId }) => {
         </div>
       )}
     </div>
-  );
-};
+  )
+}
 
-export default WebTerminal;
+export default WebTerminal

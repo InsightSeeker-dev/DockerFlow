@@ -3,6 +3,14 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export async function middleware(request: NextRequest) {
+  // Autoriser les WebSockets pour le terminal
+  if (
+    request.nextUrl.pathname.startsWith('/api/terminal') &&
+    request.headers.get('upgrade')?.toLowerCase() === 'websocket'
+  ) {
+    return NextResponse.next()
+  }
+
   const token = await getToken({ req: request });
   const path = request.nextUrl.pathname;
   
@@ -25,11 +33,9 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Match all request paths except for the ones starting with:
-    // - api (API routes)
-    // - _next/static (static files)
-    // - _next/image (image optimization files)
-    // - favicon.ico (favicon file)
+    '/api/:path*',
+    '/dashboard/:path*',
+    '/admin/:path*',
     '/((?!api|_next/static|_next/image|favicon.ico).*)',
   ],
 };

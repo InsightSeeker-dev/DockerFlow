@@ -1,142 +1,169 @@
-import { NextResponse } from 'next/server';
-import Docker from 'dockerode';
+import { NextRequest } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { UserRole } from '@prisma/client';
+import { TerminalManager } from '@/lib/terminal';
 
-const docker = new Docker();
-const clients = new Map<any, { containerId?: string; cleanup: () => void }>();
+export const dynamic = 'force-dynamic';
 
-interface MessageEvent {
-  data: string | Buffer;
-  type: string;
-  target: any;
+if (!process.env.NEXT_PUBLIC_WEBSOCKET_URL) {
+  console.warn('NEXT_PUBLIC_WEBSOCKET_URL is not defined in environment variables');
 }
 
-export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session || session.user.role !== UserRole.ADMIN) {
-    return new Response('Unauthorized', { status: 401 });
-  }
-
-  const { searchParams } = new URL(req.url);
-  const containerId = searchParams.get('containerId');
-  const upgrade = req.headers.get('upgrade');
-
-  if (upgrade?.toLowerCase() !== 'websocket') {
-    return new Response('Expected websocket', { status: 426 });
-  }
-
+export async function GET(req: NextRequest) {
   try {
-    const { socket, response } = (await req as any).socket.server.upgrade(req);
+    const upgradeHeader = req.headers.get('upgrade');
+    if (!upgradeHeader || upgradeHeader.toLowerCase() !== 'websocket') {
+      return new Response('Expected Websocket', { 
+        status: 426,
+        headers: {
+          'Upgrade': 'WebSocket',
+          'Connection': 'Upgrade'
+        }
+      });
+    }
 
-    socket.onopen = async () => {
-      console.log('Terminal client connected');
+    const session = await getServerSession(authOptions);
+    if (!session?.user || !session.user.role || session.user.role !== UserRole.ADMIN) {
+      return new Response('Unauthorized', { status: 401 });
+    }
 
+    const searchParams = req.nextUrl.searchParams;
+    const containerId = searchParams.get('containerId');
+
+    if (!containerId) {
+      return new Response('Container ID is required', { status: 400 });
+    }
+
+    const terminalManager = TerminalManager.getInstance();
+
+    const isValid = await terminalManager.validateContainerAccess(containerId, session.user.id);
+    if (!isValid) {
+      return new Response('Invalid container access', { status: 403 });
+    }
+
+    const terminalSession = await terminalManager.createSession(containerId, session.user.id);
+    if (!terminalSession) {
+      return new Response('Failed to create terminal session', { status: 500 });
+    }
+
+    const { socket, response } = Reflect.get(req, 'socket');
+    
+    if (!socket) {
+      return new Response('WebSocket connection required', { 
+        status: 426,
+        headers: {
+          'Upgrade': 'WebSocket',
+          'Connection': 'Upgrade'
+        }
+      });
+    }
+
+    const exec = await terminalManager.getExec(containerId, {
+      AttachStdin: true,
+      AttachStdout: true,
+      AttachStderr: true,
+      Tty: true,
+      Cmd: ['/bin/bash']
+    });
+
+    const stream = await exec.start({
+      Detach: false,
+      hijack: true
+    });
+
+    let isAlive = true;
+
+    // Gestion des données du conteneur vers le client
+    stream.on('data', (chunk: Buffer) => {
+      if (isAlive && socket.readyState === 1) {
+        try {
+          socket.send(chunk);
+        } catch (error) {
+          console.error('Error sending data to client:', error);
+        }
+      }
+    });
+
+    stream.on('error', (error: Error) => {
+      console.error('Stream error:', error);
+      if (isAlive && socket.readyState === 1) {
+        try {
+          socket.send(`\r\n⚠️ Error: ${error.message}\r\n`);
+        } catch (sendError) {
+          console.error('Error sending error message to client:', sendError);
+        }
+      }
+    });
+
+    // Gestion des messages du client vers le conteneur
+    socket.on('message', async (data: Buffer | string) => {
       try {
-        // Si un containerId est fourni, on se connecte au conteneur
-        if (containerId) {
-          const container = docker.getContainer(containerId);
-          const exec = await container.exec({
-            AttachStdin: true,
-            AttachStdout: true,
-            AttachStderr: true,
-            Tty: true,
-            Cmd: ['/bin/sh']
-          });
+        if (data === '\0') {
+          if (isAlive && socket.readyState === 1) {
+            socket.send('\0');
+          }
+          return;
+        }
 
-          const stream = await exec.start({
-            hijack: true,
-            stdin: true
-          });
-
-          stream.on('data', (chunk) => {
-            if (socket.readyState === 1) {
-              socket.send(chunk.toString());
+        const message = typeof data === 'string' ? JSON.parse(data) : JSON.parse(data.toString());
+        
+        switch (message.type) {
+          case 'command':
+            if (message.command && isAlive) {
+              const result = await terminalManager.addCommand(terminalSession.id, message.command);
+              if (result.success) {
+                stream.write(message.command);
+              } else {
+                socket.send(`\r\n⚠️ Error: ${result.error}\r\n`);
+              }
             }
-          });
-
-          socket.onmessage = (event: MessageEvent) => {
-            const data = event.data.toString();
-            if (data.startsWith('RESIZE:')) {
-              const [rows, cols] = data.substring(7).split('x').map(Number);
-              exec.resize({ h: rows, w: cols }).catch(console.error);
-            } else {
-              stream.write(data);
+            break;
+          case 'resize':
+            if (message.rows && message.cols && isAlive) {
+              await exec.resize({
+                h: message.rows,
+                w: message.cols
+              });
             }
-          };
-
-          socket.onclose = () => {
-            stream.end();
-            console.log('Terminal client disconnected');
-          };
-        } else {
-          // Si pas de containerId, on se connecte à un conteneur par défaut
-          const container = await docker.createContainer({
-            Image: 'alpine:latest',
-            Tty: true,
-            OpenStdin: true,
-            Cmd: ['/bin/sh'],
-            HostConfig: {
-              AutoRemove: true
-            }
-          });
-
-          await container.start();
-
-          const exec = await container.exec({
-            AttachStdin: true,
-            AttachStdout: true,
-            AttachStderr: true,
-            Tty: true,
-            Cmd: ['/bin/sh']
-          });
-
-          const stream = await exec.start({
-            hijack: true,
-            stdin: true
-          });
-
-          stream.on('data', (chunk) => {
-            if (socket.readyState === 1) {
-              socket.send(chunk.toString());
-            }
-          });
-
-          socket.onmessage = (event: MessageEvent) => {
-            const data = event.data.toString();
-            if (data.startsWith('RESIZE:')) {
-              const [rows, cols] = data.substring(7).split('x').map(Number);
-              exec.resize({ h: rows, w: cols }).catch(console.error);
-            } else {
-              stream.write(data);
-            }
-          };
-
-          socket.onclose = () => {
-            stream.end();
-            container.stop().catch(console.error);
-            console.log('Terminal client disconnected');
-          };
+            break;
+          default:
+            console.warn('Unknown message type:', message.type);
         }
       } catch (error) {
-        console.error('Failed to setup terminal:', error);
-        socket.close();
+        console.error('Message handling error:', error);
+        if (isAlive && socket.readyState === 1) {
+          socket.send('\r\n⚠️ Invalid message format\r\n');
+        }
       }
-    };
+    });
 
-    return response;
+    // Gestion de la fermeture
+    socket.on('close', async () => {
+      isAlive = false;
+      try {
+        stream.end();
+        await terminalManager.endSession(terminalSession.id);
+      } catch (error) {
+        console.error('Cleanup error:', error);
+      }
+    });
+
+    // Configuration des en-têtes de réponse
+    const responseHeaders = new Headers({
+      'Upgrade': 'websocket',
+      'Connection': 'Upgrade',
+      'Sec-WebSocket-Accept': 'dummy', // Sera remplacé par le serveur
+      'Sec-WebSocket-Version': '13'
+    });
+
+    return new Response(null, {
+      status: 101,
+      headers: responseHeaders
+    });
+
   } catch (error) {
-    console.error('Error in terminal handler:', error);
+    console.error('Terminal connection error:', error);
     return new Response('Internal Server Error', { status: 500 });
   }
 }
-
-// Nettoyer les connexions à la fermeture du serveur
-process.on('SIGTERM', () => {
-  clients.forEach((client, socket) => {
-    client.cleanup();
-    socket.close();
-  });
-  clients.clear();
-});

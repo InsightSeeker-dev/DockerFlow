@@ -60,6 +60,12 @@ enum ActivityType {
   SYSTEM_UPDATE
 }
 
+enum TerminalSessionStatus {
+  ACTIVE
+  ENDED
+  EXPIRED
+}
+
 model AlertRule {
   id          String    @id @default(auto()) @map("_id") @db.ObjectId
   name        String
@@ -242,12 +248,19 @@ model Activity {
 }
 
 model TerminalSession {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId    String   @db.ObjectId
-  containerId String
-  status    String
-  created   DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id            String               @id @default(auto()) @map("_id") @db.ObjectId
+  userId        String               @db.ObjectId
+  containerId   String
+  status        TerminalSessionStatus @default(ACTIVE)
+  shell         String?              // Ajout du champ shell
+  created       DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  lastActivity  DateTime?
+  endTime       DateTime?            // Ajout du champ endTime
+  commandCount  Int                  @default(0)
+  bytesSent     Int                  @default(0)
+  bytesReceived Int                  @default(0)
+  user          User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("terminal_sessions")
 }

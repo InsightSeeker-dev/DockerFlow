@@ -68,3 +68,21 @@ body {
 .success-message {
   @apply text-green-400 bg-green-500/10 border border-green-500/20;
 }
+
+/* Styles du terminal */
+.xterm {
+  padding: 8px;
+}
+
+.xterm-viewport {
+  border-radius: 4px;
+}
+
+.xterm-cursor-blink {
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  0% { opacity: 1; }
+  50% { opacity: 0; }
+}

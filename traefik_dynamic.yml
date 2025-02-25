@@ -21,18 +21,32 @@ http:
           X-Robots-Tag: "none,noarchive,nosnippet,notranslate,noimageindex"
           Server: ""
 
+    websocket-headers:
+      headers:
+        customRequestHeaders:
+          X-Forwarded-Proto: "https"
+        customResponseHeaders:
+          Access-Control-Allow-Origin: "*"
+          Access-Control-Allow-Methods: "GET,POST,OPTIONS"
+          Access-Control-Allow-Headers: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization"
+          Access-Control-Allow-Credentials: "true"
+          Connection: "Upgrade"
+          Upgrade: "websocket"
+
+    websocket-compression:
+      compress: {}
+
+    websocket:
+      chain:
+        middlewares:
+          - websocket-headers
+          - websocket-compression
+
     rate-limit:
       rateLimit:
         average: 100
         burst: 50
         period: 1s
-
-  services:
-    nextapp:
-      loadBalancer:
-        passHostHeader: true
-        servers:
-          - url: "http://172.17.0.1:3000"  # IP du réseau docker host
 
   routers:
     nextjs:
@@ -46,6 +60,58 @@ http:
       middlewares:
         - secure-headers
         - rate-limit
+
+    websocket:
+      rule: "Host(`dockerflow.dockersphere.ovh`) && PathPrefix(`/api/terminal`)"
+      service: dockerflow
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+      middlewares:
+        - websocket
+      priority: 100
+
+    web:
+      rule: "Host(`dockerflow.dockersphere.ovh`) && PathPrefix(`/`)"
+      service: dockerflow
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+      middlewares:
+        - websocket-compression
+      priority: 10
+
+  services:
+    nextapp:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://172.17.0.1:3000"
+        serversTransport: websocket-transport
+
+    dockerflow:
+      loadBalancer:
+        servers:
+          - url: "http://localhost:3000"
+        passHostHeader: true
+        responseForwarding:
+          flushInterval: "100ms"
+        healthCheck:
+          path: "/api/health"
+          interval: "10s"
+          timeout: "5s"
+
+  serversTransports:
+    websocket-transport:
+      insecureSkipVerify: true
+      forwardingTimeouts:
+        dialTimeout: 30s
+        idleConnTimeout: 1h
+        pingTimeout: 30s
+        readIdleTimeout: 1h
+        responseHeaderTimeout: 30s
 
 tls:
   options:

@@ -52,6 +52,10 @@ enum ActivityType {
   CONTAINER_START
   CONTAINER_STOP
   CONTAINER_DELETE
+  VOLUME_CREATE
+  VOLUME_DELETE
+  VOLUME_MOUNT
+  VOLUME_UNMOUNT
   IMAGE_PULL
   IMAGE_DELETE
   IMAGE_BUILD
@@ -116,6 +120,7 @@ model User {
   terminalSessions       TerminalSession[]
   verificationTokens     VerificationToken[]
   activities             Activity[]
+  volumes                Volume[]
   createdAt              DateTime    @default(now()) @map("created_at")
   updatedAt              DateTime    @updatedAt @map("updated_at")
   lastLogin              DateTime?
@@ -154,21 +159,26 @@ model Session {
 }
 
 model Container {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  name        String   @unique
-  imageId     String
-  status      String
-  ports       Json?
-  volumes     Json?
-  env         Json?
-  cpuLimit    Int
-  memoryLimit Int
-  subdomain   String   @unique
-  created     DateTime @default(now())
-  userId      String   @db.ObjectId
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  name          String   @unique
+  imageId       String
+  image         String   // Nom complet de l'image (e.g., "nginx:latest")
+  status        String
+  ports         Json     // Array<{containerPort: number, hostPort: number}>
+  volumes       Json?    // Array<{containerPath: string, volumeId: string}>
+  env           Json?
+  url           String   @unique  // URL d'accès au conteneur
+  cpuLimit      Int
+  memoryLimit   Int
+  subdomain     String   @unique
+  created       DateTime @default(now())
+  userId        String   @db.ObjectId
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   resourceUsage ResourceUsage[]
+  containerVolumes ContainerVolume[]
 
+  @@index([userId])
+  @@index([status])
   @@map("containers")
 }
 
@@ -274,4 +284,37 @@ model VerificationToken {
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("verification_tokens")
+}
+
+model Volume {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  driver      String   @default("local")
+  mountpoint  String?
+  size        Int      @default(0)
+  created     DateTime @default(now())
+  userId      String   @db.ObjectId
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  containerVolumes ContainerVolume[]
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@map("volumes")
+}
+
+model ContainerVolume {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  containerId String    @db.ObjectId
+  volumeId    String    @db.ObjectId
+  mountPath   String    // Chemin de montage dans le conteneur
+  created     DateTime  @default(now())
+
+  container   Container @relation(fields: [containerId], references: [id], onDelete: Cascade)
+  volume      Volume    @relation(fields: [volumeId], references: [id], onDelete: Cascade)
+
+  @@unique([containerId, volumeId, mountPath])
+  @@index([containerId])
+  @@index([volumeId])
+  @@map("container_volumes")
 }

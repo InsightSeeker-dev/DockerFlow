@@ -71,4 +71,8 @@ export const getTraefikConfig = (name: string, subdomain: string, port: string) 
   'traefik.http.middlewares.secure-headers.headers.stsseconds': '31536000'
 });
 
+export const getDockerClient = async (): Promise<Docker> => {
+  return new Docker({ socketPath: '/var/run/docker.sock' });
+};
+
 export { docker };

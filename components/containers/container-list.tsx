@@ -27,7 +27,7 @@ import { ContainerCreation } from './container-creation';
 import { ContainerLogs } from './container-logs';
 import { StatusBadge } from './status-badge';
 import { EmptyState } from './empty-state';
-import { Container } from '@/lib/docker/types';
+import { Container, ContainerPort } from './types';
 import { cn } from '@/lib/utils';
 import { 
   Plus, 
@@ -54,6 +54,17 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { Checkbox } from "@/components/ui/checkbox"
 
 interface ContainerListProps {
   containers: Container[];
@@ -80,6 +91,9 @@ export function ContainerList({
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedContainerId, setSelectedContainerId] = useState<string | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [keepVolume, setKeepVolume] = useState(false);
+  const [containerToDelete, setContainerToDelete] = useState<{ id: string, name: string } | null>(null);
   const { toast } = useToast();
 
   // Rafraîchir automatiquement toutes les 10 secondes
@@ -101,6 +115,20 @@ export function ContainerList({
 
   const handleAction = async (action: string, containerId: string) => {
     try {
+      if (action === 'delete') {
+        // Convertir 'delete' en 'remove' pour l'API
+        action = 'remove';
+        const container = containers.find(c => c.Id === containerId);
+        if (container) {
+          setContainerToDelete({
+            id: containerId,
+            name: container.Names[0].replace(/^\//, '')
+          });
+          setShowDeleteDialog(true);
+          return;
+        }
+      }
+
       const response = await fetch(`/api/containers/${containerId}`, {
         method: 'PATCH',
         headers: {
@@ -125,6 +153,45 @@ export function ContainerList({
         description: `Impossible d'effectuer l'action ${action}.`,
         variant: "destructive",
       });
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!containerToDelete) return;
+
+    try {
+      const response = await fetch(`/api/containers/${containerToDelete.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          action: 'remove',
+          keepVolume: keepVolume 
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to delete container');
+      }
+
+      onRefresh?.();
+      toast({
+        title: "Conteneur supprimé",
+        description: `Le conteneur ${containerToDelete.name} a été supprimé${keepVolume ? ' (volume conservé)' : ''}.`,
+      });
+    } catch (error) {
+      console.error('Error deleting container:', error);
+      toast({
+        title: "Erreur",
+        description: error instanceof Error ? error.message : "Impossible de supprimer le conteneur.",
+        variant: "destructive",
+      });
+    } finally {
+      setShowDeleteDialog(false);
+      setContainerToDelete(null);
+      setKeepVolume(false);
     }
   };
 
@@ -157,52 +224,20 @@ export function ContainerList({
   }, [containers, searchQuery, statusFilter]);
 
   return (
-    <div className="container mx-auto p-4 space-y-6">
-      {/* Header with refresh and create buttons - only visible when there are containers */}
+    <div className="container mx-auto p-4 xl:p-6 2xl:p-8 space-y-6 max-w-[2000px]">
+      {/* Header with refresh and create buttons */}
       {Array.isArray(containers) && containers.length > 0 && (
-        <div className="flex justify-end items-center">
-          <div className="flex items-center gap-2">
-            <Button
-              onClick={() => onRefresh()}
-              variant="outline"
-              size="icon"
-              className="relative dark:border-gray-700 dark:hover:bg-gray-800"
-              disabled={isLoading}
-            >
-              <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
-            </Button>
-            <Button 
-              onClick={() => setShowCreateDialog(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-medium"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Créer un conteneur
-            </Button>
-          </div>
-        </div>
-      )}
-      {/* Main content */}
-      {isLoading ? (
-        <div className="flex justify-center items-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-        </div>
-      ) : !Array.isArray(containers) || containers.length === 0 ? (
-        <EmptyState onCreateClick={() => setShowCreateDialog(true)} />
-      ) : (
-        // Container list with filters
-        <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 lg:gap-6">
           {/* Filters */}
-          <div className="flex gap-4 items-center">
-            <div className="flex-1">
-              <Input
-                placeholder="Rechercher un conteneur..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="max-w-sm dark:bg-gray-900 dark:border-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
-              />
-            </div>
+          <div className="w-full sm:w-auto flex flex-col sm:flex-row gap-4 items-stretch sm:items-center lg:flex-1 xl:max-w-3xl">
+            <Input
+              placeholder="Rechercher un conteneur..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full sm:w-[250px] lg:w-[300px] xl:w-[400px] dark:bg-gray-900 dark:border-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
+            />
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[180px] dark:bg-gray-900 dark:border-gray-700 dark:text-gray-200">
+              <SelectTrigger className="w-full sm:w-[180px] lg:w-[200px] dark:bg-gray-900 dark:border-gray-700 dark:text-gray-200">
                 <SelectValue placeholder="Filtrer par statut" />
               </SelectTrigger>
               <SelectContent className="dark:bg-gray-900 dark:border-gray-700">
@@ -212,208 +247,401 @@ export function ContainerList({
               </SelectContent>
             </Select>
           </div>
-
-          {/* Container list */}
-          {filteredContainers.length > 0 ? (
-            <div className="rounded-md border border-gray-800">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-gray-800">
-                    <TableHead className="text-gray-400">Nom</TableHead>
-                    <TableHead className="text-gray-400">Image</TableHead>
-                    <TableHead className="text-gray-400">Statut</TableHead>
-                    <TableHead className="text-gray-400">Ports</TableHead>
-                    <TableHead className="text-gray-400">Sous-domaine</TableHead>
-                    <TableHead className="text-gray-400">Créé par</TableHead>
-                    <TableHead className="text-gray-400">Créé le</TableHead>
-                    <TableHead className="text-gray-400 text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredContainers.map((container) => {
-                    const name = container.Names[0].replace(/^\//, '');
-                    const isRunning = container.State === 'running';
-                    const ports = container.customConfig?.ports || [];
-                    const createdDate = new Date(container.Created * 1000).toLocaleString();
-                    const subdomain = container.customConfig?.subdomain;
-                    const user = container.user;
-                    const traefikEnabled = container.traefik?.enabled;
-
-                    return (
-                      <TableRow key={container.Id} className="border-gray-800">
-                        <TableCell className="font-medium text-gray-200">
-                          {name}
-                        </TableCell>
-                        <TableCell className="text-gray-400">
-                          {container.Image}
-                        </TableCell>
-                        <TableCell>
-                          <StatusBadge status={container.State} />
-                        </TableCell>
-                        <TableCell className="text-gray-400">
-                          {ports.map((port, index) => (
-                            <div key={index} className="flex items-center gap-1">
-                              <span className="text-gray-500">host:</span>{port.hostPort}
-                              <span className="text-gray-500">→</span>
-                              <span className="text-gray-500">container:</span>{port.containerPort}
-                            </div>
-                          ))}
-                        </TableCell>
-                        <TableCell className="text-gray-400">
-                          {subdomain && (
-                            <div className="flex items-center gap-2">
-                              <span>{subdomain}.dockersphere.ovh</span>
-                              {traefikEnabled && (
-                                <span className="text-xs bg-green-950 text-green-400 px-2 py-0.5 rounded">
-                                  HTTPS
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-gray-400">
-                          <div className="flex items-center gap-2">
-                            <span>{user?.name || user?.email}</span>
-                            <span className={cn(
-                              "text-xs px-2 py-0.5 rounded",
-                              user?.role === 'ADMIN' 
-                                ? "bg-purple-950 text-purple-400"
-                                : "bg-blue-950 text-blue-400"
-                            )}>
-                              {user?.role}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-gray-400">
-                          {createdDate}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <TooltipProvider>
-                            <DropdownMenu>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8 text-gray-400"
-                                    >
-                                      <MoreVertical className="h-4 w-4" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>Actions du conteneur</p>
-                                </TooltipContent>
-                              </Tooltip>
-                              <DropdownMenuContent align="end" className="w-56">
-                                {container.State === 'running' && (
-                                  <>
-                                    <DropdownMenuItem
-                                      onClick={() => handleAction('stop', container.Id)}
-                                      className="text-gray-200"
-                                    >
-                                      <Square className="mr-2 h-4 w-4 text-gray-500" />
-                                      <div>
-                                        <div>Arrêter</div>
-                                        <span className="text-xs text-gray-400">
-                                          Arrête le conteneur
-                                        </span>
-                                      </div>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      onClick={() => handleAction('restart', container.Id)}
-                                      className="text-gray-200"
-                                    >
-                                      <RefreshCw className="mr-2 h-4 w-4 text-blue-500" />
-                                      <div>
-                                        <div>Redémarrer</div>
-                                        <span className="text-xs text-gray-400">
-                                          Redémarre le conteneur
-                                        </span>
-                                      </div>
-                                    </DropdownMenuItem>
-                                  </>
-                                )}
-                                {container.State !== 'running' && (
-                                  <DropdownMenuItem
-                                    onClick={() => handleAction('start', container.Id)}
-                                    className="text-gray-200"
-                                  >
-                                    <Play className="mr-2 h-4 w-4 text-green-500" />
-                                    <div>
-                                      <div>Démarrer</div>
-                                      <span className="text-xs text-gray-400">
-                                        Démarre le conteneur
-                                      </span>
-                                    </div>
-                                  </DropdownMenuItem>
-                                )}
-                                <DropdownMenuItem
-                                  onClick={() => {
-                                    setSelectedContainerId(container.Id);
-                                    onLogs?.(container.Id);
-                                  }}
-                                  className="text-gray-200"
-                                >
-                                  <ScrollText className="mr-2 h-4 w-4 text-blue-500" />
-                                  <div>
-                                    <div>Logs</div>
-                                    <span className="text-xs text-gray-400">
-                                      Affiche les journaux du conteneur
-                                    </span>
-                                  </div>
-                                </DropdownMenuItem>
-                                {subdomain && (
-                                  <DropdownMenuItem asChild className="text-gray-200">
-                                    <a
-                                      href={`https://${subdomain}.dockersphere.ovh`}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                    >
-                                      <ExternalLink className="mr-2 h-4 w-4 text-purple-500" />
-                                      <div>
-                                        <div>Accéder</div>
-                                        <span className="text-xs text-gray-400">
-                                          Ouvre l'interface web du conteneur
-                                        </span>
-                                      </div>
-                                    </a>
-                                  </DropdownMenuItem>
-                                )}
-                                <DropdownMenuItem
-                                  onClick={() => handleAction('remove', container.Id)}
-                                  className="text-red-500 hover:text-red-400"
-                                >
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  <div>
-                                    <div>Supprimer</div>
-                                    <span className="text-xs opacity-75">
-                                      Supprime le conteneur et ses données
-                                    </span>
-                                  </div>
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TooltipProvider>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          ) : (
-            <div className="flex justify-center items-center h-64">
-              <p className="text-gray-400">
-                Aucun conteneur ne correspond à vos critères de recherche
-              </p>
-            </div>
-          )}
+          <div className="flex items-center gap-2 lg:gap-4">
+            <Button
+              onClick={() => onRefresh()}
+              variant="outline"
+              size="icon"
+              className="relative dark:border-gray-700 dark:hover:bg-gray-800 h-10 w-10 lg:h-11 lg:w-11"
+            >
+              <RefreshCw className={cn("h-4 w-4 lg:h-5 lg:w-5", isLoading && "animate-spin")} />
+            </Button>
+            <Button 
+              onClick={() => setShowCreateDialog(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-medium h-10 lg:h-11 lg:px-6"
+            >
+              <Plus className="h-4 w-4 lg:h-5 lg:w-5 mr-2" />
+              <span className="hidden sm:inline">Créer un conteneur</span>
+              <span className="sm:hidden">Créer</span>
+            </Button>
+          </div>
         </div>
       )}
 
-      {/* Create container dialog */}
+      {/* Main content */}
+      {isLoading ? (
+        <div className="flex justify-center items-center h-64">
+          <Loader2 className="h-8 w-8 lg:h-10 lg:w-10 animate-spin text-blue-600" />
+        </div>
+      ) : !Array.isArray(containers) || containers.length === 0 ? (
+        <EmptyState onCreateClick={() => setShowCreateDialog(true)} />
+      ) : (
+        <div className="space-y-6">
+          {/* Desktop view - Table */}
+          <div className="hidden md:block rounded-md border border-gray-800">
+            <Table>
+              <TableHeader>
+                <TableRow className="border-gray-800">
+                  <TableHead className="text-gray-400 lg:py-4 xl:text-base">Nom</TableHead>
+                  <TableHead className="text-gray-400 lg:py-4 xl:text-base">Image</TableHead>
+                  <TableHead className="text-gray-400 lg:py-4 xl:text-base">Statut</TableHead>
+                  <TableHead className="text-gray-400 lg:py-4 xl:text-base">Ports</TableHead>
+                  <TableHead className="text-gray-400 lg:py-4 xl:text-base">Sous-domaine</TableHead>
+                  <TableHead className="text-gray-400 lg:py-4 xl:text-base">Créé par</TableHead>
+                  <TableHead className="text-gray-400 lg:py-4 xl:text-base">Créé le</TableHead>
+                  <TableHead className="text-gray-400 lg:py-4 xl:text-base text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredContainers.map((container) => {
+                  const name = container.Names[0].replace(/^\//, '');
+                  const isRunning = container.State === 'running';
+                  const ports = container.customConfig?.ports || [];
+                  const createdDate = new Date(container.Created * 1000).toLocaleString();
+                  const subdomain = container.customConfig?.subdomain;
+                  const user = container.user;
+                  const traefikEnabled = container.traefik?.enabled;
+
+                  return (
+                    <TableRow key={container.Id} className="border-gray-800">
+                      <TableCell className="font-medium text-gray-200 lg:py-4 xl:text-base">
+                        {name}
+                      </TableCell>
+                      <TableCell className="text-gray-400 lg:py-4 xl:text-base">
+                        {container.Image}
+                      </TableCell>
+                      <TableCell className="lg:py-4 xl:text-base">
+                        <StatusBadge status={container.State} />
+                      </TableCell>
+                      <TableCell className="text-gray-400 lg:py-4 xl:text-base">
+                        {Array.isArray(container.Ports) && container.Ports.map((port: ContainerPort, index: number) => {
+                          // Si le conteneur utilise Traefik, il a HTTPS activé
+                          const isTraefikEnabled = container.Labels && Object.keys(container.Labels).some(label => label.startsWith('traefik.enable'));
+                          if (isTraefikEnabled) {
+                            return (
+                              <div key={index} className="flex items-center gap-1">
+                                <span className="text-xs bg-green-950 text-green-400 px-2 py-0.5 rounded">
+                                  HTTPS
+                                </span>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div key={index} className="flex items-center gap-1 text-gray-400">
+                              <span className="text-gray-500">host:</span> {port.hostPort || port.PublicPort}
+                              <span className="text-gray-500">→</span>
+                              <span className="text-gray-500">container:</span> {port.containerPort || port.PrivatePort}
+                            </div>
+                          );
+                        })}
+                      </TableCell>
+                      <TableCell className="text-gray-400 lg:py-4 xl:text-base">
+                        {subdomain && (
+                          <div className="flex items-center gap-2">
+                            <span>{subdomain}.dockersphere.ovh</span>
+                            {traefikEnabled && (
+                              <span className="text-xs bg-green-950 text-green-400 px-2 py-0.5 rounded">
+                                HTTPS
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-gray-400 lg:py-4 xl:text-base">
+                        <div className="flex items-center gap-2">
+                          <span>{user?.name || user?.email}</span>
+                          <span className={cn(
+                            "text-xs px-2 py-0.5 rounded",
+                            user?.role === 'ADMIN' 
+                              ? "bg-purple-950 text-purple-400"
+                              : "bg-blue-950 text-blue-400"
+                          )}>
+                            {user?.role}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-gray-400 lg:py-4 xl:text-base">
+                        {createdDate}
+                      </TableCell>
+                      <TableCell className="text-right lg:py-4 xl:text-base">
+                        <TooltipProvider>
+                          <DropdownMenu>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-gray-400"
+                                  >
+                                    <MoreVertical className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Actions du conteneur</p>
+                              </TooltipContent>
+                            </Tooltip>
+                            <DropdownMenuContent align="end" className="w-56">
+                              {container.State === 'running' && (
+                                <>
+                                  <DropdownMenuItem
+                                    onClick={() => handleAction('stop', container.Id)}
+                                    className="text-gray-200"
+                                  >
+                                    <Square className="mr-2 h-4 w-4 text-gray-500" />
+                                    <div>
+                                      <div>Arrêter</div>
+                                      <span className="text-xs text-gray-400">
+                                        Arrête le conteneur
+                                      </span>
+                                    </div>
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => handleAction('restart', container.Id)}
+                                    className="text-gray-200"
+                                  >
+                                    <RefreshCw className="mr-2 h-4 w-4 text-blue-500" />
+                                    <div>
+                                      <div>Redémarrer</div>
+                                      <span className="text-xs text-gray-400">
+                                        Redémarre le conteneur
+                                      </span>
+                                    </div>
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                              {container.State !== 'running' && (
+                                <DropdownMenuItem
+                                  onClick={() => handleAction('start', container.Id)}
+                                  className="text-gray-200"
+                                >
+                                  <Play className="mr-2 h-4 w-4 text-green-500" />
+                                  <div>
+                                    <div>Démarrer</div>
+                                    <span className="text-xs text-gray-400">
+                                      Démarre le conteneur
+                                    </span>
+                                  </div>
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setSelectedContainerId(container.Id);
+                                  onLogs?.(container.Id);
+                                }}
+                                className="text-gray-200"
+                              >
+                                <ScrollText className="mr-2 h-4 w-4 text-blue-500" />
+                                <div>
+                                  <div>Logs</div>
+                                  <span className="text-xs text-gray-400">
+                                    Affiche les journaux du conteneur
+                                  </span>
+                                </div>
+                              </DropdownMenuItem>
+                              {subdomain && (
+                                <DropdownMenuItem asChild className="text-gray-200">
+                                  <a
+                                    href={`https://${subdomain}.dockersphere.ovh`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    <ExternalLink className="mr-2 h-4 w-4 text-purple-500" />
+                                    <div>
+                                      <div>Accéder</div>
+                                      <span className="text-xs text-gray-400">
+                                        Ouvre l'interface web du conteneur
+                                      </span>
+                                    </div>
+                                  </a>
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem
+                                onClick={() => handleAction('remove', container.Id)}
+                                className="text-red-500 hover:text-red-400"
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                <div>
+                                  <div>Supprimer</div>
+                                  <span className="text-xs opacity-75">
+                                    Supprime le conteneur et ses données
+                                  </span>
+                                </div>
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TooltipProvider>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Mobile view - Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:hidden gap-4">
+            {filteredContainers.map((container) => {
+              const name = container.Names[0].replace(/^\//, '');
+              const isRunning = container.State === 'running';
+              const ports = container.customConfig?.ports || [];
+              const createdDate = new Date(container.Created * 1000).toLocaleString();
+              const subdomain = container.customConfig?.subdomain;
+              const user = container.user;
+              const traefikEnabled = container.traefik?.enabled;
+
+              return (
+                <div key={container.Id} className="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-4">
+                  {/* Header */}
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="font-medium text-gray-200">{name}</h3>
+                      <p className="text-sm text-gray-400">{container.Image}</p>
+                    </div>
+                    <StatusBadge status={container.State} />
+                  </div>
+
+                  {/* Details */}
+                  <div className="space-y-2 text-sm">
+                    {ports.length > 0 && (
+                      <div>
+                        <span className="text-gray-400">Ports:</span>
+                        <div className="mt-1 space-y-1">
+                          {ports.map((port, index) => (
+                            <div key={index} className="text-gray-300">
+                              {port.hostPort} → {port.containerPort}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {subdomain && (
+                      <div>
+                        <span className="text-gray-400">Sous-domaine:</span>
+                        <div className="mt-1 flex items-center gap-2">
+                          <span className="text-gray-300">{subdomain}.dockersphere.ovh</span>
+                          {traefikEnabled && (
+                            <span className="text-xs bg-green-950 text-green-400 px-2 py-0.5 rounded">
+                              HTTPS
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    <div>
+                      <span className="text-gray-400">Créé par:</span>
+                      <div className="mt-1 flex items-center gap-2">
+                        <span className="text-gray-300">{user?.name || user?.email}</span>
+                        <span className={cn(
+                          "text-xs px-2 py-0.5 rounded",
+                          user?.role === 'ADMIN' 
+                            ? "bg-purple-950 text-purple-400"
+                            : "bg-blue-950 text-blue-400"
+                        )}>
+                          {user?.role}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-gray-400">Créé le:</span>
+                      <div className="mt-1 text-gray-300">{createdDate}</div>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex justify-end gap-2 pt-2 border-t border-gray-800">
+                    {isRunning ? (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleAction('stop', container.Id)}
+                          className="text-gray-200"
+                        >
+                          <Square className="h-4 w-4 mr-2 text-gray-500" />
+                          Arrêter
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleAction('restart', container.Id)}
+                          className="text-gray-200"
+                        >
+                          <RefreshCw className="h-4 w-4 mr-2 text-blue-500" />
+                          Redémarrer
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleAction('start', container.Id)}
+                        className="text-gray-200"
+                      >
+                        <Play className="h-4 w-4 mr-2 text-green-500" />
+                        Démarrer
+                      </Button>
+                    )}
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => handleAction('remove', container.Id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Delete Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Êtes-vous sûr de vouloir supprimer ce conteneur ?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-4">
+              <p>Cette action supprimera le conteneur <span className="font-medium">{containerToDelete?.name}</span>.</p>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="keepVolume"
+                  checked={keepVolume}
+                  onCheckedChange={(checked) => setKeepVolume(checked as boolean)}
+                />
+                <label
+                  htmlFor="keepVolume"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                >
+                  Conserver le volume et ses données pour une utilisation ultérieure
+                </label>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+              setShowDeleteDialog(false);
+              setContainerToDelete(null);
+              setKeepVolume(false);
+            }}>
+              Annuler
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+            >
+              Supprimer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Dialogs */}
       <ContainerCreation
         open={showCreateDialog}
         onOpenChange={setShowCreateDialog}

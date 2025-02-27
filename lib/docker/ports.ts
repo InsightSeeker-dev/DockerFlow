@@ -1,8 +1,20 @@
 import { getDockerClient } from './client';
 import net from 'net';
 
-// Vérifie si un port est disponible
-export async function isPortAvailable(port: number): Promise<boolean> {
+// Vérifie si un port est utilisé par Docker
+async function isPortUsedByDocker(port: number): Promise<boolean> {
+  const docker = getDockerClient();
+  const containers = await docker.listContainers({ all: true });
+  
+  return containers.some(container => {
+    return container.Ports?.some(p => 
+      p.PublicPort === port || p.PrivatePort === port
+    ) ?? false;
+  });
+}
+
+// Vérifie si un port est disponible sur le système
+async function isPortAvailableSystem(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const server = net.createServer();
     server.once('error', () => {
@@ -16,8 +28,74 @@ export async function isPortAvailable(port: number): Promise<boolean> {
   });
 }
 
+// Vérifie si un port est réellement disponible (système + Docker)
+export async function isPortAvailable(port: number): Promise<boolean> {
+  try {
+    // Vérifie d'abord si le port est utilisé par Docker
+    const dockerUsed = await isPortUsedByDocker(port);
+    if (dockerUsed) {
+      console.log(`Port ${port} est utilisé par un conteneur Docker`);
+      return false;
+    }
+
+    // Ensuite, vérifie si le port est disponible sur le système
+    const systemAvailable = await isPortAvailableSystem(port);
+    if (!systemAvailable) {
+      console.log(`Port ${port} est utilisé par le système`);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error(`Erreur lors de la vérification du port ${port}:`, error);
+    return false;
+  }
+}
+
+// Définir les types pour les plages de ports
+type PortRange = [number, number];
+
+interface ServicePortRanges {
+  HTTP: PortRange;
+  HTTPS: PortRange;
+  MYSQL: PortRange;
+  POSTGRES: PortRange;
+  MONGODB: PortRange;
+  REDIS: PortRange;
+  NODE: PortRange;
+}
+
+interface FallbackPortRanges {
+  DYNAMIC: PortRange;
+  ALTERNATIVE: PortRange;
+}
+
+interface PortRanges {
+  PRIMARY: ServicePortRanges;
+  FALLBACK: FallbackPortRanges;
+}
+
+// Définir les plages de ports pour différents services
+const PORT_RANGES: PortRanges = {
+  // Plages principales
+  PRIMARY: {
+    HTTP: [8080, 8089] as PortRange,
+    HTTPS: [8443, 8449] as PortRange,
+    MYSQL: [33060, 33069] as PortRange,
+    POSTGRES: [54320, 54329] as PortRange,
+    MONGODB: [27018, 27027] as PortRange,
+    REDIS: [63790, 63799] as PortRange,
+    NODE: [3001, 3010] as PortRange
+  },
+  // Plages de secours
+  FALLBACK: {
+    DYNAMIC: [49152, 65535] as PortRange, // Plage de ports dynamiques/privés
+    ALTERNATIVE: [10000, 10999] as PortRange // Plage alternative sécurisée
+  }
+};
+
 // Trouve le prochain port disponible à partir d'un port donné
-export async function findNextAvailablePort(startPort: number): Promise<number> {
+export async function findNextAvailablePort(startPort: number, options: { preferredRange?: [number, number] } = {}): Promise<number> {
   const docker = getDockerClient();
   
   // Récupérer tous les conteneurs
@@ -33,16 +111,33 @@ export async function findNextAvailablePort(startPort: number): Promise<number> 
     });
   });
 
-  // Chercher le prochain port disponible
-  let port = startPort;
-  while (port < 65535) { // 65535 est le port maximum
+  // Essayer d'abord dans la plage préférée si spécifiée
+  if (options.preferredRange) {
+    const [min, max] = options.preferredRange;
+    for (let port = min; port <= max; port++) {
+      if (!usedPorts.has(port) && await isPortAvailable(port)) {
+        return port;
+      }
+    }
+  }
+
+  // Essayer dans la plage dynamique
+  const [dynamicMin, dynamicMax] = PORT_RANGES.FALLBACK.DYNAMIC;
+  for (let port = Math.max(startPort, dynamicMin); port <= dynamicMax; port++) {
     if (!usedPorts.has(port) && await isPortAvailable(port)) {
       return port;
     }
-    port++;
   }
 
-  throw new Error('No available ports found');
+  // En dernier recours, essayer la plage alternative
+  const [altMin, altMax] = PORT_RANGES.FALLBACK.ALTERNATIVE;
+  for (let port = altMin; port <= altMax; port++) {
+    if (!usedPorts.has(port) && await isPortAvailable(port)) {
+      return port;
+    }
+  }
+
+  throw new Error('No available ports found in any range');
 }
 
 // Trouve un port disponible dans une plage donnée
@@ -62,27 +157,51 @@ export async function suggestAlternativePort(desiredPort: number): Promise<numbe
     return desiredPort;
   }
 
-  // Définir les plages de ports pour différents services
-  const portRanges: { [key: number]: [number, number] } = {
-    80: [8080, 8089],    // HTTP alternatives
-    443: [8443, 8449],   // HTTPS alternatives
-    3306: [33060, 33069], // MySQL alternatives
-    5432: [54320, 54329], // PostgreSQL alternatives
-    27017: [27018, 27027], // MongoDB alternatives
-    6379: [63790, 63799], // Redis alternatives
-    3000: [3001, 3010],   // Node/Grafana alternatives
-  };
+  // Déterminer la plage appropriée selon le port demandé
+  let preferredRange: [number, number] | undefined;
 
-  // Si le port est dans une plage connue, chercher dans cette plage
-  const range = portRanges[desiredPort];
-  if (range) {
-    try {
-      return await findAvailablePortInRange(range[0], range[1]);
-    } catch {
-      // Si aucun port n'est trouvé dans la plage, continuer avec la recherche générale
-    }
+  switch (desiredPort) {
+    case 80:
+      preferredRange = PORT_RANGES.PRIMARY.HTTP;
+      break;
+    case 443:
+      preferredRange = PORT_RANGES.PRIMARY.HTTPS;
+      break;
+    case 3306:
+      preferredRange = PORT_RANGES.PRIMARY.MYSQL;
+      break;
+    case 5432:
+      preferredRange = PORT_RANGES.PRIMARY.POSTGRES;
+      break;
+    case 27017:
+      preferredRange = PORT_RANGES.PRIMARY.MONGODB;
+      break;
+    case 6379:
+      preferredRange = PORT_RANGES.PRIMARY.REDIS;
+      break;
+    case 3000:
+      preferredRange = PORT_RANGES.PRIMARY.NODE;
+      break;
   }
 
-  // Sinon, chercher le prochain port disponible à partir du port désiré
-  return findNextAvailablePort(desiredPort + 1);
+  try {
+    // Essayer d'abord la plage préférée si elle existe
+    if (preferredRange) {
+      return await findNextAvailablePort(desiredPort, { preferredRange });
+    }
+
+    // Sinon, essayer les plages de secours
+    return await findNextAvailablePort(desiredPort);
+  } catch (error) {
+    console.warn(`Impossible de trouver un port dans les plages principales pour ${desiredPort}, utilisation des plages de secours`);
+    
+    // En dernier recours, essayer les plages de secours
+    try {
+      return await findNextAvailablePort(PORT_RANGES.FALLBACK.ALTERNATIVE[0], {
+        preferredRange: PORT_RANGES.FALLBACK.ALTERNATIVE
+      });
+    } catch {
+      throw new Error(`Impossible de trouver un port disponible pour le service (port d'origine: ${desiredPort})`);
+    }
+  }
 }

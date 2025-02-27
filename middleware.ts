@@ -6,7 +6,7 @@ import { UserRole, UserStatus } from '@prisma/client';
 // Routes qui ne nécessitent pas d'authentification
 const PUBLIC_PATHS = ['/auth'];
 const PUBLIC_API_PATHS = ['/api/auth'];
-const PROTECTED_API_PATHS = ['/api/admin', '/api/containers', '/api/users'];
+const PROTECTED_API_PATHS = ['/api/admin', '/api/containers', '/api/users', '/api/volumes'];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

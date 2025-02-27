@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useToast } from '@/components/ui/use-toast';
 
-type ContainerAction = 'start' | 'stop' | 'restart' | 'delete';
+type ContainerAction = 'start' | 'stop' | 'restart' | 'delete' | 'access';
 
 interface UseContainerActionsProps {
   onSuccess?: () => void;
@@ -14,6 +14,23 @@ export const useContainerActions = ({ onSuccess }: UseContainerActionsProps = {}
   const handleAction = async (containerId: string, action: ContainerAction) => {
     if (action === 'delete' && !window.confirm('Are you sure you want to delete this container?')) {
       return;
+    }
+
+    if (action === 'access') {
+      // Récupérer les informations du conteneur pour obtenir le port exposé
+      const response = await fetch(`/api/containers/${containerId}/info`);
+      if (!response.ok) {
+        throw new Error('Failed to get container information');
+      }
+      const containerInfo = await response.json();
+      
+      // Ouvrir l'interface web dans un nouvel onglet
+      if (containerInfo.WebPort) {
+        window.open(`http://localhost:${containerInfo.WebPort}`, '_blank');
+        return;
+      } else {
+        throw new Error('No web interface available for this container');
+      }
     }
 
     try {

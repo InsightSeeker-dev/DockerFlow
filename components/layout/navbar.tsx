@@ -36,7 +36,18 @@ export function Navbar() {
                 : "text-muted-foreground"
             )}
           >
-            Containers
+            Conteneurs
+          </Link>
+          <Link
+            href="/volumes"
+            className={cn(
+              "text-sm font-medium transition-colors hover:text-primary",
+              isActive("/volumes")
+                ? "text-black dark:text-white"
+                : "text-muted-foreground"
+            )}
+          >
+            Volumes
           </Link>
           <Link
             href="/dashboard/images"

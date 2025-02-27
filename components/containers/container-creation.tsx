@@ -1,153 +1,377 @@
-import { useEffect } from 'react';
+'use client';
+
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { useEffect } from 'react';
+import { useToast } from '@/components/ui/use-toast';
 import { useContainerCreation } from './hooks/useContainerCreation';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { DockerImage } from './types';
-import { Loader2 } from 'lucide-react';
-import { ScrollArea } from '@/components/ui/scroll-area';
+
+interface VolumeConfig {
+  createNew: boolean;
+  newVolumeName: string;
+  volumeId: string;
+  mountPath: string;
+}
+
+const formSchema = z.object({
+  name: z.string()
+    .min(3, { message: 'Le nom doit contenir au moins 3 caractères' })
+    .max(63, { message: 'Le nom ne peut pas dépasser 63 caractères' })
+    .regex(/^[a-z0-9-]+$/, { 
+      message: 'Le nom ne peut contenir que des lettres minuscules, des chiffres et des tirets' 
+    }),
+  image: z.string()
+    .min(1, { message: "L'image est requise" })
+    .regex(/^[a-zA-Z0-9-_./:-]+$/, {
+      message: "Le nom de l'image doit contenir uniquement des lettres, chiffres, tirets, points, slashes et deux-points"
+    }),
+  subdomain: z.string()
+    .min(3, { message: 'Le sous-domaine doit contenir au moins 3 caractères' })
+    .max(63, { message: 'Le sous-domaine ne peut pas dépasser 63 caractères' })
+    .regex(/^[a-z0-9-]+$/, {
+      message: 'Le sous-domaine ne peut contenir que des lettres minuscules, des chiffres et des tirets'
+    }),
+  volumeConfig: z.object({
+    createNew: z.boolean(),
+    newVolumeName: z.string(),
+    volumeId: z.string(),
+    mountPath: z.string()
+      .min(1, { message: 'Le chemin de montage est requis' })
+      .regex(/^\/[a-zA-Z0-9-_./]*$/, {
+        message: 'Le chemin de montage doit commencer par / et ne contenir que des caractères valides'
+      })
+      .default('/data')
+  }).superRefine((volumeConfig, ctx) => {
+    if (volumeConfig.createNew) {
+      if (!volumeConfig.newVolumeName) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Le nom du volume est requis',
+          path: ['newVolumeName']
+        });
+      } else if (!/^[a-z0-9-]+$/.test(volumeConfig.newVolumeName)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Le nom du volume ne peut contenir que des lettres minuscules, des chiffres et des tirets',
+          path: ['newVolumeName']
+        });
+      }
+    } else {
+      if (!volumeConfig.volumeId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Veuillez sélectionner un volume existant',
+          path: ['volumeId']
+        });
+      }
+    }
+  })
+});
+
+type FormValues = z.infer<typeof formSchema>;
 
 interface ContainerCreationProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
-  preSelectedImage?: DockerImage;
 }
 
-export function ContainerCreation({ 
-  open, 
-  onOpenChange, 
-  onSuccess,
-  preSelectedImage 
-}: ContainerCreationProps) {
+export const ContainerCreation = ({ open, onOpenChange, onSuccess }: ContainerCreationProps) => {
+  const { toast } = useToast();
+  const form = useForm<FormValues>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      name: '',
+      image: '',
+      subdomain: '',
+      volumeConfig: {
+        createNew: true,
+        newVolumeName: '',
+        volumeId: '',
+        mountPath: '/data'
+      }
+    },
+    mode: 'all'
+  });
+
   const {
-    formData,
     isLoading,
     images,
+    volumes,
     fetchImages,
-    createContainer,
-    updateFormData,
-  } = useContainerCreation({
-    onSuccess,
-    onClose: () => onOpenChange(false)
+    fetchVolumes,
+    handleSubmit: handleFormSubmit,
+  } = useContainerCreation({ 
+    onSuccess, 
+    onClose: () => {
+      onOpenChange(false);
+      form.reset();
+    }
   });
+
+  const createNew = form.watch('volumeConfig.createNew');
 
   useEffect(() => {
     if (open) {
-      fetchImages();
-      if (preSelectedImage?.RepoTags?.[0]) {
-        updateFormData('image', preSelectedImage.RepoTags[0]);
-      }
+      // Fetch images and volumes when dialog opens
+      Promise.all([
+        fetchImages(),
+        fetchVolumes()
+      ]).catch(error => {
+        console.error('Error fetching data:', error);
+        toast({
+          title: 'Erreur',
+          description: 'Impossible de charger les données',
+          variant: 'destructive',
+        });
+      });
     }
-  }, [open, preSelectedImage]);
+  }, [open, fetchImages, fetchVolumes, toast]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await createContainer(formData);
-  };
+  // Reset form when dialog closes
+  useEffect(() => {
+    if (!open) {
+      form.reset();
+    }
+  }, [open, form]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[450px] bg-[#0B1120] border-gray-800">
-        <DialogHeader className="space-y-3">
-          <DialogTitle className="text-xl">Créer un nouveau conteneur</DialogTitle>
-          <DialogDescription className="text-gray-400">
-            Les ports et volumes seront configurés automatiquement.
-          </DialogDescription>
+      <DialogContent className="sm:max-w-[600px]">
+        <DialogHeader>
+          <DialogTitle>Créer un conteneur</DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-6 mt-4">
-          {/* Container Name */}
-          <div className="space-y-2">
-            <Label className="text-sm font-medium text-gray-200">Nom du conteneur</Label>
-            <Input
-              value={formData.name}
-              onChange={(e) => updateFormData('name', e.target.value)}
-              placeholder="mon-conteneur"
-              className="bg-[#0B1120] border-gray-700"
-              required
-            />
-          </div>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit((data) => {
+            console.log('Form submitted with data:', data);
+            handleFormSubmit({
+              ...data,
+              volumeConfig: {
+                ...data.volumeConfig,
+                mountPath: data.volumeConfig.mountPath || '/data'
+              }
+            });
+          })} 
+          className="grid gap-4 py-4"
+          onError={(errors: unknown) => {
+            console.error('Form validation errors:', errors);
+          }}>
+          <FormField
+            control={form.control}
+            name="name"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Nom du conteneur</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="mon-conteneur"
+                    {...field}
+                    onChange={field.onChange}
+                    disabled={isLoading}
+                  />
+                </FormControl>
+                <FormDescription>
+                  Utilisez uniquement des lettres, des chiffres et des tirets (3-63 caractères)
+                </FormDescription>
+              </FormItem>
+            )}
+          />
 
-          {/* Subdomain */}
-          <div className="space-y-2">
-            <Label className="text-sm font-medium text-gray-200">Sous-domaine</Label>
-            <Input
-              value={formData.subdomain}
-              onChange={(e) => updateFormData('subdomain', e.target.value)}
-              placeholder="mon-app"
-              className="bg-[#0B1120] border-gray-700"
-              required
-            />
-            <p className="text-xs text-gray-400">
-              Votre conteneur sera accessible à https://[sous-domaine].dockersphere.ovh
-            </p>
-          </div>
+          <FormField
+            control={form.control}
+            name="image"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Image Docker</FormLabel>
+                <FormControl>
+                  <Select
+                    value={field.value}
+                    onValueChange={field.onChange}
+                    disabled={isLoading}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Sélectionner une image" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {images.map((image: DockerImage) => {
+                        const tag = image.RepoTags?.[0];
+                        return tag ? (
+                          <SelectItem key={image.Id} value={tag}>
+                            {tag}
+                          </SelectItem>
+                        ) : null;
+                      })}
+                    </SelectContent>
+                  </Select>
+                </FormControl>
+                <FormDescription>
+                  Sélectionnez l'image Docker pour votre conteneur
+                </FormDescription>
+              </FormItem>
+            )}
+          />
 
-          {/* Image Selection */}
-          {!preSelectedImage && (
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-gray-200">Image Docker</Label>
-              <Select
-                value={formData.image}
-                onValueChange={(value) => updateFormData('image', value)}
-                required
-              >
-                <SelectTrigger className="bg-[#0B1120] border-gray-700">
-                  <SelectValue placeholder="Sélectionner une image" />
-                </SelectTrigger>
-                <SelectContent className="bg-[#0B1120] border-gray-700 max-h-[300px]">
-                  {images.map((image) => {
-                    const imageTag = image.RepoTags?.[0];
-                    if (!imageTag) return null;
-                    return (
-                      <SelectItem 
-                        key={image.Id} 
-                        value={imageTag}
-                      >
-                        {imageTag}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
+          <FormField
+            control={form.control}
+            name="subdomain"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Sous-domaine</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="mon-application"
+                    {...field}
+                    onChange={field.onChange}
+                    disabled={isLoading}
+                  />
+                </FormControl>
+                <FormDescription>
+                  Votre conteneur sera accessible à l'adresse https://{field.value || 'sous-domaine'}.dockersphere.ovh
+                </FormDescription>
+              </FormItem>
+            )}
+          />
+
+          {/* Volume Configuration */}
+          <FormField
+            control={form.control}
+            name="volumeConfig.createNew"
+            render={({ field }) => (
+              <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                <div className="space-y-0.5">
+                  <FormLabel className="text-base">Créer un nouveau volume</FormLabel>
+                  <FormDescription>
+                    Activez pour créer un nouveau volume ou désactivez pour utiliser un volume existant
+                  </FormDescription>
+                </div>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                    disabled={isLoading}
+                  />
+                </FormControl>
+              </FormItem>
+            )}
+          />
+
+          {form.watch('volumeConfig.createNew') ? (
+            <FormField
+              control={form.control}
+              name="volumeConfig.newVolumeName"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Nom du nouveau volume</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="mon-volume"
+                      {...field}
+                      disabled={isLoading}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Utilisez uniquement des lettres minuscules, des chiffres et des tirets
+                  </FormDescription>
+                </FormItem>
+              )}
+            />
+          ) : (
+            <FormField
+              control={form.control}
+              name="volumeConfig.volumeId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Sélectionner un volume</FormLabel>
+                  <Select
+                    value={field.value || ''}
+                    onValueChange={field.onChange}
+                    disabled={isLoading}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Sélectionner un volume" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {volumes.map((volume: { id: string; name: string }) => (
+                        <SelectItem key={volume.id} value={volume.id}>
+                          {volume.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )}
+            />
           )}
 
-          <div className="flex justify-end space-x-2 pt-4">
+          <FormField
+            control={form.control}
+            name="volumeConfig.mountPath"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Chemin de montage</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="/data ou /app/data"
+                    {...field}
+                    disabled={isLoading}
+                  />
+                </FormControl>
+                <FormDescription>
+                  Chemin où le volume sera monté dans le conteneur (ex: /data)
+                </FormDescription>
+              </FormItem>
+            )}
+          />
+
+          <div className="flex justify-end space-x-4 mt-4">
             <Button
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
-              className="bg-transparent"
+              disabled={isLoading}
             >
               Annuler
             </Button>
+            {/* Debug log pour l'état du formulaire */}
+            {/* Debug validation */}
+            {(() => {
+              console.log('Form validation:', {
+                isValid: form.formState.isValid,
+                isDirty: form.formState.isDirty,
+                errors: form.formState.errors,
+                values: form.getValues()
+              });
+              return null;
+            })()}
             <Button
               type="submit"
-              disabled={isLoading}
-              className="bg-blue-600 hover:bg-blue-700"
+              disabled={isLoading || !form.formState.isValid}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
             >
               {isLoading ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Création...
+                  <span className="animate-spin mr-2">⏳</span>
+                  Création en cours...
                 </>
               ) : (
                 'Créer le conteneur'
               )}
             </Button>
           </div>
-        </form>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );
-}
+};

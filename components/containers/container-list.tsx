@@ -25,7 +25,7 @@ import {
 } from '@/components/ui/dialog';
 import { ContainerCreation } from './container-creation';
 import { ContainerLogs } from './container-logs';
-import { StatusBadge } from './status-badge';
+import { StatusBadge, normalizeContainerState } from './status-badge';
 import { EmptyState } from './empty-state';
 import { Container, ContainerPort } from './types';
 import { cn } from '@/lib/utils';
@@ -94,7 +94,7 @@ export function ContainerList({
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [keepVolume, setKeepVolume] = useState(false);
   const [containerToDelete, setContainerToDelete] = useState<{ id: string, name: string } | null>(null);
-  const { toast } = useToast();
+  const { toast, dismiss } = useToast();
 
   // Rafraîchir automatiquement toutes les 10 secondes
   useEffect(() => {
@@ -114,43 +114,125 @@ export function ContainerList({
   }, [onRefresh]);
 
   const handleAction = async (action: string, containerId: string) => {
+    // Trouver le conteneur dans la liste
+    const container = containers.find(c => c.Id === containerId);
+    if (!container) {
+      toast({
+        title: "Erreur",
+        description: "Conteneur introuvable dans la liste actuelle.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Récupérer le nom du conteneur (sans le slash initial)
+    const containerName = container.Names[0].replace(/^\//, '');
+    console.log(`[UI] Exécution de l'action ${action} sur le conteneur ${containerName} (ID: ${containerId})`);
+
     try {
+      // Gestion spéciale pour l'action delete avec confirmation
       if (action === 'delete') {
-        // Convertir 'delete' en 'remove' pour l'API
-        action = 'remove';
-        const container = containers.find(c => c.Id === containerId);
-        if (container) {
-          setContainerToDelete({
-            id: containerId,
-            name: container.Names[0].replace(/^\//, '')
-          });
-          setShowDeleteDialog(true);
-          return;
-        }
+        setContainerToDelete({
+          id: containerId,
+          name: containerName
+        });
+        setShowDeleteDialog(true);
+        return;
       }
 
-      const response = await fetch(`/api/containers/${containerId}`, {
+      // Afficher un toast de chargement
+      const loadingToast = toast({
+        title: "Action en cours",
+        description: `Exécution de l'action ${action} sur ${containerName}...`,
+        duration: 5000,
+      });
+
+      // Utiliser le nom du conteneur qui est garanti unique plutôt que l'ID
+      const containerIdentifier = containerName;
+      console.log(`[UI] Utilisation du nom de conteneur: ${containerIdentifier} pour l'action ${action}`);
+      
+      // Utiliser la route PATCH unifiée pour toutes les actions
+      console.log(`[UI] Envoi de la requête PATCH à /api/containers/${containerIdentifier}`);
+      console.log(`[UI] Paramètres de la requête:`, { 
+        action,
+        ...(action === 'remove' && { keepVolume: false })
+      });
+      
+      const response = await fetch(`/api/containers/${containerIdentifier}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ 
+          action,
+          // Pour l'action remove, on peut ajouter l'option keepVolume
+          ...(action === 'remove' && { keepVolume: false })
+        }),
       });
-
+      
+      console.log(`[UI] Réponse reçue avec statut: ${response.status}`);
       if (!response.ok) {
-        throw new Error('Failed to perform action');
+        console.error(`[UI] Erreur HTTP ${response.status} pour l'action ${action} sur ${containerIdentifier}`);
       }
 
+      // Fermer le toast de chargement manuellement
+      dismiss(loadingToast.id);
+
+      // Gérer les erreurs HTTP
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error(`[UI] Erreur HTTP ${response.status} pour l'action ${action}:`, errorData);
+        
+        // Gérer les cas spécifiques d'erreur
+        if (response.status === 400 && errorData.currentState) {
+          throw new Error(`Le conteneur est déjà dans l'état ${errorData.currentState}. Action ${action} impossible.`);
+        } else {
+          throw new Error(errorData.error || `Échec de l'action ${action}`);
+        }
+      }
+
+      const result = await response.json();
+      console.log(`[UI] Résultat de l'action ${action}:`, result);
+      
+      // Traitement spécial pour l'action 'access'
+      if (action === 'access' && result.subdomain) {
+        // Ouvrir l'interface web dans un nouvel onglet en utilisant le sous-domaine
+        window.open(`https://${result.subdomain}.dockersphere.ovh`, '_blank');
+      } else if (action === 'access' && result.ports) {
+        // Fallback sur les ports exposés si pas de sous-domaine
+        const port = Object.keys(result.ports)[0];
+        if (port) {
+          const hostPort = result.ports[port][0]?.HostPort;
+          if (hostPort) {
+            window.open(`http://localhost:${hostPort}`, '_blank');
+          } else {
+            throw new Error('Aucun port exposé disponible pour ce conteneur');
+          }
+        } else {
+          throw new Error('Aucune interface web disponible pour ce conteneur');
+        }
+      }
+
+      // Rafraîchir la liste des conteneurs immédiatement
       onRefresh?.();
+      
+      // Programmer un second rafraîchissement après un court délai
+      // pour s'assurer que les changements d'état sont bien pris en compte
+      setTimeout(() => {
+        console.log(`[UI] Rafraîchissement différé après l'action ${action}`);
+        onRefresh?.();
+      }, 1000);
+      
+      // Afficher un message de succès
       toast({
         title: "Action réussie",
-        description: `L'action ${action} a été effectuée avec succès.`,
+        description: result.message || `L'action ${action} a été effectuée avec succès sur ${containerName}.`,
       });
     } catch (error) {
-      console.error(`Error performing ${action}:`, error);
+      console.error(`[UI] Erreur lors de l'exécution de l'action ${action} sur ${containerName}:`, error);
       toast({
         title: "Erreur",
-        description: `Impossible d'effectuer l'action ${action}.`,
+        description: error instanceof Error ? error.message : `Impossible d'effectuer l'action ${action} sur ${containerName}.`,
         variant: "destructive",
       });
     }
@@ -160,7 +242,21 @@ export function ContainerList({
     if (!containerToDelete) return;
 
     try {
-      const response = await fetch(`/api/containers/${containerToDelete.id}`, {
+      // Afficher un toast de chargement
+      const loadingToast = toast({
+        title: "Suppression en cours",
+        description: `Suppression du conteneur ${containerToDelete.name}...`,
+        duration: 5000,
+      });
+
+      console.log(`[UI] Suppression du conteneur ${containerToDelete.name} (ID: ${containerToDelete.id})`);
+      console.log(`[UI] Paramètres: keepVolume=${keepVolume}`);
+
+      // Utiliser la route PATCH unifiée pour l'action remove
+      const containerIdentifier = containerToDelete.name; // Utiliser le nom du conteneur comme identifiant
+      console.log(`[UI] Utilisation du nom de conteneur: ${containerIdentifier} pour l'action remove`);
+      
+      const response = await fetch(`/api/containers/${containerIdentifier}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -171,18 +267,36 @@ export function ContainerList({
         }),
       });
 
+      // Fermer le toast de chargement
+      dismiss(loadingToast.id);
+
+      console.log(`[UI] Réponse reçue avec statut: ${response.status}`);
+      
       if (!response.ok) {
         const data = await response.json();
+        console.error(`[UI] Erreur HTTP ${response.status} lors de la suppression du conteneur:`, data);
         throw new Error(data.error || 'Failed to delete container');
       }
 
+      const data = await response.json();
+      console.log('[UI] Conteneur supprimé avec succès:', data);
+      
+      // Rafraîchir la liste des conteneurs immédiatement
       onRefresh?.();
+      
+      // Programmer un second rafraîchissement après un court délai
+      // pour s'assurer que les changements sont bien pris en compte
+      setTimeout(() => {
+        console.log(`[UI] Rafraîchissement différé après la suppression du conteneur ${containerToDelete.name}`);
+        onRefresh?.();
+      }, 1000);
+      
       toast({
         title: "Conteneur supprimé",
         description: `Le conteneur ${containerToDelete.name} a été supprimé${keepVolume ? ' (volume conservé)' : ''}.`,
       });
     } catch (error) {
-      console.error('Error deleting container:', error);
+      console.error(`[UI] Erreur lors de la suppression du conteneur ${containerToDelete.name}:`, error);
       toast({
         title: "Erreur",
         description: error instanceof Error ? error.message : "Impossible de supprimer le conteneur.",
@@ -213,10 +327,9 @@ export function ContainerList({
           name.toLowerCase().includes(searchLower) ||
           image.toLowerCase().includes(searchLower);
 
-        // Filter by status
-        const matchesStatus = 
-          statusFilter === 'all' || 
-          container.State.toLowerCase() === statusFilter;
+        // Filter by status - utiliser la fonction normalizeContainerState pour gérer tous les formats possibles
+        const normalizedState = normalizeContainerState(container.State);
+        const matchesStatus = statusFilter === 'all' || normalizedState === statusFilter;
 
         return matchesSearch && matchesStatus;
       })
@@ -295,7 +408,7 @@ export function ContainerList({
               <TableBody>
                 {filteredContainers.map((container) => {
                   const name = container.Names[0].replace(/^\//, '');
-                  const isRunning = container.State === 'running';
+                  const isRunning = normalizeContainerState(container.State) === 'running';
                   const ports = container.customConfig?.ports || [];
                   const createdDate = new Date(container.Created * 1000).toLocaleString();
                   const subdomain = container.customConfig?.subdomain;

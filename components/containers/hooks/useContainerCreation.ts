@@ -80,6 +80,14 @@ export const useContainerCreation = ({ onSuccess, onClose }: UseContainerCreatio
     console.log('Début de la création du conteneur avec:', formValues);
     
     try {
+      // Vérifier si le volume sélectionné existe dans Docker (si on utilise un volume existant)
+      if (!formValues.volumeConfig.createNew && formValues.volumeConfig.volumeId) {
+        const selectedVolume = volumes.find(v => v.id === formValues.volumeConfig.volumeId);
+        
+        if (selectedVolume && selectedVolume.existsInDocker === false) {
+          throw new Error(`Le volume sélectionné "${selectedVolume.name}" n'existe pas dans Docker. Veuillez sélectionner un autre volume ou créer un nouveau.`);
+        }
+      }
 
       // Prepare volume configuration
       let volumeConfig;
@@ -87,28 +95,75 @@ export const useContainerCreation = ({ onSuccess, onClose }: UseContainerCreatio
         console.log('Configuration du volume:', formValues.volumeConfig);
         if (formValues.volumeConfig.createNew && formValues.volumeConfig.newVolumeName) {
           console.log('Création d\'un nouveau volume:', formValues.volumeConfig.newVolumeName);
-          const volumeResponse = await fetch('/api/volumes', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            credentials: 'include',
-            body: JSON.stringify({
-              name: formValues.volumeConfig.newVolumeName,
-              driver: 'local'
-            }),
-          });
+          try {
+            console.log(`Tentative de création d'un nouveau volume: ${formValues.volumeConfig.newVolumeName}`);
+            
+            // Vérifier d'abord si le volume existe déjà dans la liste des volumes
+            const existingVolume = volumes.find(v => v.name === formValues.volumeConfig.newVolumeName);
+            if (existingVolume) {
+              console.log(`Volume ${formValues.volumeConfig.newVolumeName} existe déjà dans la liste des volumes`);
+              
+              // Si le volume existe déjà et est valide dans Docker, on peut l'utiliser
+              if (existingVolume.existsInDocker !== false) {
+                console.log(`Utilisation du volume existant: ${existingVolume.name}`);
+                volumeConfig = [{
+                  volumeId: existingVolume.id,
+                  mountPath: formValues.volumeConfig.mountPath || '/data'
+                }];
+                return; // Sortir de la fonction try car nous avons déjà configuré le volume
+              } else {
+                throw new Error(`Le volume ${formValues.volumeConfig.newVolumeName} existe dans la base de données mais pas dans Docker. Veuillez utiliser un autre nom.`);
+              }
+            }
+            
+            // Si le volume n'existe pas, on le crée
+            const volumeResponse = await fetch('/api/volumes', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              credentials: 'include',
+              body: JSON.stringify({
+                name: formValues.volumeConfig.newVolumeName,
+                driver: 'local'
+              }),
+            });
 
-          if (!volumeResponse.ok) {
-            const error = await volumeResponse.json();
-            throw new Error(error.message || 'Impossible de créer le volume');
+            // Récupérer le texte brut de la réponse pour le débogage
+            const responseText = await volumeResponse.text();
+            console.log('Réponse brute de création de volume:', responseText);
+            
+            // Essayer de parser la réponse en JSON
+            let volumeData;
+            try {
+              volumeData = JSON.parse(responseText);
+            } catch (parseError) {
+              console.error('Erreur lors du parsing de la réponse JSON:', parseError);
+              throw new Error(`Réponse invalide du serveur: ${responseText}`);
+            }
+
+            if (!volumeResponse.ok) {
+              // Gérer spécifiquement les erreurs de contrainte d'unicité
+              if (volumeData.error && (
+                volumeData.error.includes('existe déjà') ||
+                volumeData.error.includes('already exists') ||
+                volumeData.error.includes('constraint')
+              )) {
+                throw new Error(`Un volume avec le nom '${formValues.volumeConfig.newVolumeName}' existe déjà. Veuillez utiliser un autre nom.`);
+              }
+              
+              throw new Error(volumeData.error || volumeData.message || `Erreur lors de la création du volume: ${volumeResponse.status}`);
+            }
+
+            console.log('Volume créé avec succès:', volumeData);
+            volumeConfig = [{
+              volumeId: volumeData.id,
+              mountPath: formValues.volumeConfig.mountPath || '/data'
+            }];
+          } catch (volumeError: any) {
+            console.error('Erreur détaillée lors de la création du volume:', volumeError);
+            throw new Error(`Impossible de créer le volume: ${volumeError.message || 'Erreur inconnue'}`);
           }
-
-          const volumeData = await volumeResponse.json();
-          volumeConfig = [{
-            volumeId: volumeData.id,
-            mountPath: formValues.volumeConfig.mountPath || '/data'
-          }];
         } else if (formValues.volumeConfig.volumeId) {
           volumeConfig = [{
             volumeId: formValues.volumeConfig.volumeId,

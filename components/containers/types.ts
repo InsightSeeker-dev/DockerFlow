@@ -84,6 +84,7 @@ export interface Volume {
   created: Date;
   userId: string;
   containerVolumes?: ContainerVolume[];
+  existsInDocker?: boolean;
 }
 
 export interface ContainerVolume {

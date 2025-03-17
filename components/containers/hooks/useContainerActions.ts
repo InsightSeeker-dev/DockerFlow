@@ -12,49 +12,63 @@ export const useContainerActions = ({ onSuccess }: UseContainerActionsProps = {}
   const { toast } = useToast();
 
   const handleAction = async (containerId: string, action: ContainerAction) => {
-    if (action === 'delete' && !window.confirm('Are you sure you want to delete this container?')) {
+    if (action === 'delete' && !window.confirm('Êtes-vous sûr de vouloir supprimer ce conteneur?')) {
       return;
-    }
-
-    if (action === 'access') {
-      // Récupérer les informations du conteneur pour obtenir le port exposé
-      const response = await fetch(`/api/containers/${containerId}/info`);
-      if (!response.ok) {
-        throw new Error('Failed to get container information');
-      }
-      const containerInfo = await response.json();
-      
-      // Ouvrir l'interface web dans un nouvel onglet
-      if (containerInfo.WebPort) {
-        window.open(`http://localhost:${containerInfo.WebPort}`, '_blank');
-        return;
-      } else {
-        throw new Error('No web interface available for this container');
-      }
     }
 
     try {
       setActionLoading(containerId);
-      const response = await fetch(`/api/containers/${containerId}/${action}`, {
-        method: 'POST',
+      
+      // Utiliser la route PATCH unifiée pour toutes les actions
+      const response = await fetch(`/api/containers/${containerId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          action,
+          // Pour l'action delete/remove, on peut ajouter l'option keepVolume
+          ...(action === 'delete' && { keepVolume: false })
+        }),
       });
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || `Failed to ${action} container`);
+        throw new Error(error.error || `Échec de l'action ${action} sur le conteneur`);
+      }
+
+      const result = await response.json();
+      
+      // Traitement spécial pour l'action 'access'
+      if (action === 'access' && result.subdomain) {
+        // Ouvrir l'interface web dans un nouvel onglet en utilisant le sous-domaine
+        window.open(`https://${result.subdomain}.dockersphere.ovh`, '_blank');
+      } else if (action === 'access' && result.ports) {
+        // Fallback sur les ports exposés si pas de sous-domaine
+        const port = Object.keys(result.ports)[0];
+        if (port) {
+          const hostPort = result.ports[port][0]?.HostPort;
+          if (hostPort) {
+            window.open(`http://localhost:${hostPort}`, '_blank');
+          } else {
+            throw new Error('Aucun port exposé disponible pour ce conteneur');
+          }
+        } else {
+          throw new Error('Aucune interface web disponible pour ce conteneur');
+        }
       }
 
       toast({
-        title: 'Success',
-        description: `Container ${action}ed successfully`,
+        title: 'Succès',
+        description: result.message || `Conteneur ${action === 'delete' ? 'supprimé' : action + 'é'} avec succès`,
       });
 
       onSuccess?.();
     } catch (error) {
-      console.error(`Failed to ${action} container:`, error);
+      console.error(`Échec de l'action ${action} sur le conteneur:`, error);
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : `Failed to ${action} container`,
+        title: 'Erreur',
+        description: error instanceof Error ? error.message : `Échec de l'action ${action} sur le conteneur`,
         variant: 'destructive',
       });
     } finally {

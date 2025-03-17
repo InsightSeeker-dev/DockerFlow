@@ -12,7 +12,7 @@ import { useContainerCreation } from './hooks/useContainerCreation';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { DockerImage } from './types';
+import { DockerImage, Volume } from './types';
 
 interface VolumeConfig {
   createNew: boolean;
@@ -302,11 +302,18 @@ export const ContainerCreation = ({ open, onOpenChange, onSuccess }: ContainerCr
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {volumes.map((volume: { id: string; name: string }) => (
-                        <SelectItem key={volume.id} value={volume.id}>
-                          {volume.name}
-                        </SelectItem>
-                      ))}
+                      {volumes
+                        .filter((volume: Volume) => volume.existsInDocker !== false) // Filtrer les volumes qui n'existent pas dans Docker
+                        .map((volume: Volume) => (
+                          <SelectItem key={volume.id} value={volume.id}>
+                            {volume.name}
+                          </SelectItem>
+                        ))}
+                      {volumes.length > 0 && volumes.filter((v: Volume) => v.existsInDocker !== false).length === 0 && (
+                        <div className="px-2 py-4 text-sm text-gray-500 text-center">
+                          Aucun volume valide disponible
+                        </div>
+                      )}
                     </SelectContent>
                   </Select>
                 </FormItem>

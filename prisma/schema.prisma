@@ -51,7 +51,10 @@ enum ActivityType {
   CONTAINER_CREATE
   CONTAINER_START
   CONTAINER_STOP
+  CONTAINER_RESTART
   CONTAINER_DELETE
+  CONTAINER_LOGS
+  CONTAINER_ACCESS
   VOLUME_CREATE
   VOLUME_DELETE
   VOLUME_MOUNT
@@ -294,6 +297,7 @@ model Volume {
   size        Int      @default(0)
   created     DateTime @default(now())
   userId      String   @db.ObjectId
+  deletedAt   DateTime?
 
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   containerVolumes ContainerVolume[]

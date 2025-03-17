@@ -1,12 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Container } from '@/lib/docker/types';
 
 export function useContainers() {
   const [containers, setContainers] = useState<Container[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastRefreshTime, setLastRefreshTime] = useState<number>(Date.now());
+  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const fetchContainers = async () => {
+  const fetchContainers = useCallback(async () => {
+    // Mettre à jour le timestamp du dernier rafraîchissement
+    setLastRefreshTime(Date.now());
     try {
       setIsLoading(true);
       setError(null);
@@ -75,21 +79,33 @@ export function useContainers() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);  // Ajout de la parenthèse fermante manquante avec un tableau de dépendances vide
 
   // Rafraîchir les conteneurs toutes les 5 secondes
   useEffect(() => {
+    // Appel initial
     fetchContainers();
     
-    const interval = setInterval(fetchContainers, 5000);
+    // Configurer l'intervalle de rafraîchissement
+    refreshIntervalRef.current = setInterval(() => {
+      console.log('[useContainers] Rafraîchissement automatique des conteneurs...');
+      fetchContainers();
+    }, 5000);
     
-    return () => clearInterval(interval);
-  }, []);
+    // Nettoyage lors du démontage du composant
+    return () => {
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+        refreshIntervalRef.current = null;
+      }
+    };
+  }, [fetchContainers]);
 
   return {
     containers,
     isLoading,
     error,
-    refetch: fetchContainers
+    refresh: fetchContainers,  // Renommer refetch en refresh pour être cohérent avec l'utilisation dans les composants
+    refetch: fetchContainers   // Garder refetch pour la compatibilité
   };
 }

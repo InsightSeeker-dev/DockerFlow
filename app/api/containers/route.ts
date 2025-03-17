@@ -165,26 +165,65 @@ export async function GET() {
     });
     console.log('DB containers found:', dbContainers.length);
 
-    // Récupérer les informations des images depuis Docker
+    // Récupérer les informations des images et des conteneurs depuis Docker
     const docker = await getDockerClient();
     const images = await docker.listImages();
+    
+    // Récupérer tous les conteneurs Docker (même ceux qui sont arrêtés)
+    console.log('Fetching Docker containers...');
+    const dockerContainers = await docker.listContainers({ all: true });
+    console.log(`Docker containers found: ${dockerContainers.length}`);
+    
+    // Créer un mapping des états réels des conteneurs Docker
+    interface DockerContainerState {
+      id: string;
+      state: string;
+      status: string;
+    }
+    
+    const dockerContainerStates: Record<string, DockerContainerState> = {};
+    dockerContainers.forEach(dc => {
+      // Enlever le '/' du début du nom
+      const name = dc.Names[0].replace(/^\//, '');
+      dockerContainerStates[name] = {
+        id: dc.Id,
+        state: dc.State,
+        status: dc.Status
+      };
+      console.log(`Docker container: ${name}, State: ${dc.State}, Status: ${dc.Status}`);
+    });
 
     // Transformer les conteneurs pour le format attendu par le front-end
     const containers = dbContainers.map(container => {
       // Trouver l'image correspondante
       const dockerImage = images.find(img => img.Id === container.imageId);
       const imageName = dockerImage?.RepoTags?.[0] || container.imageId;
+      
+      // Récupérer l'état réel du conteneur depuis Docker
+      const dockerContainerInfo = dockerContainerStates[container.name];
+      const state = dockerContainerInfo?.state || container.status;
+      const status = dockerContainerInfo?.status || container.status;
+      
+      // Si l'état a changé, mettre à jour la base de données
+      if (dockerContainerInfo && container.status !== state) {
+        console.log(`Updating container ${container.name} state from ${container.status} to ${state}`);
+        // Mise à jour asynchrone sans attendre
+        prisma.container.update({
+          where: { id: container.id },
+          data: { status: state }
+        }).catch(err => console.error(`Failed to update container ${container.name} state:`, err));
+      }
 
       return ({
       Id: container.id,
-      dockerId: container.id, // L'ID de la base de données est aussi l'ID Docker
+      dockerId: dockerContainerInfo?.id || container.id,
       Names: [`/${container.name}`],
       Image: imageName,
       ImageID: container.imageId,
       Command: '',
       Created: container.created.getTime() / 1000,
-      State: container.status,
-      Status: container.status,
+      State: state,
+      Status: status,
       Ports: container.ports as any[] || [],
       Labels: {},
       customConfig: {

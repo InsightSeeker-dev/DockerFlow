@@ -130,8 +130,8 @@ export function ContainerList({
     console.log(`[UI] Exécution de l'action ${action} sur le conteneur ${containerName} (ID: ${containerId})`);
 
     try {
-      // Gestion spéciale pour l'action delete avec confirmation
-      if (action === 'delete') {
+      // Gestion spéciale pour l'action remove avec confirmation
+      if (action === 'remove') {
         setContainerToDelete({
           id: containerId,
           name: containerName
@@ -154,8 +154,7 @@ export function ContainerList({
       // Utiliser la route PATCH unifiée pour toutes les actions
       console.log(`[UI] Envoi de la requête PATCH à /api/containers/${containerIdentifier}`);
       console.log(`[UI] Paramètres de la requête:`, { 
-        action,
-        ...(action === 'remove' && { keepVolume: false })
+        action
       });
       
       const response = await fetch(`/api/containers/${containerIdentifier}`, {
@@ -164,9 +163,7 @@ export function ContainerList({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ 
-          action,
-          // Pour l'action remove, on peut ajouter l'option keepVolume
-          ...(action === 'remove' && { keepVolume: false })
+          action
         }),
       });
       

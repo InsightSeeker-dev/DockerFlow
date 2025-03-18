@@ -59,6 +59,8 @@ enum ActivityType {
   VOLUME_DELETE
   VOLUME_MOUNT
   VOLUME_UNMOUNT
+  VOLUME_BACKUP
+  VOLUME_RESTORE
   IMAGE_PULL
   IMAGE_DELETE
   IMAGE_BUILD
@@ -124,6 +126,7 @@ model User {
   verificationTokens     VerificationToken[]
   activities             Activity[]
   volumes                Volume[]
+  volumeBackups          VolumeBackup[]
   createdAt              DateTime    @default(now()) @map("created_at")
   updatedAt              DateTime    @updatedAt @map("updated_at")
   lastLogin              DateTime?
@@ -301,6 +304,7 @@ model Volume {
 
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   containerVolumes ContainerVolume[]
+  backups         VolumeBackup[]
 
   @@unique([userId, name])
   @@index([userId])
@@ -321,4 +325,19 @@ model ContainerVolume {
   @@index([containerId])
   @@index([volumeId])
   @@map("container_volumes")
+}
+
+model VolumeBackup {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  volumeId    String   @db.ObjectId
+  volume      Volume   @relation(fields: [volumeId], references: [id], onDelete: Cascade)
+  path        String
+  size        Int
+  createdAt   DateTime @default(now())
+  userId      String   @db.ObjectId
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([volumeId])
+  @@map("volume_backups")
 }

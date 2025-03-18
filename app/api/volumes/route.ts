@@ -24,9 +24,41 @@ export async function GET(request: Request) {
       );
     }
 
-    // Utiliser l'utilitaire de synchronisation des volumes
+    // 1. Récupérer les volumes Docker et les conteneurs
+    const docker = await getDockerClient();
+    const [{ Volumes: dockerVolumes = [] }, containers] = await Promise.all([
+      docker.listVolumes(),
+      docker.listContainers({ all: true })
+    ]);
+
+    // 2. Créer un mapping des volumes utilisés par les conteneurs
+    const volumeUsage = new Map<string, string[]>();
+    containers.forEach(container => {
+      const mounts = container.Mounts || [];
+      mounts.forEach(mount => {
+        if (mount.Type === 'volume' && mount.Name) {
+          if (!volumeUsage.has(mount.Name)) {
+            volumeUsage.set(mount.Name, []);
+          }
+          const containerName = container.Names?.[0]?.replace('/', '') || container.Id;
+          volumeUsage.get(mount.Name)?.push(containerName);
+        }
+      });
+    });
+
+    // 3. Synchroniser les volumes avec la base de données
     const synchronizedVolumes = await dockerVolumeSync.synchronizeVolumes(session.user.id, true);
-    return NextResponse.json(synchronizedVolumes);
+
+    // 4. Enrichir les volumes synchronisés avec les informations d'utilisation
+    const enrichedVolumes = synchronizedVolumes.map(volume => ({
+      ...volume,
+      UsedBy: volumeUsage.get(volume.name) || [],
+      Status: volumeUsage.has(volume.name) ? 'active' : 'unused'
+    }));
+
+    return NextResponse.json({
+      Volumes: enrichedVolumes
+    });
   } catch (error) {
     console.error('Error fetching volumes:', error);
     return NextResponse.json(
@@ -119,25 +151,54 @@ async function synchronizeVolumes(userId: string, forceFullSync: boolean = false
   
   // 4. Effectuer les opérations de synchronisation
   const transactions = [];
+  const activities = [];
   
   // Supprimer les volumes qui n'existent plus dans Docker
   if (volumesToRemove.length > 0 && volumesToRemove.length < 100) { // Sécurité pour éviter les requêtes trop grandes
-    // Utiliser une approche alternative pour marquer les volumes comme supprimés
     for (const volumeId of volumesToRemove) {
-      // Vérifier si le volume n'est pas utilisé par des conteneurs
       const volume = await prisma.volume.findUnique({
         where: { id: volumeId },
-        include: { containerVolumes: true }
+        include: { 
+          containerVolumes: {
+            include: {
+              container: true
+            }
+          }
+        }
       });
       
-      if (volume && volume.containerVolumes.length === 0) {
+      if (volume) {
+        // Vérifier si le volume est utilisé par des conteneurs actifs
+        const activeContainers = volume.containerVolumes
+          .filter(cv => cv.container && ['running', 'created', 'restarting'].includes(cv.container.status));
+
+        if (activeContainers.length > 0) {
+          console.log(`[API] Volume ${volume.name} est utilisé par des conteneurs actifs, conservation`);
+          continue;
+        }
+
+        // Journaliser la suppression
+        activities.push(
+          prisma.activity.create({
+            data: {
+              type: ActivityType.VOLUME_DELETE,
+              userId: userId,
+              description: `Volume ${volume.name} supprimé car absent de Docker`,
+              metadata: {
+                action: 'sync_delete',
+                volumeName: volume.name,
+                reason: 'absent de Docker'
+              }
+            }
+          })
+        );
+
         transactions.push(
           prisma.volume.update({
             where: { id: volumeId },
             data: { 
-              // Utiliser une propriété existante pour marquer la suppression
-              // puisque deletedAt n'est pas encore reconnu par le typage
-              mountpoint: 'DELETED_' + (volume.mountpoint || new Date().toISOString())
+              mountpoint: 'DELETED_' + (volume.mountpoint || new Date().toISOString()),
+              deletedAt: new Date()
             }
           })
         );
@@ -179,9 +240,12 @@ async function synchronizeVolumes(userId: string, forceFullSync: boolean = false
     );
   }
   
-  // Exécuter les transactions si nécessaire
-  if (transactions.length > 0) {
-    await Promise.all(transactions);
+  // Exécuter les transactions et journaliser les activités
+  if (transactions.length > 0 || activities.length > 0) {
+    await prisma.$transaction([
+      ...transactions,
+      ...activities
+    ]);
   }
   
   // 5. Récupérer les volumes mis à jour
@@ -520,7 +584,12 @@ export async function POST(req: Request) {
       const existingVolumeInDb = await prisma.volume.findFirst({
         where: {
           name,
-          userId: session?.user?.id || ''
+          userId: session?.user?.id || '',
+          mountpoint: {
+            not: {
+              startsWith: 'DELETED_'
+            }
+          }
         }
       });
       
@@ -528,12 +597,12 @@ export async function POST(req: Request) {
         console.log(`Volume ${name} déjà existant dans la base de données, mise à jour...`);
         // Mettre à jour le volume existant avec les nouvelles informations de Docker
         const updatedVolume = await prisma.volume.update({
-          where: { id: existingVolumeInDb.id },
+          where: { id: existingVolumeInDb?.id || '' },
           data: {
             driver: createdDockerVolume?.Driver || 'local',
             mountpoint: createdDockerVolume?.Mountpoint || '',
             // Ne pas écraser la taille si elle est déjà définie
-            size: existingVolumeInDb?.size && existingVolumeInDb.size > 0 ? existingVolumeInDb.size : 0
+            size: existingVolumeInDb && existingVolumeInDb.size && existingVolumeInDb.size > 0 ? existingVolumeInDb.size : 0
           }
         });
         
@@ -675,8 +744,8 @@ export async function POST(req: Request) {
         const docker = await getDockerClient();
         const volumes = await docker.listVolumes();
         // Vérification explicite du type et de la valeur
-        const existingVolume = volumes.Volumes.find(vol => {
-          return vol.Name && typeof vol.Name === 'string' && vol.Name === name;
+        const existingVolume = volumes.Volumes?.find(vol => {
+          return vol && vol.Name && typeof vol.Name === 'string' && vol.Name === name;
         }) || null;
         
         if (existingVolume) {

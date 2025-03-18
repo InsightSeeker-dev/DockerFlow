@@ -5,7 +5,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
 import { ContainerList } from '../containers/container-list';
-import { Container } from '@/lib/docker/types';
+import { ContainerLogs } from '../containers/container-logs';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { VolumeManager } from '../volumes/volume-manager';
+import { Container } from '@/components/containers/types';
 import ImageManager from './ImageManager';
 import NetworkManager from './NetworkManager';
 import AlertCenter from './AlertCenter';
@@ -27,7 +30,8 @@ import {
   LayoutDashboard,
   LogOut,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Database
 } from 'lucide-react';
 import { signOut } from 'next-auth/react';
 import dynamic from 'next/dynamic';
@@ -37,12 +41,7 @@ const WebTerminal = dynamic(
   { ssr: false }
 );
 
-interface ContainerInfo extends Container {
-  Names: string[];
-  Id: string;
-  Status: string;
-  State: string;
-}
+// Nous utilisons directement le type Container du composant ContainerList
 
 interface RecentActivity {
   id: string;
@@ -54,10 +53,12 @@ interface RecentActivity {
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [containers, setContainers] = useState<ContainerInfo[]>([]);
+  const [containers, setContainers] = useState<Container[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTerminals, setActiveTerminals] = useState<string[]>([]);
+  const [showLogs, setShowLogs] = useState(false);
+  const [selectedContainer, setSelectedContainer] = useState<Container | null>(null);
   const [maximizedTerminal, setMaximizedTerminal] = useState<string | null>(null);
   const [systemStats, setSystemStats] = useState<SystemStats>({
     containers: 0,
@@ -118,7 +119,26 @@ export default function AdminDashboard() {
         throw new Error('Failed to fetch containers');
       }
       const data = await response.json();
-      setContainers(data);
+      setContainers(data.map((container: any) => ({
+        ...container,
+        dockerId: container.Id,
+        Name: container.Names[0]?.replace(/^\//, '') || '',
+        url: `https://${container.Labels['traefik.frontend.rule']?.split('Host:`')[1]?.split('`')[0] || ''}`,
+        subdomain: container.Labels['traefik.frontend.rule']?.split('Host:`')[1]?.split('`')[0]?.split('.')[0] || '',
+        cpuLimit: parseInt(container.Labels['cpu.limit'] || '0'),
+        memoryLimit: parseInt(container.Labels['memory.limit'] || '0'),
+        userId: container.Labels['com.docker.compose.project'] || '',
+        customConfig: {
+          subdomain: container.Labels['traefik.frontend.rule']?.split('Host:`')[1]?.split('`')[0]?.split('.')[0] || '',
+          ports: container.Ports.map((port: any) => ({
+            ...port,
+            hostPort: port.PublicPort,
+            containerPort: port.PrivatePort
+          })),
+          cpuLimit: parseInt(container.Labels['cpu.limit'] || '0'),
+          memoryLimit: parseInt(container.Labels['memory.limit'] || '0')
+        }
+      })));
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An error occurred while fetching containers';
       setError(errorMessage);
@@ -200,6 +220,10 @@ export default function AdminDashboard() {
             <ContainerIcon className="h-4 w-4" />
             <span>Containers</span>
           </TabsTrigger>
+          <TabsTrigger value="volumes" className="flex items-center gap-2">
+            <Database className="h-4 w-4" />
+            <span>Volumes</span>
+          </TabsTrigger>
           <TabsTrigger value="images" className="flex items-center gap-2">
             <ImageIcon className="h-4 w-4" />
             <span>Images</span>
@@ -240,6 +264,64 @@ export default function AdminDashboard() {
                 isLoading={isLoading}
                 error={error}
                 onRefresh={fetchContainers}
+                onStart={async (id) => {
+                  try {
+                    const response = await fetch(`/api/containers/${id}/start`, { method: 'POST' });
+                    if (!response.ok) throw new Error('Failed to start container');
+                    fetchContainers();
+                    toast({
+                      title: 'Succès',
+                      description: 'Le conteneur a été démarré',
+                    });
+                  } catch (error) {
+                    toast({
+                      title: 'Erreur',
+                      description: 'Impossible de démarrer le conteneur',
+                      variant: 'destructive',
+                    });
+                  }
+                }}
+                onStop={async (id) => {
+                  try {
+                    const response = await fetch(`/api/containers/${id}/stop`, { method: 'POST' });
+                    if (!response.ok) throw new Error('Failed to stop container');
+                    fetchContainers();
+                    toast({
+                      title: 'Succès',
+                      description: 'Le conteneur a été arrêté',
+                    });
+                  } catch (error) {
+                    toast({
+                      title: 'Erreur',
+                      description: 'Impossible d\'arrêter le conteneur',
+                      variant: 'destructive',
+                    });
+                  }
+                }}
+                onDelete={async (id) => {
+                  try {
+                    const response = await fetch(`/api/containers/${id}`, { method: 'DELETE' });
+                    if (!response.ok) throw new Error('Failed to delete container');
+                    fetchContainers();
+                    toast({
+                      title: 'Succès',
+                      description: 'Le conteneur a été supprimé',
+                    });
+                  } catch (error) {
+                    toast({
+                      title: 'Erreur',
+                      description: 'Impossible de supprimer le conteneur',
+                      variant: 'destructive',
+                    });
+                  }
+                }}
+                onLogs={async (id) => {
+                  const container = containers.find(c => c.dockerId === id);
+                  if (!container) return;
+                  
+                  setSelectedContainer(container);
+                  setShowLogs(true);
+                }}
               />
             </CardContent>
           </Card>
@@ -363,6 +445,17 @@ export default function AdminDashboard() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="volumes" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Volume Management</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <VolumeManager />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="settings" className="space-y-4">
           <Card>
             <CardHeader>
@@ -374,6 +467,18 @@ export default function AdminDashboard() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {showLogs && selectedContainer && (
+        <Dialog open={showLogs} onOpenChange={setShowLogs}>
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+            <ContainerLogs
+              containerId={selectedContainer.dockerId}
+              containerName={selectedContainer.Name}
+              onClose={() => setShowLogs(false)}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

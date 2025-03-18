@@ -21,9 +21,21 @@ interface Volume {
   Labels: Record<string, string>;
   UsedBy: string[];
   CreatedAt?: string;
+  Size?: number;
+  Status?: 'active' | 'unused';
 }
 
-export function VolumeList() {
+interface VolumeListProps {
+  onBackup?: (volumeName: string) => void;
+  onStatsUpdate?: (stats: {
+    totalVolumes: number;
+    totalSize: number;
+    activeVolumes: number;
+    unusedVolumes: number;
+  }) => void;
+}
+
+export function VolumeList({ onBackup, onStatsUpdate }: VolumeListProps) {
   const [volumes, setVolumes] = useState<Volume[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [volumeToDelete, setVolumeToDelete] = useState<string | null>(null);
@@ -35,7 +47,23 @@ export function VolumeList() {
       const response = await fetch('/api/volumes');
       if (!response.ok) throw new Error('Failed to fetch volumes');
       const data = await response.json();
-      setVolumes(data.Volumes || []);
+      const volumesWithStats = data.Volumes?.map((volume: Volume) => ({
+        ...volume,
+        Status: volume.UsedBy.length > 0 ? 'active' : 'unused',
+      })) || [];
+      
+      setVolumes(volumesWithStats);
+      
+      // Calculer les statistiques
+      if (onStatsUpdate) {
+        const stats = {
+          totalVolumes: volumesWithStats.length,
+          totalSize: volumesWithStats.reduce((acc: number, vol: Volume) => acc + (vol.Size || 0), 0),
+          activeVolumes: volumesWithStats.filter((vol: Volume) => vol.Status === 'active').length,
+          unusedVolumes: volumesWithStats.filter((vol: Volume) => vol.Status === 'unused').length,
+        };
+        onStatsUpdate(stats);
+      }
     } catch (error) {
       console.error('Error fetching volumes:', error);
       toast({
@@ -123,7 +151,14 @@ export function VolumeList() {
             {volumes.map((volume) => (
               <TableRow key={volume.Name}>
                 <TableCell>{volume.Name}</TableCell>
-                <TableCell>{volume.Driver}</TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <span>{volume.Driver}</span>
+                    <Badge variant={volume.Status === 'active' ? 'default' : 'secondary'}>
+                      {volume.Status === 'active' ? 'Actif' : 'Inutilisé'}
+                    </Badge>
+                  </div>
+                </TableCell>
                 <TableCell className="max-w-xs truncate">{volume.Mountpoint}</TableCell>
                 <TableCell>
                   {volume.UsedBy.length > 0 ? (
@@ -147,14 +182,25 @@ export function VolumeList() {
                     : 'N/A'}
                 </TableCell>
                 <TableCell>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => setVolumeToDelete(volume.Name)}
-                    disabled={volume.UsedBy.length > 0}
-                  >
-                    Supprimer
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => setVolumeToDelete(volume.Name)}
+                      disabled={volume.UsedBy.length > 0}
+                    >
+                      Supprimer
+                    </Button>
+                    {onBackup && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onBackup(volume.Name)}
+                      >
+                        Backup
+                      </Button>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

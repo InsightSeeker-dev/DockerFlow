@@ -1,7 +1,46 @@
-import { prisma } from '@/lib/prisma';
+import { prisma } from '../../lib/prisma';
 import { getDockerClient } from './client';
-import { ActivityType } from '@prisma/client';
-import { Prisma } from '@prisma/client';
+import { Prisma, ActivityType, Volume as PrismaVolume } from '@prisma/client';
+
+interface ContainerAssociation {
+  containerId: string;
+  containerName: string;
+  mountPath: string;
+}
+
+interface DockerVolume {
+  Name: string;
+  Driver: string;
+  Mountpoint: string;
+  Labels?: Record<string, string>;
+}
+
+interface DockerMount {
+  Type: string;
+  Name?: string;
+  Destination: string;
+}
+
+interface DockerContainer {
+  Id: string;
+  Names?: string[];
+  Mounts?: DockerMount[];
+}
+
+// Interface étendue qui inclut les relations Prisma
+interface Volume extends PrismaVolume {
+  containerVolumes: {
+    containerId: string;
+    mountPath: string;
+    container?: {
+      id: string;
+      name: string;
+      status: string;
+    };
+  }[];
+}
+
+type PrismaTransaction = Prisma.PrismaPromise<any>;
 
 /**
  * Classe utilitaire pour la synchronisation des volumes entre Docker et la base de données
@@ -10,11 +49,13 @@ import { Prisma } from '@prisma/client';
 export class DockerVolumeSync {
   private static instance: DockerVolumeSync;
   private isSyncing: boolean = false;
-  
+  private transactions: PrismaTransaction[] = [];
+
   private constructor() {}
-  
+
   /**
-   * Obtenir l'instance unique de DockerVolumeSync
+   * Obtient l'instance unique de DockerVolumeSync
+   * @returns L'instance de DockerVolumeSync
    */
   public static getInstance(): DockerVolumeSync {
     if (!DockerVolumeSync.instance) {
@@ -22,36 +63,138 @@ export class DockerVolumeSync {
     }
     return DockerVolumeSync.instance;
   }
-  
+
   /**
-   * Synchronise les volumes entre Docker et la base de données
-   * @param userId - ID de l'utilisateur
-   * @param forceFullSync - Force une synchronisation complète même si une synchronisation est déjà en cours
-   * @returns Liste des volumes synchronisés
+   * Vérifie si un volume existe dans Docker
+   * @param volumeName Nom du volume à vérifier
+   * @returns true si le volume existe, false sinon
    */
-  public async synchronizeVolumes(userId: string, forceFullSync: boolean = false): Promise<any[]> {
-    // Éviter les synchronisations simultanées sauf si forcé
-    if (this.isSyncing && !forceFullSync) {
-      console.log(`[DockerVolumeSync] Synchronisation déjà en cours pour l'utilisateur ${userId}, ignoré.`);
+  public async checkVolumeExistsInDocker(volumeName: string): Promise<boolean> {
+    try {
+      const docker = await getDockerClient();
+      const { Volumes } = await docker.listVolumes();
+      return (Volumes || []).some((vol: DockerVolume) => vol.Name === volumeName);
+    } catch (error) {
+      console.error(`[DockerVolumeSync] Erreur lors de la vérification du volume ${volumeName}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Vérifie si les associations de conteneurs pour un volume ont changé
+   * @param volumeName Nom du volume
+   * @param currentAssociations Associations actuelles
+   * @param newAssociations Nouvelles associations
+   * @returns true si les associations ont changé, false sinon
+   */
+  private hasContainerChanges(
+    volumeName: string,
+    currentAssociations: ContainerAssociation[],
+    newAssociations: ContainerAssociation[]
+  ): boolean {
+    if (currentAssociations.length !== newAssociations.length) {
+      console.log(`[DockerVolumeSync] Le nombre d'associations pour le volume ${volumeName} a changé`);
+      return true;
+    }
+
+    // Création de maps pour une comparaison plus efficace
+    const currentMap = new Map<string, string>();
+    for (const assoc of currentAssociations) {
+      currentMap.set(assoc.containerId, assoc.mountPath);
+    }
+
+    for (const assoc of newAssociations) {
+      const mountPath = currentMap.get(assoc.containerId);
+      if (!mountPath || mountPath !== assoc.mountPath) {
+        console.log(`[DockerVolumeSync] Les associations pour le volume ${volumeName} ont changé`);
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Exécute les transactions en attente dans la base de données
+   * @returns Résultat des transactions
+   */
+  private async executeTransactions(): Promise<any[]> {
+    if (this.transactions.length === 0) {
       return [];
     }
-    
+
     try {
-      this.isSyncing = true;
-      console.log(`[DockerVolumeSync] Début de la synchronisation des volumes pour l'utilisateur ${userId}`);
+      const results = await prisma.$transaction(this.transactions);
+      console.log(`[DockerVolumeSync] ${this.transactions.length} transactions exécutées avec succès`);
+      this.transactions = [];
+      return results;
+    } catch (error) {
+      console.error('[DockerVolumeSync] Erreur lors de l\'exécution des transactions:', error);
+      this.transactions = [];
+      throw error;
+    }
+  }
+
+  /**
+   * Synchronise les volumes entre Docker et la base de données
+   * @param userId ID de l'utilisateur pour lequel synchroniser les volumes
+   * @returns true si la synchronisation a réussi, false sinon
+   */
+  public async synchronizeVolumes(userId: string): Promise<boolean> {
+    if (this.isSyncing) {
+      console.log('[DockerVolumeSync] Une synchronisation est déjà en cours, opération ignorée');
+      return false;
+    }
+
+    this.isSyncing = true;
+    console.log(`[DockerVolumeSync] Démarrage de la synchronisation des volumes pour l'utilisateur ${userId}`);
+
+    try {
+      const docker = await getDockerClient();
       
-      // 1. Récupérer les volumes depuis la base de données
+      // Récupération des volumes Docker
+      const { Volumes: dockerVolumes = [] } = await docker.listVolumes();
+      console.log(`[DockerVolumeSync] ${dockerVolumes.length} volumes trouvés dans Docker`);
+
+      // Récupération des conteneurs Docker
+      const containers = await docker.listContainers({ all: true });
+      console.log(`[DockerVolumeSync] ${containers.length} conteneurs trouvés dans Docker`);
+
+      // Création d'une map des associations volume-conteneur à partir des conteneurs Docker
+      const containerVolumeMap = new Map<string, ContainerAssociation[]>();
+      
+      for (const container of containers) {
+        const containerInfo = container as unknown as DockerContainer;
+        const containerName = containerInfo.Names?.[0]?.replace(/^\//, '') || '';
+        
+        if (containerInfo.Mounts) {
+          for (const mount of containerInfo.Mounts) {
+            if (mount.Type === 'volume' && mount.Name) {
+              const volumeName = mount.Name;
+              const association: ContainerAssociation = {
+                containerId: containerInfo.Id,
+                containerName,
+                mountPath: mount.Destination
+              };
+
+              if (!containerVolumeMap.has(volumeName)) {
+                containerVolumeMap.set(volumeName, []);
+              }
+              containerVolumeMap.get(volumeName)?.push(association);
+            }
+          }
+        }
+      }
+
+      // Récupération des volumes de la base de données pour l'utilisateur
       const dbVolumes = await prisma.volume.findMany({
-        where: {
-          userId: userId
-        },
+        where: { userId },
         include: {
           containerVolumes: {
-            select: {
-              id: true,
-              mountPath: true,
+            include: {
               container: {
                 select: {
+                  id: true,
                   name: true,
                   status: true
                 }
@@ -59,216 +202,189 @@ export class DockerVolumeSync {
             }
           }
         }
-      });
+      }) as Volume[];
       
-      console.log(`[DockerVolumeSync] ${dbVolumes.length} volumes trouvés dans la base de données`);
+      console.log(`[DockerVolumeSync] ${dbVolumes.length} volumes trouvés en base de données pour l'utilisateur ${userId}`);
+
+      // Création des ensembles pour suivre les volumes à ajouter, mettre à jour ou supprimer
+      const volumesToUpdate = new Set<string>();
+      const volumesToAdd = new Set<string>();
+      const volumesToRemove = new Set<string>();
       
-      // Créer un Map des volumes en base de données pour un accès rapide
-      const dbVolumeMap = new Map(dbVolumes.map(vol => [vol.name, vol]));
-      
-      // 2. Récupérer les volumes depuis Docker
-      let dockerVolumes: any[] = [];
-      let docker;
-      
-      try {
-        docker = await getDockerClient();
-        const dockerVolumesResponse = await docker.listVolumes();
-        dockerVolumes = dockerVolumesResponse.Volumes || [];
-        console.log(`[DockerVolumeSync] ${dockerVolumes.length} volumes récupérés depuis Docker`);
-      } catch (dockerError) {
-        console.error('[DockerVolumeSync] Erreur lors de la récupération des volumes Docker:', dockerError);
-        // Si Docker n'est pas disponible, on retourne les volumes de la BD tels quels
-        return dbVolumes.map(volume => ({
-          ...volume,
-          existsInDocker: false // On marque tous les volumes comme non existants dans Docker
-        }));
+      // Map des volumes de la base de données pour un accès plus rapide
+      const dbVolumeMap = new Map<string, Volume>();
+      for (const volume of dbVolumes) {
+        dbVolumeMap.set(volume.name, volume);
       }
-      
-      // 3. Identifier les volumes à supprimer, mettre à jour ou ajouter
-      const volumesToUpdate: string[] = [];
-      const volumesToRemove: string[] = [];
-      const volumesToAdd: any[] = [];
-      
-      // Créer un ensemble des noms de volumes Docker pour une recherche efficace
-      const dockerVolumeNames = new Set(dockerVolumes.map(vol => vol.Name));
-      const dockerVolumeMap = new Map(dockerVolumes.map(vol => [vol.Name, vol]));
-      
-      // Vérifier quels volumes de la BD n'existent plus dans Docker
-      for (const dbVolume of dbVolumes) {
-        if (!dockerVolumeNames.has(dbVolume.name)) {
-          // Le volume n'existe plus dans Docker
-          volumesToRemove.push(dbVolume.id);
-          console.log(`[DockerVolumeSync] Volume ${dbVolume.name} n'existe plus dans Docker, marqué pour suppression`);
-        } else {
-          // Le volume existe toujours, vérifier s'il faut le mettre à jour
-          const dockerVolume = dockerVolumeMap.get(dbVolume.name);
-          if (dockerVolume && dbVolume.mountpoint !== dockerVolume.Mountpoint) {
-            volumesToUpdate.push(dbVolume.id);
-            console.log(`[DockerVolumeSync] Volume ${dbVolume.name} a changé, marqué pour mise à jour`);
-          }
-        }
-      }
-      
-      // Identifier les volumes Docker qui ne sont pas dans la BD
+
+      // Vérification des volumes Docker qui doivent être ajoutés ou mis à jour
       for (const dockerVolume of dockerVolumes) {
-        if (!dbVolumeMap.has(dockerVolume.Name)) {
-          volumesToAdd.push(dockerVolume);
-          console.log(`[DockerVolumeSync] Nouveau volume Docker ${dockerVolume.Name} trouvé, sera ajouté à la BD`);
-        }
-      }
-      
-      console.log(`[DockerVolumeSync] Volumes à supprimer: ${volumesToRemove.length}, à mettre à jour: ${volumesToUpdate.length}, à ajouter: ${volumesToAdd.length}`);
-      
-      // 4. Effectuer les opérations de synchronisation
-      const transactions = [];
-      
-      // Supprimer les volumes qui n'existent plus dans Docker
-      if (volumesToRemove.length > 0 && volumesToRemove.length < 100) { // Sécurité pour éviter les requêtes trop grandes
-        for (const volumeId of volumesToRemove) {
-          // Vérifier si le volume n'est pas utilisé par des conteneurs
-          const volume = await prisma.volume.findUnique({
-            where: { id: volumeId },
-            include: { containerVolumes: true }
-          });
+        const volumeName = dockerVolume.Name;
+        
+        // Si le volume est déjà dans la base de données
+        if (dbVolumeMap.has(volumeName)) {
+          const dbVolume = dbVolumeMap.get(volumeName)!;
+          const currentAssociations: ContainerAssociation[] = dbVolume.containerVolumes.map(cv => ({
+            containerId: cv.containerId,
+            containerName: cv.container?.name || '',
+            mountPath: cv.mountPath
+          }));
           
-          if (volume && volume.containerVolumes.length === 0) {
-            transactions.push(
-              prisma.volume.update({
-                where: { id: volumeId },
-                data: { 
-                  // Utiliser une propriété existante pour marquer la suppression
-                  mountpoint: 'DELETED_' + (volume.mountpoint || new Date().toISOString())
-                }
-              })
-            );
-            
-            // Créer une activité pour la suppression du volume
-            await prisma.activity.create({
-              data: {
-                type: ActivityType.VOLUME_DELETE,
-                description: `Volume ${volume.name} supprimé lors de la synchronisation (absent de Docker)`,
-                userId: userId,
-                metadata: {
-                  volumeId: volume.id,
-                  volumeName: volume.name
-                } as Prisma.JsonValue
-              }
-            });
+          const newAssociations = containerVolumeMap.get(volumeName) || [];
+          
+          // Vérifier si les associations ont changé
+          if (this.hasContainerChanges(volumeName, currentAssociations, newAssociations)) {
+            volumesToUpdate.add(volumeName);
           }
+        } else {
+          // Le volume n'existe pas dans la base de données, il doit être ajouté
+          volumesToAdd.add(volumeName);
         }
       }
-      
-      // Mettre à jour les volumes existants
-      for (const volumeId of volumesToUpdate) {
-        const dbVolume = dbVolumes.find(v => v.id === volumeId);
-        if (dbVolume) {
-          const dockerVolume = dockerVolumeMap.get(dbVolume.name);
-          if (dockerVolume) {
-            transactions.push(
-              prisma.volume.update({
-                where: { id: volumeId },
-                data: {
-                  mountpoint: dockerVolume.Mountpoint || '',
-                  driver: dockerVolume.Driver || 'local'
-                }
-              })
-            );
-            
-            // Créer une activité pour la mise à jour du volume
-            await prisma.activity.create({
-              data: {
-                type: ActivityType.VOLUME_CREATE,
-                description: `Volume ${dbVolume.name} mis à jour lors de la synchronisation`,
-                userId: userId,
-                metadata: {
-                  volumeId: dbVolume.id,
-                  volumeName: dbVolume.name,
-                  driver: dockerVolume.Driver
-                } as Prisma.JsonValue
-              }
-            });
-          }
+
+      // Vérification des volumes de la base de données qui ne sont plus dans Docker
+      for (const dbVolume of dbVolumes) {
+        const volumeName = dbVolume.name;
+        if (!dockerVolumes.some(dv => dv.Name === volumeName)) {
+          volumesToRemove.add(volumeName);
         }
       }
-      
-      // Ajouter les nouveaux volumes
-      for (const dockerVolume of volumesToAdd) {
-        // Vérifier si le volume appartient à l'utilisateur via les labels
-        const labels = dockerVolume.Labels || {};
-        const volumeUserId = labels['com.dockerflow.userId'] || '';
+
+      console.log(`[DockerVolumeSync] Volumes à traiter - Ajouts: ${volumesToAdd.size}, Mises à jour: ${volumesToUpdate.size}, Suppressions: ${volumesToRemove.size}`);
+
+      // Ajout des nouveaux volumes
+      for (const volumeName of Array.from(volumesToAdd)) {
+        const dockerVolume = dockerVolumes.find(v => v.Name === volumeName);
+        if (!dockerVolume) continue;
+
+        const containerAssociations = containerVolumeMap.get(volumeName) || [];
         
-        // Si le volume a un userId spécifié et qu'il ne correspond pas à l'utilisateur actuel, on l'ignore
-        if (volumeUserId && volumeUserId !== userId) {
-          console.log(`[DockerVolumeSync] Volume ${dockerVolume.Name} appartient à un autre utilisateur (${volumeUserId}), ignoré`);
-          continue;
-        }
-        
-        transactions.push(
+        // Création du volume dans la base de données
+        this.transactions.push(
           prisma.volume.create({
             data: {
-              name: dockerVolume.Name,
-              driver: dockerVolume.Driver || 'local',
-              mountpoint: dockerVolume.Mountpoint || '',
-              size: 0, // Taille par défaut, à mettre à jour ultérieurement
-              userId: userId
-            }
-          }).then(newVolume => {
-            // Créer une activité pour le nouveau volume
-            return prisma.activity.create({
-              data: {
-                type: ActivityType.VOLUME_CREATE,
-                description: `Volume ${dockerVolume.Name} découvert et ajouté lors de la synchronisation`,
-                userId: userId,
-                metadata: {
-                  volumeId: newVolume.id,
-                  volumeName: newVolume.name,
-                  driver: newVolume.driver
-                } as Prisma.JsonValue
+              name: volumeName,
+              driver: dockerVolume.Driver,
+              mountpoint: dockerVolume.Mountpoint,
+              userId,
+              created: new Date(),
+              containerVolumes: {
+                create: containerAssociations.map(assoc => ({
+                  containerId: assoc.containerId,
+                  mountPath: assoc.mountPath
+                }))
               }
-            }).then(() => newVolume);
+            }
+          })
+        );
+        
+        // Création d'une activité pour l'ajout du volume
+        this.transactions.push(
+          prisma.activity.create({
+            data: {
+              type: ActivityType.VOLUME_CREATE,
+              userId,
+              createdAt: new Date(),
+              description: `Volume ${volumeName} created`,
+              metadata: { volumeName }
+            }
           })
         );
       }
-      
-      // Exécuter les transactions si nécessaire
-      if (transactions.length > 0) {
-        await Promise.all(transactions);
-        console.log(`[DockerVolumeSync] ${transactions.length} opérations de synchronisation effectuées avec succès`);
-      } else {
-        console.log(`[DockerVolumeSync] Aucune opération de synchronisation nécessaire, tout est à jour`);
-      }
-      
-      // 5. Récupérer les volumes mis à jour
-      const updatedVolumes = await prisma.volume.findMany({
-        where: {
-          userId: userId,
-          // Exclure les volumes marqués comme supprimés (via le préfixe DELETED_)
-          NOT: {
-            mountpoint: { startsWith: 'DELETED_' }
-          }
-        },
-        include: {
-          containerVolumes: {
-            select: {
-              id: true,
-              mountPath: true,
-              container: {
-                select: {
-                  name: true,
-                  status: true
-                }
+
+      // Mise à jour des volumes existants
+      for (const volumeName of Array.from(volumesToUpdate)) {
+        const dockerVolume = dockerVolumes.find(v => v.Name === volumeName);
+        const dbVolume = dbVolumeMap.get(volumeName);
+        const containerAssociations = containerVolumeMap.get(volumeName) || [];
+        
+        if (!dockerVolume || !dbVolume) continue;
+
+        // Suppression des associations existantes
+        this.transactions.push(
+          prisma.containerVolume.deleteMany({
+            where: {
+              volumeId: dbVolume.id
+            }
+          })
+        );
+
+        // Mise à jour du volume et création des nouvelles associations
+        this.transactions.push(
+          prisma.volume.update({
+            where: {
+              id: dbVolume.id
+            },
+            data: {
+              driver: dockerVolume.Driver,
+              mountpoint: dockerVolume.Mountpoint,
+              containerVolumes: {
+                create: containerAssociations.map(assoc => ({
+                  containerId: assoc.containerId,
+                  mountPath: assoc.mountPath
+                }))
               }
             }
-          }
-        }
-      });
+          })
+        );
+        
+        // Création d'une activité pour la mise à jour du volume
+        this.transactions.push(
+          prisma.activity.create({
+            data: {
+              type: ActivityType.VOLUME_MOUNT,
+              userId,
+              createdAt: new Date(),
+              description: `Volume ${volumeName} updated`,
+              metadata: { volumeName }
+            }
+          })
+        );
+      }
+
+      // Suppression des volumes qui n'existent plus dans Docker
+      for (const volumeName of Array.from(volumesToRemove)) {
+        const dbVolume = dbVolumeMap.get(volumeName);
+        if (!dbVolume) continue;
+
+        // Création d'une activité de suppression
+        this.transactions.push(
+          prisma.activity.create({
+            data: {
+              type: ActivityType.VOLUME_DELETE,
+              userId,
+              createdAt: new Date(),
+              description: `Volume ${volumeName} deleted`,
+              metadata: { volumeName }
+            }
+          })
+        );
+
+        // Suppression des associations conteneur-volume
+        this.transactions.push(
+          prisma.containerVolume.deleteMany({
+            where: {
+              volumeId: dbVolume.id
+            }
+          })
+        );
+
+        // Suppression du volume
+        this.transactions.push(
+          prisma.volume.delete({
+            where: {
+              id: dbVolume.id
+            }
+          })
+        );
+      }
+
+      // Exécution des transactions
+      await this.executeTransactions();
+      console.log(`[DockerVolumeSync] Synchronisation des volumes terminée pour l'utilisateur ${userId}`);
       
-      // Marquer tous les volumes comme existant dans Docker (puisqu'ils sont synchronisés)
-      return updatedVolumes.map(volume => ({
-        ...volume,
-        existsInDocker: dockerVolumeNames.has(volume.name)
-      }));
-    } catch (error) {
+      return true;
+    } catch (error: unknown) {
       console.error('[DockerVolumeSync] Erreur lors de la synchronisation des volumes:', error);
       throw error;
     } finally {
@@ -276,23 +392,4 @@ export class DockerVolumeSync {
       console.log(`[DockerVolumeSync] Fin de la synchronisation des volumes pour l'utilisateur ${userId}`);
     }
   }
-  
-  /**
-   * Vérifie si un volume existe dans Docker
-   * @param volumeName - Nom du volume à vérifier
-   * @returns true si le volume existe, false sinon
-   */
-  public async checkVolumeExistsInDocker(volumeName: string): Promise<boolean> {
-    try {
-      const docker = await getDockerClient();
-      const volumes = await docker.listVolumes();
-      return volumes.Volumes.some(vol => vol.Name === volumeName);
-    } catch (error) {
-      console.error(`[DockerVolumeSync] Erreur lors de la vérification du volume ${volumeName} dans Docker:`, error);
-      return false;
-    }
-  }
 }
-
-// Exporter l'instance singleton pour une utilisation facile
-export const dockerVolumeSync = DockerVolumeSync.getInstance();

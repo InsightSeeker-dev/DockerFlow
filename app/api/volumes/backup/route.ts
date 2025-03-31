@@ -40,6 +40,21 @@ export async function POST(request: Request) {
       );
     }
 
+    // Récupérer le volume depuis la base de données
+    const volume = await prisma.volume.findFirst({
+      where: {
+        name,
+        userId: session.user.id
+      }
+    });
+
+    if (!volume) {
+      return NextResponse.json(
+        { error: 'Volume not found in database' },
+        { status: 404 }
+      );
+    }
+
     // Créer le répertoire de backup s'il n'existe pas
     await fs.mkdir(BACKUP_DIR, { recursive: true });
 
@@ -67,9 +82,9 @@ export async function POST(request: Request) {
     // Enregistrer le backup dans la base de données
     const backup = await prisma.volumeBackup.create({
       data: {
-        volumeName: name,
         path: backupFile,
         userId: session.user.id,
+        volumeId: volume.id,
         size: (await fs.stat(backupFile)).size
       }
     });
@@ -79,8 +94,8 @@ export async function POST(request: Request) {
       data: {
         type: ActivityType.VOLUME_BACKUP,
         userId: session.user.id,
-        details: {
-          volumeName: name,
+        description: `Backup created for volume ${name}`,
+        metadata: {
           backupPath: backupFile
         }
       }
@@ -90,7 +105,6 @@ export async function POST(request: Request) {
       success: true,
       backup: {
         id: backup.id,
-        volumeName: backup.volumeName,
         createdAt: backup.createdAt,
         size: backup.size
       }

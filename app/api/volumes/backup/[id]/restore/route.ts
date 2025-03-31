@@ -70,10 +70,12 @@ export async function POST(
     await container.wait();
 
     // Enregistrer l'activité
+    // Ajoutez un champ description à l'objet data
     await prisma.activity.create({
       data: {
         type: ActivityType.VOLUME_RESTORE,
         userId: session.user.id,
+        description: `Volume ${volumeName} restored from backup ${backup.id}`,
         metadata: {
           volumeName: volumeName,
           backupId: backup.id,

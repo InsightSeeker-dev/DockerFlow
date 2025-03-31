@@ -138,12 +138,12 @@ export class DockerVolumeSync {
   /**
    * Synchronise les volumes entre Docker et la base de données
    * @param userId ID de l'utilisateur pour lequel synchroniser les volumes
-   * @returns true si la synchronisation a réussi, false sinon
+   * @returns Les volumes synchronisés
    */
-  public async synchronizeVolumes(userId: string): Promise<boolean> {
+  public async synchronizeVolumes(userId: string): Promise<Volume[]> {
     if (this.isSyncing) {
       console.log('[DockerVolumeSync] Une synchronisation est déjà en cours, opération ignorée');
-      return false;
+      return [];
     }
 
     this.isSyncing = true;
@@ -383,7 +383,21 @@ export class DockerVolumeSync {
       await this.executeTransactions();
       console.log(`[DockerVolumeSync] Synchronisation des volumes terminée pour l'utilisateur ${userId}`);
       
-      return true;
+      // Récupérer les volumes mis à jour
+      const updatedVolumes = await prisma.volume.findMany({
+        where: {
+          userId
+        },
+        include: {
+          containerVolumes: {
+            include: {
+              container: true
+            }
+          }
+        }
+      }) as Volume[];
+      
+      return updatedVolumes;
     } catch (error: unknown) {
       console.error('[DockerVolumeSync] Erreur lors de la synchronisation des volumes:', error);
       throw error;
@@ -393,3 +407,6 @@ export class DockerVolumeSync {
     }
   }
 }
+
+// Exporter une instance par défaut pour être compatible avec les importations existantes
+export const dockerVolumeSync = DockerVolumeSync.getInstance();

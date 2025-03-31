@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useToast } from '@/components/ui/use-toast';
+import { useToast } from '../../components/ui/use-toast';
 import {
   Table,
   TableBody,
@@ -7,21 +7,21 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
-import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
-import { Badge } from '@/components/ui/badge';
+} from '../../components/ui/table';
+import { Button } from '../../components/ui/button';
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '../../components/ui/alert-dialog';
+import { Badge } from '../../components/ui/badge';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
 interface Volume {
-  Name: string;
-  Driver: string;
-  Mountpoint: string;
-  Labels: Record<string, string>;
+  name: string;
+  driver: string;
+  mountpoint: string;
+  labels?: Record<string, string>;
   UsedBy: string[];
-  CreatedAt?: string;
-  Size?: number;
+  created?: string;
+  size?: number;
   Status?: 'active' | 'unused';
 }
 
@@ -47,10 +47,15 @@ export function VolumeList({ onBackup, onStatsUpdate }: VolumeListProps) {
       const response = await fetch('/api/volumes');
       if (!response.ok) throw new Error('Failed to fetch volumes');
       const data = await response.json();
-      const volumesWithStats = data.Volumes?.map((volume: Volume) => ({
-        ...volume,
-        Status: volume.UsedBy.length > 0 ? 'active' : 'unused',
-      })) || [];
+      console.log('API response:', data);
+      
+      const volumesWithStats = data.Volumes?.map((volume: Volume) => {
+        console.log('Processing volume:', volume);
+        return {
+          ...volume,
+          Status: volume.UsedBy?.length > 0 ? 'active' : 'unused',
+        };
+      }) || [];
       
       setVolumes(volumesWithStats);
       
@@ -58,7 +63,7 @@ export function VolumeList({ onBackup, onStatsUpdate }: VolumeListProps) {
       if (onStatsUpdate) {
         const stats = {
           totalVolumes: volumesWithStats.length,
-          totalSize: volumesWithStats.reduce((acc: number, vol: Volume) => acc + (vol.Size || 0), 0),
+          totalSize: volumesWithStats.reduce((acc: number, vol: Volume) => acc + (vol.size || 0), 0),
           activeVolumes: volumesWithStats.filter((vol: Volume) => vol.Status === 'active').length,
           unusedVolumes: volumesWithStats.filter((vol: Volume) => vol.Status === 'unused').length,
         };
@@ -149,17 +154,17 @@ export function VolumeList({ onBackup, onStatsUpdate }: VolumeListProps) {
           </TableHeader>
           <TableBody>
             {volumes.map((volume) => (
-              <TableRow key={volume.Name}>
-                <TableCell>{volume.Name}</TableCell>
+              <TableRow key={volume.name}>
+                <TableCell>{volume.name}</TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2">
-                    <span>{volume.Driver}</span>
+                    <span>{volume.driver}</span>
                     <Badge variant={volume.Status === 'active' ? 'default' : 'secondary'}>
                       {volume.Status === 'active' ? 'Actif' : 'Inutilisé'}
                     </Badge>
                   </div>
                 </TableCell>
-                <TableCell className="max-w-xs truncate">{volume.Mountpoint}</TableCell>
+                <TableCell className="max-w-xs truncate">{volume.mountpoint}</TableCell>
                 <TableCell>
                   {volume.UsedBy.length > 0 ? (
                     <div className="flex flex-wrap gap-1">
@@ -174,8 +179,8 @@ export function VolumeList({ onBackup, onStatsUpdate }: VolumeListProps) {
                   )}
                 </TableCell>
                 <TableCell>
-                  {volume.Labels?.['created-at'] 
-                    ? formatDistanceToNow(new Date(volume.Labels['created-at']), { 
+                  {volume.labels?.['created-at'] 
+                    ? formatDistanceToNow(new Date(volume.labels['created-at']), { 
                         addSuffix: true,
                         locale: fr 
                       })
@@ -186,7 +191,7 @@ export function VolumeList({ onBackup, onStatsUpdate }: VolumeListProps) {
                     <Button
                       variant="destructive"
                       size="sm"
-                      onClick={() => setVolumeToDelete(volume.Name)}
+                      onClick={() => setVolumeToDelete(volume.name)}
                       disabled={volume.UsedBy.length > 0}
                     >
                       Supprimer
@@ -195,7 +200,7 @@ export function VolumeList({ onBackup, onStatsUpdate }: VolumeListProps) {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => onBackup(volume.Name)}
+                        onClick={() => onBackup(volume.name)}
                       >
                         Backup
                       </Button>

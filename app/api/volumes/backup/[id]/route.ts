@@ -57,6 +57,7 @@ export async function DELETE(
       data: {
         type: ActivityType.VOLUME_BACKUP,
         userId: session.user.id,
+        description: `Backup ${backup.id} deleted for volume ${backup.volume.name}`,
         metadata: {
           action: 'delete',
           volumeName: backup.volume.name,

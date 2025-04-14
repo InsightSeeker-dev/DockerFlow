@@ -62,22 +62,70 @@ export async function POST(request: Request) {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const backupFile = path.join(BACKUP_DIR, `${name}_${timestamp}.tar`);
 
+    console.log('Starting backup process for volume:', name);
+    console.log('Backup directory:', BACKUP_DIR);
+    
+    // Vérifier que le volume existe et obtenir ses informations
+    const volumeInfo = await docker.getVolume(name).inspect();
+    console.log('Volume info:', volumeInfo);
+    
     // Créer un conteneur temporaire pour faire le backup
-    const container = await docker.createContainer({
-      Image: 'alpine',
-      Cmd: ['tar', 'cf', `/backup/${path.basename(backupFile)}`, '-C', '/data', '.'],
+    const containerConfig = {
+      Image: 'alpine:latest',
+      Cmd: ["/bin/sh", "-c", 
+        `set -ex && ` +
+        `ls -la /data && ` +
+        `tar cvf /backup/${path.basename(backupFile)} -C /data . && ` +
+        `ls -l /backup/${path.basename(backupFile)} && ` +
+        `chown 1000:1000 /backup/${path.basename(backupFile)}`
+      ],
       HostConfig: {
         Binds: [
           `${name}:/data:ro`,
           `${BACKUP_DIR}:/backup`
         ],
-        AutoRemove: true
+        AutoRemove: false // Désactiver l'auto-remove pour pouvoir inspecter les logs
       }
-    });
+    };
+    
+    console.log('Creating backup container with config:', containerConfig);
+    const container = await docker.createContainer(containerConfig);
 
     // Démarrer le conteneur et attendre qu'il finisse
+    console.log('Starting backup container...');
     await container.start();
-    await container.wait();
+    
+    // Récupérer les logs du conteneur
+    const logs = await container.logs({stdout: true, stderr: true});
+    console.log('Backup container logs:', logs.toString());
+    
+    const result = await container.wait();
+    console.log('Backup container exit code:', result.StatusCode);
+    
+    // Vérifier si le conteneur s'est terminé avec succès
+    if (result.StatusCode !== 0) {
+      throw new Error(`Backup container exited with status ${result.StatusCode}`);
+    }
+
+    try {
+      // Vérifier que le fichier de backup existe et n'est pas vide
+      const stats = await fs.stat(backupFile);
+      if (stats.size === 0) {
+        await fs.unlink(backupFile); // Supprimer le fichier vide
+        throw new Error('Backup file is empty');
+      }
+      console.log('Backup file created successfully:', {
+        path: backupFile,
+        size: stats.size
+      });
+    } finally {
+      // Nettoyer le conteneur même en cas d'erreur
+      try {
+        await container.remove();
+      } catch (removeError) {
+        console.error('Error removing backup container:', removeError);
+      }
+    }
 
     // Enregistrer le backup dans la base de données
     const backup = await prisma.volumeBackup.create({

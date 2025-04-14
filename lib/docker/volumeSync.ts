@@ -152,8 +152,17 @@ export class DockerVolumeSync {
     try {
       const docker = await getDockerClient();
       
-      // Récupération des volumes Docker
-      const { Volumes: dockerVolumes = [] } = await docker.listVolumes();
+      // Récupérer tous les volumes Docker
+      const { Volumes: allDockerVolumes = [] } = await docker.listVolumes();
+      
+      // Filtrer les volumes pour ne garder que ceux de l'utilisateur
+      const dockerVolumes = allDockerVolumes.filter(vol => 
+        vol.Labels && 
+        vol.Labels['com.dockerflow.managed'] === 'true' && 
+        vol.Labels['com.dockerflow.userId'] === userId
+      );
+      
+      console.log(`[DockerVolumeSync] Found ${dockerVolumes.length} volumes for user ${userId}`);
       console.log(`[DockerVolumeSync] ${dockerVolumes.length} volumes trouvés dans Docker`);
 
       // Récupération des conteneurs Docker

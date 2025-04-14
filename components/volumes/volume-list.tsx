@@ -44,7 +44,9 @@ export function VolumeList({ onBackup, onStatsUpdate }: VolumeListProps) {
 
   const fetchVolumes = async () => {
     try {
+      console.log('Fetching volumes...');
       const response = await fetch('/api/volumes');
+      console.log('Response status:', response.status);
       if (!response.ok) throw new Error('Failed to fetch volumes');
       const data = await response.json();
       console.log('API response:', data);
@@ -92,13 +94,8 @@ export function VolumeList({ onBackup, onStatsUpdate }: VolumeListProps) {
     if (!volumeToDelete) return;
 
     try {
-      const response = await fetch('/api/volumes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'delete',
-          name: volumeToDelete,
-        }),
+      const response = await fetch(`/api/volumes/${volumeToDelete}`, {
+        method: 'DELETE',
       });
 
       const data = await response.json();
@@ -139,7 +136,14 @@ export function VolumeList({ onBackup, onStatsUpdate }: VolumeListProps) {
       </div>
 
       {isLoading ? (
-        <div>Chargement des volumes...</div>
+        <div className="flex items-center justify-center p-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+          <span className="ml-3">Chargement des volumes...</span>
+        </div>
+      ) : volumes.length === 0 ? (
+        <div className="text-center p-8 text-gray-500">
+          Aucun volume trouvé
+        </div>
       ) : (
         <Table>
           <TableHeader>

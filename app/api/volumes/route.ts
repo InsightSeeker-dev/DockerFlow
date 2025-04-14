@@ -28,7 +28,13 @@ export async function GET(request: Request) {
       );
     }
 
-    logger.info(`Fetching volumes for user ${session.user.id}`);
+    const userId = session.user.id;
+    logger.info(`Fetching volumes for user ${userId}`);
+    logger.info('Current session user:', { 
+      id: userId,
+      email: session.user.email,
+      name: session.user.name 
+    });
 
     // 1. Récupérer les volumes Docker et les conteneurs
     try {
@@ -38,8 +44,27 @@ export async function GET(request: Request) {
         docker.listContainers({ all: true })
       ]);
 
-      const dockerVolumes = volumesResponse.Volumes || [];
-      logger.info(`Retrieved ${dockerVolumes.length} volumes from Docker`);
+      const dockerVolumes = (volumesResponse.Volumes || []).filter(vol => {
+        // Un volume doit avoir les labels requis ET correspondre à l'utilisateur actuel
+        // OU être un volume géré par DockerFlow (avec le préfixe dockerflow_)
+        const hasRequiredLabels = vol.Labels && 
+          vol.Labels['com.dockerflow.managed'] === 'true' && 
+          vol.Labels['com.dockerflow.userId'] === userId;
+
+        const isDockerFlowVolume = vol.Name.startsWith('dockerflow_');
+
+        logger.info(`Volume ${vol.Name}:`, {
+          hasRequiredLabels,
+          isDockerFlowVolume,
+          userId,
+          volumeLabels: vol.Labels
+        });
+
+        // Ne garder que les volumes avec les bons labels
+        return hasRequiredLabels;
+      });
+
+      logger.info(`Filtered ${dockerVolumes.length} volumes for user ${userId}`);
 
       // 2. Créer un mapping des volumes utilisés par les conteneurs
       const volumeUsage = new Map<string, string[]>();

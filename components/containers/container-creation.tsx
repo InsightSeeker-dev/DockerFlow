@@ -134,7 +134,8 @@ export const ContainerCreation = ({ open, onOpenChange, onSuccess }: ContainerCr
         });
       });
     }
-  }, [open, fetchImages, fetchVolumes, toast]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   // Reset form when dialog closes
   useEffect(() => {
@@ -302,16 +303,18 @@ export const ContainerCreation = ({ open, onOpenChange, onSuccess }: ContainerCr
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {volumes
-                        .filter((volume: Volume) => volume.existsInDocker !== false) // Filtrer les volumes qui n'existent pas dans Docker
-                        .map((volume: Volume) => (
-                          <SelectItem key={volume.id} value={volume.id}>
-                            {volume.name}
-                          </SelectItem>
-                        ))}
-                      {volumes.length > 0 && volumes.filter((v: Volume) => v.existsInDocker !== false).length === 0 && (
+                      {(() => { console.log('Volumes récupérés:', volumes); return null; })()}
+                      {volumes && volumes.length > 0 ? (
+                        volumes
+                          .filter((volume: Volume) => volume.existsInDocker !== false && !!volume.id)
+                          .map((volume: Volume, idx: number) => (
+                            <SelectItem key={volume.id} value={volume.id}>
+                              {volume.name || `Volume ${idx + 1}`}
+                            </SelectItem>
+                          ))
+                      ) : (
                         <div className="px-2 py-4 text-sm text-gray-500 text-center">
-                          Aucun volume valide disponible
+                          Aucun volume disponible
                         </div>
                       )}
                     </SelectContent>

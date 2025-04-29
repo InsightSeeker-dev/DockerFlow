@@ -6,30 +6,32 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Database, HardDrive, Archive } from 'lucide-react';
-
-interface VolumeStats {
-  totalVolumes: number;
-  totalSize: number;
-  activeVolumes: number;
-  unusedVolumes: number;
-}
+import { Database, Archive } from 'lucide-react';
 
 export function VolumeManager() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [volumeName, setVolumeName] = useState('');
   const [driver, setDriver] = useState('local');
-  const [stats, setStats] = useState<VolumeStats>({
-    totalVolumes: 0,
-    totalSize: 0,
-    activeVolumes: 0,
-    unusedVolumes: 0
-  });
+  const [loadingCreate, setLoadingCreate] = useState(false);
+  const [loadingBackup, setLoadingBackup] = useState<string | null>(null);
+
   const { toast } = useToast();
 
+  // Validation stricte du nom de volume
+  const isValidVolumeName = (name: string) => /^[a-zA-Z0-9_-]+$/.test(name);
+
   const handleCreateVolume = async () => {
+    // Validation stricte du nom de volume
+    if (!isValidVolumeName(volumeName)) {
+      toast({
+        title: 'Nom de volume invalide',
+        description: 'Utilisez uniquement lettres, chiffres, tirets ou underscores',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setLoadingCreate(true);
     try {
       const response = await fetch('/api/volumes', {
         method: 'POST',
@@ -42,7 +44,7 @@ export function VolumeManager() {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || 'Failed to create volume');
+        throw new Error(error.error || error.message || 'Failed to create volume');
       }
 
       toast({
@@ -53,82 +55,46 @@ export function VolumeManager() {
       setIsCreateOpen(false);
       setVolumeName('');
       setDriver('local');
+      // Rafraîchir la liste après création
+      if (typeof window !== 'undefined') window.location.reload();
     } catch (error) {
       toast({
         title: 'Erreur',
         description: error instanceof Error ? error.message : 'Impossible de créer le volume',
         variant: 'destructive',
       });
+    } finally {
+      setLoadingCreate(false);
     }
   };
 
+  // Fonction de backup de volume avec validation stricte, gestion loading, et affichage d'erreur détaillée
   const handleBackupVolume = async (volumeName: string) => {
+    // Validation stricte du nom de volume
+    if (!isValidVolumeName(volumeName)) {
+      throw new Error('Nom de volume invalide');
+    }
+    setLoadingBackup(volumeName);
     try {
       const response = await fetch('/api/volumes/backup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: volumeName }),
       });
-
       if (!response.ok) {
-        throw new Error('Failed to backup volume');
+        const error = await response.json();
+        throw new Error(error.error || error.message || 'Failed to backup volume');
       }
-
-      toast({
-        title: 'Backup créé',
-        description: `Le backup du volume ${volumeName} a été créé avec succès`,
-      });
-    } catch (error) {
-      toast({
-        title: 'Erreur',
-        description: 'Impossible de créer le backup',
-        variant: 'destructive',
-      });
+      // Succès silencieux, laisse VolumeList gérer le feedback
+    } finally {
+      setLoadingBackup(null);
     }
   };
 
+
+
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Volumes</CardTitle>
-            <Database className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.totalVolumes}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Espace Total</CardTitle>
-            <HardDrive className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {(stats.totalSize / (1024 * 1024 * 1024)).toFixed(2)} GB
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Volumes Actifs</CardTitle>
-            <Database className="h-4 w-4 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.activeVolumes}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Volumes Inutilisés</CardTitle>
-            <Database className="h-4 w-4 text-yellow-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.unusedVolumes}</div>
-          </CardContent>
-        </Card>
-      </div>
 
       <div className="flex justify-between items-center">
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
@@ -158,8 +124,8 @@ export function VolumeManager() {
                   placeholder="local"
                 />
               </div>
-              <Button onClick={handleCreateVolume} className="w-full">
-                Créer
+              <Button onClick={handleCreateVolume} className="w-full" disabled={loadingCreate}>
+                {loadingCreate ? 'Création...' : 'Créer'}
               </Button>
             </div>
           </DialogContent>
@@ -178,7 +144,7 @@ export function VolumeManager() {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="volumes" className="space-y-4">
-          <VolumeList onBackup={handleBackupVolume} onStatsUpdate={setStats} />
+          <VolumeList onBackup={handleBackupVolume} />
         </TabsContent>
         <TabsContent value="backups" className="space-y-4">
           <BackupList />

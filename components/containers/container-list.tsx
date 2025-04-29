@@ -96,16 +96,7 @@ export function ContainerList({
   const [containerToDelete, setContainerToDelete] = useState<{ id: string, name: string } | null>(null);
   const { toast, dismiss } = useToast();
 
-  // Rafraîchir automatiquement toutes les 10 secondes
-  useEffect(() => {
-    const interval = setInterval(() => {
-      console.log('Auto-refreshing container list...');
-      onRefresh();
-    }, 10000);
-
-    return () => clearInterval(interval);
-  }, [onRefresh]);
-
+  
   // Rafraîchir après la création d'un conteneur
   const handleCreateSuccess = useCallback(() => {
     console.log('Container created, refreshing list...');
@@ -408,7 +399,11 @@ export function ContainerList({
                   const isRunning = normalizeContainerState(container.State) === 'running';
                   const ports = container.customConfig?.ports || [];
                   const createdDate = new Date(container.Created * 1000).toLocaleString();
-                  const subdomain = container.customConfig?.subdomain;
+                  const subdomain =
+                    container.customConfig?.subdomain ||
+                    container.subdomain ||
+                    (container.Names && container.Names[0]?.replace(/^\//, '')) ||
+                    '';
                   const user = container.user;
                   const traefikEnabled = container.traefik?.enabled;
 
@@ -550,6 +545,7 @@ export function ContainerList({
                                   </span>
                                 </div>
                               </DropdownMenuItem>
+                              {(() => { console.log('Affichage subdomain (dropdown):', subdomain, container); return null })()}
                               {subdomain && (
                                 <DropdownMenuItem asChild className="text-gray-200">
                                   <a
@@ -597,7 +593,7 @@ export function ContainerList({
               const isRunning = container.State === 'running';
               const ports = container.customConfig?.ports || [];
               const createdDate = new Date(container.Created * 1000).toLocaleString();
-              const subdomain = container.customConfig?.subdomain;
+              const subdomain = container.customConfig?.subdomain || container.subdomain;
               const user = container.user;
               const traefikEnabled = container.traefik?.enabled;
 

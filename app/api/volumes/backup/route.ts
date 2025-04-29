@@ -9,8 +9,9 @@ import { ActivityType } from '@prisma/client';
 import path from 'path';
 import fs from 'fs/promises';
 
+// Validation stricte du nom de volume : lettres, chiffres, tirets, underscores uniquement
 const backupSchema = z.object({
-  name: z.string().min(1),
+  name: z.string().min(1).regex(/^[a-zA-Z0-9_-]+$/, 'Nom de volume invalide'),
 });
 
 // Répertoire de backup (à configurer selon l'environnement)
@@ -40,17 +41,18 @@ export async function POST(request: Request) {
       );
     }
 
-    // Récupérer le volume depuis la base de données
+    // Récupérer le volume depuis la base de données et vérifier qu'il n'est pas supprimé
     const volume = await prisma.volume.findFirst({
       where: {
         name,
-        userId: session.user.id
+        userId: session.user.id,
+        deletedAt: null // Ne pas autoriser les volumes supprimés
       }
     });
 
     if (!volume) {
       return NextResponse.json(
-        { error: 'Volume not found in database' },
+        { error: 'Volume not found in database or has been deleted' },
         { status: 404 }
       );
     }
@@ -62,12 +64,14 @@ export async function POST(request: Request) {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const backupFile = path.join(BACKUP_DIR, `${name}_${timestamp}.tar`);
 
-    console.log('Starting backup process for volume:', name);
-    console.log('Backup directory:', BACKUP_DIR);
-    
+    console.log('--- [Backup] DÉBUT ---');
+    console.log(`[Backup] Volume cible :`, name);
+    console.log(`[Backup] Répertoire backup :`, BACKUP_DIR);
+    console.log(`[Backup] Fichier backup cible :`, backupFile);
+
     // Vérifier que le volume existe et obtenir ses informations
     const volumeInfo = await docker.getVolume(name).inspect();
-    console.log('Volume info:', volumeInfo);
+    console.log('[Backup] Infos volume Docker :', JSON.stringify(volumeInfo, null, 2));
     
     // Créer un conteneur temporaire pour faire le backup
     const containerConfig = {
@@ -88,19 +92,19 @@ export async function POST(request: Request) {
       }
     };
     
-    console.log('Creating backup container with config:', containerConfig);
+    console.log('[Backup] Création du conteneur temporaire avec config :', JSON.stringify(containerConfig, null, 2));
     const container = await docker.createContainer(containerConfig);
 
     // Démarrer le conteneur et attendre qu'il finisse
-    console.log('Starting backup container...');
+    console.log('[Backup] Démarrage du conteneur de backup...');
     await container.start();
     
     // Récupérer les logs du conteneur
     const logs = await container.logs({stdout: true, stderr: true});
-    console.log('Backup container logs:', logs.toString());
+    console.log('[Backup] Logs du conteneur :\n', logs.toString());
     
     const result = await container.wait();
-    console.log('Backup container exit code:', result.StatusCode);
+    console.log('[Backup] Code de sortie du conteneur :', result.StatusCode);
     
     // Vérifier si le conteneur s'est terminé avec succès
     if (result.StatusCode !== 0) {
@@ -110,11 +114,13 @@ export async function POST(request: Request) {
     try {
       // Vérifier que le fichier de backup existe et n'est pas vide
       const stats = await fs.stat(backupFile);
+      console.log('[Backup] Statut du fichier backup généré :', stats);
       if (stats.size === 0) {
         await fs.unlink(backupFile); // Supprimer le fichier vide
+        console.error('[Backup] Le fichier backup est vide, suppression.');
         throw new Error('Backup file is empty');
       }
-      console.log('Backup file created successfully:', {
+      console.log('[Backup] Fichier backup créé avec succès :', {
         path: backupFile,
         size: stats.size
       });
@@ -128,6 +134,7 @@ export async function POST(request: Request) {
     }
 
     // Enregistrer le backup dans la base de données
+    console.log('[Backup] Enregistrement du backup en base de données...');
     const backup = await prisma.volumeBackup.create({
       data: {
         path: backupFile,
@@ -136,6 +143,7 @@ export async function POST(request: Request) {
         size: (await fs.stat(backupFile)).size
       }
     });
+    console.log('[Backup] Backup enregistré en base avec l\'id :', backup.id);
 
     // Enregistrer l'activité
     await prisma.activity.create({
@@ -158,9 +166,9 @@ export async function POST(request: Request) {
       }
     });
   } catch (error) {
-    console.error('Error creating volume backup:', error);
+    console.error('[Backup] ERREUR lors du backup :', error);
     return NextResponse.json(
-      { error: 'Failed to create volume backup' },
+      { error: 'Failed to create volume backup', details: error instanceof Error ? error.message : error },
       { status: 500 }
     );
   }

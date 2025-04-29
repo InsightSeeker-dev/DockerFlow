@@ -36,16 +36,18 @@ interface VolumeListProps {
 }
 
 export function VolumeList({ onBackup, onStatsUpdate }: VolumeListProps) {
+  const [isBackingUp, setIsBackingUp] = useState<string | null>(null);
   const [volumes, setVolumes] = useState<Volume[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [volumeToDelete, setVolumeToDelete] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [loadingDelete, setLoadingDelete] = useState(false);
   const { toast } = useToast();
 
   const fetchVolumes = async () => {
     try {
       console.log('Fetching volumes...');
-      const response = await fetch('/api/volumes');
+      const response = await fetch('/api/volumes', { credentials: 'include' });
       console.log('Response status:', response.status);
       if (!response.ok) throw new Error('Failed to fetch volumes');
       const data = await response.json();
@@ -92,7 +94,7 @@ export function VolumeList({ onBackup, onStatsUpdate }: VolumeListProps) {
 
   const handleDeleteVolume = async () => {
     if (!volumeToDelete) return;
-
+    setLoadingDelete(true);
     try {
       const response = await fetch(`/api/volumes/${volumeToDelete}`, {
         method: 'DELETE',
@@ -103,6 +105,7 @@ export function VolumeList({ onBackup, onStatsUpdate }: VolumeListProps) {
       if (!response.ok) {
         if (data.error === 'Volume is in use') {
           setDeleteError(`Le volume est utilisé par : ${data.containers.join(', ')}`);
+          setLoadingDelete(false);
           return;
         }
         throw new Error(data.error || 'Failed to delete volume');
@@ -123,6 +126,7 @@ export function VolumeList({ onBackup, onStatsUpdate }: VolumeListProps) {
     } finally {
       setVolumeToDelete(null);
       setDeleteError(null);
+      setLoadingDelete(false);
     }
   };
 
@@ -140,12 +144,10 @@ export function VolumeList({ onBackup, onStatsUpdate }: VolumeListProps) {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
           <span className="ml-3">Chargement des volumes...</span>
         </div>
-      ) : volumes.length === 0 ? (
-        <div className="text-center p-8 text-gray-500">
-          Aucun volume trouvé
-        </div>
       ) : (
-        <Table>
+        <div className="overflow-x-auto rounded-lg border border-gray-800 bg-gray-950">
+          <Table className="min-w-[700px]">
+
           <TableHeader>
             <TableRow>
               <TableHead>Nom</TableHead>
@@ -157,14 +159,25 @@ export function VolumeList({ onBackup, onStatsUpdate }: VolumeListProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {volumes.map((volume) => (
-              <TableRow key={volume.name}>
-                <TableCell>{volume.name}</TableCell>
+            {volumes
+              .filter(volume => volume.name !== 'dockerflow_traefik-acme' && volume.name !== 'dockerflow_traefik-logs')
+              .map((volume) => (
+              <TableRow key={volume.name} className="hover:bg-gray-800 transition-colors">
                 <TableCell>
                   <div className="flex items-center gap-2">
-                    <span>{volume.driver}</span>
-                    <Badge variant={volume.Status === 'active' ? 'default' : 'secondary'}>
-                      {volume.Status === 'active' ? 'Actif' : 'Inutilisé'}
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="12" r="10" strokeWidth="2" /><rect x="8" y="8" width="8" height="8" rx="2" fill="currentColor" className="text-blue-500" /></svg>
+                    <span className="font-semibold text-gray-200">{volume.name}</span>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-400">{volume.driver}</span>
+                    <Badge variant={volume.Status === 'active' ? 'default' : 'secondary'} className={volume.Status === 'active' ? 'bg-green-600 text-white' : 'bg-gray-600 text-white'}>
+                      {volume.Status === 'active' ? (
+                        <span className="inline-flex items-center gap-1"><svg className="w-3 h-3 text-green-300" fill="currentColor" viewBox="0 0 20 20"><circle cx="10" cy="10" r="10" /></svg> Actif</span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1"><svg className="w-3 h-3 text-gray-300" fill="currentColor" viewBox="0 0 20 20"><circle cx="10" cy="10" r="10" /></svg> Inutilisé</span>
+                      )}
                     </Badge>
                   </div>
                 </TableCell>
@@ -183,12 +196,11 @@ export function VolumeList({ onBackup, onStatsUpdate }: VolumeListProps) {
                   )}
                 </TableCell>
                 <TableCell>
-                  {volume.labels?.['created-at'] 
-                    ? formatDistanceToNow(new Date(volume.labels['created-at']), { 
-                        addSuffix: true,
-                        locale: fr 
-                      })
-                    : 'N/A'}
+                  {volume.created
+                    ? formatDistanceToNow(new Date(volume.created), { addSuffix: true, locale: fr })
+                    : volume.labels?.['created-at']
+                      ? formatDistanceToNow(new Date(volume.labels['created-at']), { addSuffix: true, locale: fr })
+                      : 'N/A'}
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-2">
@@ -196,17 +208,20 @@ export function VolumeList({ onBackup, onStatsUpdate }: VolumeListProps) {
                       variant="destructive"
                       size="sm"
                       onClick={() => setVolumeToDelete(volume.name)}
-                      disabled={volume.UsedBy.length > 0}
+                      disabled={volume.UsedBy.length > 0 || loadingDelete}
                     >
-                      Supprimer
+                      {loadingDelete && volumeToDelete === volume.name ? 'Suppression...' : 'Supprimer'}
                     </Button>
                     {onBackup && (
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => onBackup(volume.name)}
+                        onClick={() => handleBackupVolume(volume.name)}
+                        disabled={isBackingUp === volume.name || loadingDelete}
                       >
-                        Backup
+                        {isBackingUp === volume.name
+                          ? (<span className="flex items-center gap-2"><span className="animate-spin h-4 w-4 border-b-2 border-gray-600 rounded-full"></span> Backup...</span>)
+                          : 'Backup'}
                       </Button>
                     )}
                   </div>
@@ -215,6 +230,7 @@ export function VolumeList({ onBackup, onStatsUpdate }: VolumeListProps) {
             ))}
           </TableBody>
         </Table>
+        </div>
       )}
 
       <AlertDialog open={!!volumeToDelete} onOpenChange={() => {
@@ -246,4 +262,25 @@ export function VolumeList({ onBackup, onStatsUpdate }: VolumeListProps) {
       </AlertDialog>
     </div>
   );
+
+  // Fonction locale pour gérer le backup avec feedback UX
+  function handleBackupVolume(volumeName: string) {
+    setIsBackingUp(volumeName);
+    toast({ title: 'Backup en cours...', description: `Le backup de ${volumeName} a démarré.` });
+    Promise.resolve(onBackup?.(volumeName))
+      .then(() => {
+        toast({ title: 'Backup réussi', description: `Le backup de ${volumeName} est terminé.` });
+        fetchVolumes(); // Rafraîchir la liste sans reload global
+      })
+      .catch((error) => {
+        toast({
+          title: 'Erreur',
+          description: error instanceof Error ? error.message : 'Impossible de créer le backup',
+          variant: 'destructive',
+        });
+      })
+      .finally(() => {
+        setIsBackingUp(null);
+      });
+  }
 }

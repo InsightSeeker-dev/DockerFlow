@@ -169,6 +169,16 @@ export class DockerVolumeSync {
       const containers = await docker.listContainers({ all: true });
       console.log(`[DockerVolumeSync] ${containers.length} conteneurs trouvés dans Docker`);
 
+      // Récupérer tous les conteneurs MongoDB de l'utilisateur et créer une map dockerName -> mongoId
+      const dbContainers = await prisma.container.findMany({
+        where: { userId },
+        select: { id: true, name: true }
+      });
+      const dockerNameToMongoId = new Map<string, string>();
+      for (const c of dbContainers) {
+        if (c.name) dockerNameToMongoId.set(c.name, c.id);
+      }
+
       // Création d'une map des associations volume-conteneur à partir des conteneurs Docker
       const containerVolumeMap = new Map<string, ContainerAssociation[]>();
       
@@ -181,7 +191,7 @@ export class DockerVolumeSync {
             if (mount.Type === 'volume' && mount.Name) {
               const volumeName = mount.Name;
               const association: ContainerAssociation = {
-                containerId: containerInfo.Id,
+                containerId: containerInfo.Id, // ID Docker
                 containerName,
                 mountPath: mount.Destination
               };
@@ -278,10 +288,19 @@ export class DockerVolumeSync {
               userId,
               created: new Date(),
               containerVolumes: {
-                create: containerAssociations.map(assoc => ({
-                  containerId: assoc.containerId,
-                  mountPath: assoc.mountPath
-                }))
+                create: containerAssociations
+                  .map(assoc => {
+                    const mongoId = dockerNameToMongoId.get(assoc.containerName);
+                    if (!mongoId) {
+                      console.warn(`[DockerVolumeSync] Impossible de trouver le conteneur MongoDB pour le nom Docker: ${assoc.containerName}`);
+                      return null;
+                    }
+                    return {
+                      containerId: mongoId,
+                      mountPath: assoc.mountPath
+                    };
+                  })
+                  .filter(Boolean) as { containerId: string; mountPath: string }[]
               }
             }
           })
@@ -328,10 +347,20 @@ export class DockerVolumeSync {
               driver: dockerVolume.Driver,
               mountpoint: dockerVolume.Mountpoint,
               containerVolumes: {
-                create: containerAssociations.map(assoc => ({
-                  containerId: assoc.containerId,
-                  mountPath: assoc.mountPath
-                }))
+                create: containerAssociations
+                  .map(assoc => {
+                    // Associer via le nom du conteneur (Docker et MongoDB)
+                    const mongoId = dockerNameToMongoId.get(assoc.containerName);
+                    if (!mongoId) {
+                      console.warn(`[DockerVolumeSync] Impossible de trouver le conteneur MongoDB pour le nom Docker: ${assoc.containerName}`);
+                      return null;
+                    }
+                    return {
+                      containerId: mongoId,
+                      mountPath: assoc.mountPath
+                    };
+                  })
+                  .filter(Boolean) as { containerId: string; mountPath: string }[]
               }
             }
           })

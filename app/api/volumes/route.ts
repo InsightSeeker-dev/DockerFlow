@@ -36,13 +36,15 @@ export async function GET(request: Request) {
       name: session.user.name 
     });
 
-    // 1. Récupérer les volumes Docker et les conteneurs
     try {
+      // 1. Récupérer les volumes Docker et les conteneurs
       const docker = await getDockerClient();
       const [volumesResponse, containers] = await Promise.all([
         docker.listVolumes(),
         docker.listContainers({ all: true })
       ]);
+
+      logger.info('Raw Docker volumes:', volumesResponse.Volumes);
 
       const dockerVolumes = (volumesResponse.Volumes || []).filter(vol => {
         // Un volume doit avoir les labels requis ET correspondre à l'utilisateur actuel
@@ -60,8 +62,8 @@ export async function GET(request: Request) {
           volumeLabels: vol.Labels
         });
 
-        // Ne garder que les volumes avec les bons labels
-        return hasRequiredLabels;
+        // Afficher tous les volumes dockerflow_, qu'ils soient utilisés ou non
+        return hasRequiredLabels || isDockerFlowVolume;
       });
 
       logger.info(`Filtered ${dockerVolumes.length} volumes for user ${userId}`);
@@ -82,21 +84,97 @@ export async function GET(request: Request) {
       });
 
       // 3. Synchroniser les volumes avec la base de données
-      const synchronizedVolumes = await dockerVolumeSync.synchronizeVolumes(session.user.id);
+      let synchronizedVolumes = await dockerVolumeSync.synchronizeVolumes(session.user.id);
       logger.info(`Synchronized ${synchronizedVolumes.length} volumes for user ${session.user.id}`);
 
-      // 4. Enrichir les volumes synchronisés avec les informations d'utilisation
-      const enrichedVolumes = synchronizedVolumes.map(volume => {
+      // Synchronisation automatique : ajoute à la base tout volume dockerflow_ filtré non présent
+      // Nouvelle synchronisation : pour chaque volume dockerflow_ OU volume avec bons labels, s'assurer qu'il existe en base et est lié à l'utilisateur
+      for (const vol of dockerVolumes) {
+        const isDockerFlowPrefix = vol.Name.startsWith('dockerflow_');
+        const isLabeledUser = vol.Labels && vol.Labels['com.dockerflow.managed'] === 'true' && vol.Labels['com.dockerflow.userId'] === userId;
+        if (isDockerFlowPrefix || isLabeledUser) {
+          let dbVol = synchronizedVolumes.find(v => v.name === vol.Name);
+          if (!dbVol) {
+            const createdDbVol = await prisma.volume.create({
+              data: {
+                name: vol.Name,
+                driver: vol.Driver,
+                mountpoint: vol.Mountpoint,
+                size: 0,
+                userId: session.user.id
+              }
+            });
+            // Manually add empty containerVolumes for type consistency (ensure all required fields)
+            synchronizedVolumes.push({
+              id: createdDbVol.id,
+              name: createdDbVol.name || vol.Name,
+              driver: createdDbVol.driver || vol.Driver || '',
+              mountpoint: createdDbVol.mountpoint ?? vol.Mountpoint ?? '',
+              size: typeof createdDbVol.size === 'number' ? createdDbVol.size : 0,
+              created: createdDbVol.created ?? null,
+              userId: createdDbVol.userId || session.user.id,
+              deletedAt: createdDbVol.deletedAt || null,
+              containerVolumes: []
+            });
+            logger.info(`Auto-synchronized DockerFlow volume: ${vol.Name}`);
+          } else if (dbVol && dbVol.userId !== session.user.id) {
+            // Met à jour le userId si besoin (migration d'un volume "orphelin")
+            await prisma.volume.update({
+              where: { id: dbVol.id },
+              data: { userId: session.user.id }
+            });
+            logger.info(`Updated userId for volume: ${vol.Name}`);
+          }
+        }
+      }
+
+      // 4. Enrichir la liste Docker filtrée avec les infos d'utilisation et de la base (si besoin)
+      const enrichedVolumes = dockerVolumes.map((vol: any) => {
+        // Cherche le volume en base pour récupérer d'autres infos éventuelles
+        const dbVolFound = synchronizedVolumes.find((v: any) => v.name === vol.Name);
+        const dbVol: {
+          id: string;
+          name: string;
+          driver: string;
+          mountpoint: string;
+          size: number;
+          created: Date | null;
+          userId: string;
+          deletedAt: Date | null;
+          containerVolumes: any[];
+        } = dbVolFound
+          ? { ...dbVolFound, mountpoint: dbVolFound.mountpoint ?? '' }
+          : {
+              id: '',
+              name: vol.Name,
+              driver: vol.Driver || '',
+              mountpoint: typeof vol.Mountpoint === 'string' ? vol.Mountpoint : '',
+              size: 0,
+              created: null,
+              userId: session.user.id,
+              deletedAt: null,
+              containerVolumes: []
+            };
+
+
         return {
-          ...volume,
-          UsedBy: volumeUsage.get(volume.name) || [],
-          Status: volumeUsage.has(volume.name) ? 'active' : 'unused'
+          id: dbVol.id,
+          name: vol.Name,
+          driver: vol.Driver,
+          mountpoint: vol.Mountpoint ?? '',
+          labels: vol.Labels || {},
+          UsedBy: volumeUsage.get(vol.Name) || [],
+          created: dbVol.created,
+          size: typeof dbVol.size === 'number' ? dbVol.size : 0,
+          Status: (volumeUsage.get(vol.Name)?.length || 0) > 0 ? 'active' : 'unused',
+          containerVolumes: dbVol.containerVolumes || [],
         };
       });
 
+      logger.info('API response Volumes:', enrichedVolumes);
       return NextResponse.json({
         Volumes: enrichedVolumes
-      });
+      }); // <-- Move this inside the Docker try block
     } catch (dockerError) {
       logger.error('Error communicating with Docker:', dockerError);
       
@@ -130,6 +208,7 @@ export async function GET(request: Request) {
     );
   }
 }
+
 
 export async function POST(req: Request) {
   try {

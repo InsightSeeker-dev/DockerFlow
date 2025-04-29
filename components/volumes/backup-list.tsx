@@ -25,6 +25,8 @@ export function BackupList() {
   const [backups, setBackups] = useState<VolumeBackup[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [backupToDelete, setBackupToDelete] = useState<string | null>(null);
+  const [loadingRestore, setLoadingRestore] = useState<string | null>(null);
+  const [loadingDelete, setLoadingDelete] = useState(false);
   const { toast } = useToast();
 
   const fetchBackups = async () => {
@@ -50,6 +52,7 @@ export function BackupList() {
   }, []);
 
   const handleRestoreBackup = async (backupId: string) => {
+    setLoadingRestore(backupId);
     try {
       const response = await fetch(`/api/volumes/backup/${backupId}/restore`, {
         method: 'POST',
@@ -59,20 +62,23 @@ export function BackupList() {
 
       toast({
         title: 'Backup restauré',
-        description: 'Le volume a été restauré avec succès',
+        description: 'Le volume a été restauré avec succès. Vous pouvez maintenant le retrouver dans la liste des volumes.',
+        variant: 'default',
       });
     } catch (error) {
       toast({
-        title: 'Erreur',
-        description: 'Impossible de restaurer le backup',
+        title: 'Erreur lors de la restauration',
+        description: 'Impossible de restaurer le backup. Vérifiez que le volume cible n’existe pas déjà ou que vous avez les droits nécessaires.',
         variant: 'destructive',
       });
+    } finally {
+      setLoadingRestore(null);
     }
   };
 
   const handleDeleteBackup = async () => {
     if (!backupToDelete) return;
-
+    setLoadingDelete(true);
     try {
       const response = await fetch(`/api/volumes/backup/${backupToDelete}`, {
         method: 'DELETE',
@@ -82,23 +88,33 @@ export function BackupList() {
 
       toast({
         title: 'Backup supprimé',
-        description: 'Le backup a été supprimé avec succès',
+        description: 'Le backup a été supprimé avec succès. La liste sera mise à jour.',
+        variant: 'default',
       });
 
       fetchBackups();
     } catch (error) {
       toast({
-        title: 'Erreur',
-        description: 'Impossible de supprimer le backup',
+        title: 'Erreur lors de la suppression',
+        description: 'Impossible de supprimer le backup. Veuillez réessayer ou contacter un administrateur.',
         variant: 'destructive',
       });
     } finally {
       setBackupToDelete(null);
+      setLoadingDelete(false);
     }
   };
 
   if (isLoading) {
-    return <div>Chargement des backups...</div>;
+    return (
+      <div className="flex items-center gap-2 p-6 justify-center">
+        <svg className="animate-spin h-5 w-5 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+        </svg>
+        <span>Chargement des backups...</span>
+      </div>
+    );
   }
 
   return (
@@ -143,15 +159,17 @@ export function BackupList() {
                       variant="outline"
                       size="sm"
                       onClick={() => handleRestoreBackup(backup.id)}
+                      disabled={loadingRestore === backup.id || loadingDelete}
                     >
-                      Restaurer
+                      {loadingRestore === backup.id ? 'Restauration...' : 'Restaurer'}
                     </Button>
                     <Button
                       variant="destructive"
                       size="sm"
                       onClick={() => setBackupToDelete(backup.id)}
+                      disabled={loadingDelete || loadingRestore === backup.id}
                     >
-                      Supprimer
+                      {loadingDelete && backupToDelete === backup.id ? 'Suppression...' : 'Supprimer'}
                     </Button>
                   </div>
                 </TableCell>
@@ -178,8 +196,9 @@ export function BackupList() {
             <AlertDialogAction
               onClick={handleDeleteBackup}
               className="bg-red-600 hover:bg-red-700"
+              disabled={loadingDelete}
             >
-              Supprimer
+              {loadingDelete ? 'Suppression...' : 'Supprimer'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

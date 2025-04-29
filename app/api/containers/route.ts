@@ -11,6 +11,7 @@ import { Prisma, ActivityType } from '@prisma/client';
 import { ovhDNSService } from '@/lib/ovh/dns-service';
 import Docker, { ContainerCreateOptions, ContainerInfo } from 'dockerode';
 import { suggestAlternativePort } from '@/lib/docker/ports';
+import { dockerVolumeSync } from '@/lib/docker/volumeSync';
 
 interface ExtendedSession extends Session {
   user: {
@@ -226,6 +227,7 @@ export async function GET() {
       Status: status,
       Ports: container.ports as any[] || [],
       Labels: {},
+      subdomain: container.subdomain, // Ajout explicite à la racine
       customConfig: {
         subdomain: container.subdomain,
         ports: container.ports,
@@ -461,6 +463,15 @@ export async function POST(req: Request) {
 
     // Créer le conteneur Docker avec gestion des erreurs
     let container;
+
+    // --- Synchronize volumes after container creation ---
+    try {
+      await dockerVolumeSync.synchronizeVolumes(session.user.id);
+      console.log('[POST /api/containers] Volumes synchronized after container creation');
+    } catch (syncError) {
+      console.error('[POST /api/containers] Volume synchronization failed:', syncError);
+    }
+    // ----------------------------------------------------
     try {
       container = await docker.createContainer(containerConfig);
       console.log('Container created:', container.id);
@@ -547,6 +558,15 @@ export async function POST(req: Request) {
         } as Prisma.JsonValue
       }
     });
+
+    // Création du sous-domaine OVH
+    try {
+      await ovhDNSService.addSubdomain(subdomain);
+      console.log('Sous-domaine OVH créé:', subdomain);
+    } catch (dnsError) {
+      console.error('Erreur lors de la création du sous-domaine OVH:', dnsError);
+      // Optionnel : tu peux choisir de retourner une erreur ici ou juste logger l'erreur
+    }
 
     console.log('Conteneur créé avec succès:', dbContainer);
     return NextResponse.json(dbContainer);

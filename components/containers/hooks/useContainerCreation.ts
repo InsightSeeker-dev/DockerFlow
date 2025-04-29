@@ -58,20 +58,47 @@ export const useContainerCreation = ({ onSuccess, onClose }: UseContainerCreatio
         },
         credentials: 'include',
       });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Impossible de charger les volumes');
+      let data;
+      try {
+        data = await response.json();
+      } catch (e) {
+        toast({
+          title: 'Erreur',
+          description: 'Réponse non valide de l’API volumes',
+          variant: 'destructive',
+        });
+        setVolumes([]);
+        return;
       }
-      const data = await response.json();
-      setVolumes(data);
+      if (data && data.error) {
+        console.error('[Volumes API] Erreur:', data);
+        toast({
+          title: 'Erreur API Volumes',
+          description: data.error + (data.details ? `: ${data.details}` : ''),
+          variant: 'destructive',
+        });
+        setVolumes([]);
+        return;
+      }
+      if (Array.isArray(data)) {
+        setVolumes(data);
+      } else if (Array.isArray(data.volumes)) {
+        setVolumes(data.volumes);
+      } else if (Array.isArray(data.Volumes)) {
+        setVolumes(data.Volumes);
+      } else {
+        setVolumes([]); // fallback
+      }
     } catch (error) {
       toast({
         title: 'Erreur',
         description: error instanceof Error ? error.message : 'Impossible de charger les volumes',
         variant: 'destructive',
       });
+      setVolumes([]); // Toujours garantir un tableau en cas d'erreur
     }
   };
+
 
   const handleSubmit = async (formValues: ContainerFormData) => {
     if (isLoading) return;

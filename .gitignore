@@ -19,6 +19,7 @@
 .DS_Store
 *.pem
 logs/out.log
+logs/error.log
 
 # debug
 npm-debug.log*

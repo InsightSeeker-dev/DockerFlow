@@ -10,8 +10,29 @@ const WebTerminal = dynamic(
   { ssr: false }
 );
 
+import { Suspense } from 'react';
+
 export default function TerminalPage() {
   const { data: session } = useSession();
+
+  if (!session?.user?.role || session.user.role !== 'ADMIN') {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <p className="text-lg text-muted-foreground">
+          Only administrators can access the terminal.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-screen"><p className="text-lg text-muted-foreground">Loading terminal...</p></div>}>
+      <TerminalContent />
+    </Suspense>
+  );
+}
+
+function TerminalContent() {
   const searchParams = useSearchParams();
   const containerId = searchParams.get('containerId');
   const containerName = searchParams.get('name');
@@ -23,16 +44,6 @@ export default function TerminalPage() {
       document.title = `Terminal - ${containerName}`;
     }
   }, [containerName]);
-
-  if (!session?.user?.role || session.user.role !== 'ADMIN') {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <p className="text-lg text-muted-foreground">
-          Only administrators can access the terminal.
-        </p>
-      </div>
-    );
-  }
 
   if (!containerId) {
     return (

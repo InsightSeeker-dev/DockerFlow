@@ -1,3 +1,5 @@
+'use client';
+
 import { VolumeList } from '../../components/volumes/volume-list';
 import { BackupList } from '../../components/volumes/backup-list';
 import { useToast } from '../../components/ui/use-toast';

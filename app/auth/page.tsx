@@ -13,7 +13,7 @@ const DockerFlowAuth = () => {
   const [formData, setFormData] = useState({
     email: '',
     password: '',
-    username: '',
+    name: '',
     accountType: 'user'
   });
   const [errors, setErrors] = useState<Record<string, string | null>>({});
@@ -80,8 +80,8 @@ const DockerFlowAuth = () => {
     } else if (formData.password.length < 6) {
       newErrors.password = 'Password must be at least 6 characters';
     }
-    if (!isLogin && !formData.username) {
-      newErrors.username = 'Username is required';
+    if (!isLogin && !formData.name) {
+      newErrors.name = 'Name is required';
     }
     return newErrors;
   };
@@ -277,22 +277,22 @@ const DockerFlowAuth = () => {
                     <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
                     <input
                       type="text"
-                      name="username"
-                      placeholder="Username"
+                      name="name"
+                      placeholder="Name"
                       className="pl-10 pr-4 py-3 w-full border border-gray-700/50 rounded-lg bg-gray-800/30 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200"
-                      value={formData.username}
+                      value={formData.name}
                       onChange={handleChange}
-                      onFocus={() => clearError('username')}
+                      onFocus={() => clearError('name')}
                       disabled={isLoading}
                     />
-                    {errors.username && (
+                    {errors.name && (
                       <motion.p 
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
                         className="mt-1 text-sm text-red-400 flex items-center"
                       >
                         <AlertCircle className="mr-1" size={12} />
-                        {errors.username}
+                        {errors.name}
                       </motion.p>
                     )}
                   </div>

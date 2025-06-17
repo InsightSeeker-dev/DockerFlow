@@ -10,11 +10,11 @@ import { logActivity } from '@/lib/activity';
 
 // Schéma de validation amélioré
 const registerSchema = z.object({
-  username: z
+  name: z
     .string()
-    .min(2, 'Username must be at least 2 characters')
-    .max(50, 'Username cannot exceed 50 characters')
-    .regex(/^[a-zA-Z0-9\s-]+$/, 'Username can only contain letters, numbers, spaces, and hyphens'),
+    .min(2, 'Name must be at least 2 characters')
+    .max(50, 'Name cannot exceed 50 characters')
+    .regex(/^[a-zA-Z0-9\s-]+$/, 'Name can only contain letters, numbers, spaces, and hyphens'),
   email: z
     .string()
     .min(5, 'Email must be at least 5 characters')
@@ -58,21 +58,21 @@ export async function POST(request: Request) {
       );
     }
 
-    const { username, email, password, accountType } = result.data;
+    const { name, email, password, accountType } = result.data;
 
     // Vérifier si l'utilisateur existe déjà
     const existingUser = await prisma.user.findFirst({
       where: {
         OR: [
           { email },
-          { username }
+          { username: name }
         ]
       }
     });
 
     if (existingUser) {
-      const field = existingUser.email === email ? 'email' : 'username';
-      console.log(`${field} already exists:`, existingUser[field]);
+      const field = existingUser.email === email ? 'email' : 'name';
+      console.log(`${field} already exists:`, existingUser[field === 'email' ? 'email' : 'username']);
       return NextResponse.json(
         { error: `${field} already exists` },
         { status: 400 }
@@ -90,7 +90,8 @@ export async function POST(request: Request) {
     // Créer l'utilisateur
     const user = await prisma.user.create({
       data: {
-        username,
+        name,
+        username: name,
         email,
         password: hashedPassword,
         role: accountType === 'pro' ? UserRole.ADMIN : UserRole.USER,
@@ -107,7 +108,7 @@ export async function POST(request: Request) {
     // Enregistrer l'activité de création de compte
     await logActivity({
       type: ActivityType.USER_REGISTER,
-      description: `New user registered: ${username} (${accountType} account)`,
+      description: `New user registered: ${name} (${accountType} account)`,
       userId: user.id,
       metadata: {
         accountType,
@@ -132,13 +133,13 @@ export async function POST(request: Request) {
     const emailHtml = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h1 style="color: #0070f3; text-align: center;">Welcome to DockerFlow!</h1>
-        <p>Hello ${username},</p>
+        <p>Hello ${name},</p>
         <p>Thank you for creating a DockerFlow account. Your account has been created successfully with a ${accountType} plan.</p>
         
         <div style="background-color: #f5f5f5; padding: 20px; border-radius: 5px; margin: 20px 0;">
           <h2 style="color: #333; margin-top: 0;">Your Account Details</h2>
           <ul style="list-style: none; padding: 0;">
-            <li><strong>Username:</strong> ${username}</li>
+            <li><strong>Name:</strong> ${name}</li>
             <li><strong>Account Type:</strong> ${accountType.toUpperCase()}</li>
             <li><strong>Status:</strong> Pending Verification</li>
           </ul>
@@ -186,6 +187,7 @@ export async function POST(request: Request) {
       message: 'Registration successful. Please check your email to verify your account.',
       user: {
         id: user.id,
+        name: user.name,
         username: user.username,
         email: user.email,
         role: user.role,

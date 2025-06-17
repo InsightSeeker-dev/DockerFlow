@@ -9,10 +9,12 @@ export async function GET(request: Request) {
     const token = searchParams.get('token');
 
     if (!token) {
-      return new NextResponse('Token manquant', { status: 400 });
+      // Redirige vers la page de login avec erreur
+      return NextResponse.redirect('/auth/login?error=token_missing');
     }
 
     // Rechercher le token de vérification avec l'utilisateur associé
+    console.log('[VERIFY EMAIL] Token received:', token);
     const verificationToken = await prisma.verificationToken.findUnique({
       where: {
         token: token,
@@ -21,9 +23,11 @@ export async function GET(request: Request) {
         user: true
       }
     });
+    console.log('[VERIFY EMAIL] Token found in DB:', verificationToken);
 
     if (!verificationToken) {
-      return new NextResponse('Token invalide', { status: 400 });
+      // Redirige vers la page de login avec erreur
+      return NextResponse.redirect('/auth/login?error=token_invalid');
     }
 
     // Vérifier si le token n'est pas expiré
@@ -31,7 +35,8 @@ export async function GET(request: Request) {
       await prisma.verificationToken.delete({
         where: { id: verificationToken.id },
       });
-      return new NextResponse('Token expiré', { status: 400 });
+      // Redirige vers la page de login avec erreur
+      return NextResponse.redirect('/auth/login?error=token_expired');
     }
 
     // Mettre à jour l'utilisateur
@@ -50,10 +55,11 @@ export async function GET(request: Request) {
       where: { id: verificationToken.id },
     });
 
-    // Rediriger vers la page de succès
-    return NextResponse.redirect(new URL('/auth/verify-success', request.url));
+    // Rediriger vers la page de succès (URL relative pour compatibilité prod)
+    return NextResponse.redirect('/auth/verify-success');
   } catch (error) {
     console.error('Error verifying email:', error);
-    return new NextResponse('Erreur lors de la vérification de l\'email', { status: 500 });
+    // Redirige vers la page de login avec erreur générique
+    return NextResponse.redirect('/auth/login?error=verification_failed');
   }
 }

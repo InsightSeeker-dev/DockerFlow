@@ -12,8 +12,8 @@ export async function GET() {
       select: {
         id: true,
         name: true,
-        email: true,
         username: true,
+        email: true,
         role: true,
         status: true,
         emailVerified: true,
@@ -161,14 +161,15 @@ export async function POST(req: Request) {
     });
 
     // Create verification token and send email
+    const rawToken = crypto.randomBytes(32).toString('hex');
     const verificationToken = await prisma.verificationToken.create({
       data: {
         userId: user.id,
-        token: crypto.randomBytes(32).toString('hex'),
+        token: rawToken,
         expires: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
       },
     });
-
+    console.log('[USER CREATE] Verification token created:', verificationToken);
     await sendVerificationEmail(email, verificationToken.token);
 
     return NextResponse.json(user);

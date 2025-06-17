@@ -42,7 +42,7 @@ export async function GET(request: Request) {
       where: { token },
     });
 
-    return NextResponse.redirect(new URL('/auth?verified=true', request.url));
+    return NextResponse.redirect('/auth?verified=true');
   } catch (error) {
     console.error('[VERIFY_EMAIL]', error);
     return new NextResponse('Internal error', { status: 500 });

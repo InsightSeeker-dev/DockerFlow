@@ -30,7 +30,7 @@ export function UserManager({ onUserSelect }: UserManagerProps) {
 
   const fetchUsers = async () => {
     try {
-      const response = await fetch('/api/users');
+      const response = await fetch('/api/users?ts=' + Date.now());
       if (!response.ok) throw new Error('Failed to fetch users');
       const data = await response.json();
       setUsers(data);
@@ -174,7 +174,10 @@ export function UserManager({ onUserSelect }: UserManagerProps) {
           <Button
             variant="outline"
             size="icon"
-            onClick={() => setRefreshKey(prev => prev + 1)}
+            onClick={() => {
+              toast.info('Actualisation de la liste des utilisateurs...');
+              setRefreshKey(prev => prev + 1);
+            }}
             disabled={loading}
           >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />

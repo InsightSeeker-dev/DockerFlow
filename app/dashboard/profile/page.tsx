@@ -1,84 +1,78 @@
-'use client';
+"use client";
 
-import { Container } from '@/components/ui/container';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useSession } from 'next-auth/react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useSession } from 'next-auth/react';
-import { useState } from 'react';
-import { toast } from 'sonner';
 
-export default function ProfilePage() {
-  const { data: session, update: updateSession } = useSession();
-  const [name, setName] = useState(session?.user?.name || '');
+export default function UserProfilePage() {
+  const { data: session, update } = useSession();
+  const [name, setName] = useState('');
+  useEffect(() => {
+    if (session?.user?.name && name !== session.user.name) {
+      setName(session.user.name);
+    }
+  }, [session?.user?.name]);
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    
+    setError(null);
+    setSuccess(false);
     try {
-      const response = await fetch('/api/user/profile', {
+      const res = await fetch('/api/user/profile', {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to update profile');
+      if (!res.ok) throw new Error('Erreur lors de la mise à jour');
+      const updated = await update();
+      if (updated?.user?.name) {
+        setName(updated.user.name);
       }
-
-      await updateSession();
-      toast.success('Profile updated successfully');
-    } catch (error) {
-      toast.error('Failed to update profile');
+      setSuccess(true);
+    } catch (err: any) {
+      setError(err.message || 'Erreur inconnue');
     } finally {
       setLoading(false);
     }
   };
 
+  if (!session) {
+    return <div>Chargement…</div>;
+  }
   return (
-    <Container>
-      <div className="flex flex-col gap-6">
-        <h1 className="text-3xl font-bold">Profile Settings</h1>
-        
-        <Card>
-          <CardHeader>
-            <CardTitle>Personal Information</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleUpdateProfile} className="space-y-4">
-              <div className="space-y-2">
-                <label htmlFor="name" className="text-sm font-medium">
-                  Name
-                </label>
-                <Input
-                  id="name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Your name"
-                />
-              </div>
-              <div className="space-y-2">
-                <label htmlFor="email" className="text-sm font-medium">
-                  Email
-                </label>
-                <Input
-                  id="email"
-                  value={session?.user?.email || ''}
-                  disabled
-                  placeholder="Your email"
-                />
-              </div>
-              <Button type="submit" disabled={loading}>
-                {loading ? 'Updating...' : 'Update Profile'}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
-    </Container>
+    <div className="max-w-xl mx-auto space-y-8">
+      <h1 className="text-2xl font-bold text-blue-400">Mon profil</h1>
+      <form onSubmit={handleUpdateProfile} className="bg-gray-900/80 rounded-xl p-6 shadow-lg border border-gray-800 flex flex-col gap-6">
+        <div>
+          <label htmlFor="name" className="block text-sm font-medium text-gray-300 mb-1">Nom</label>
+          <Input
+            id="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Votre nom"
+            disabled={loading}
+          />
+        </div>
+        <div>
+          <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-1">Email</label>
+          <Input
+            id="email"
+            value={session?.user?.email || ''}
+            disabled
+            className="bg-gray-800 text-gray-400"
+          />
+        </div>
+        <Button type="submit" disabled={loading || !name.trim()} className="w-fit">
+          {loading ? 'Mise à jour...' : 'Mettre à jour'}
+        </Button>
+        {success && <div className="text-green-500 text-sm">Profil mis à jour !</div>}
+        {error && <div className="text-red-500 text-sm">{error}</div>}
+      </form>
+    </div>
   );
 }

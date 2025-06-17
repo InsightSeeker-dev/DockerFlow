@@ -50,11 +50,16 @@ export const authOptions: NextAuthOptions = {
   },
   callbacks: {
     async signIn({ user, account }) {
+      console.log('[NextAuth][signIn] user:', user, 'account:', account);
+
       if (!user || !user.email) {
         return false;
       }
 
       const dbUser = await prisma.user.findUnique({
+        // Debug: log recherche user
+        // console.log('[NextAuth][signIn] Recherche dbUser for', user?.email);
+
         where: { email: user.email },
         select: { 
           id: true,
@@ -65,15 +70,22 @@ export const authOptions: NextAuthOptions = {
       });
 
       // Vérifier si l'utilisateur existe et est actif
-      if (!dbUser) return false;
+      if (!dbUser) {
+        console.warn('[NextAuth][signIn] Aucun utilisateur trouvé');
+        return false;
+      }
       
       // Les administrateurs peuvent se connecter même sans vérification
       if (dbUser.role !== UserRole.ADMIN && !dbUser.emailVerified) {
+        console.warn('[NextAuth][signIn] Email non vérifié pour user', dbUser.id);
+
         return false;
       }
       
       // Vérifier le statut de l'utilisateur
       if (dbUser.status !== UserStatus.ACTIVE) {
+        console.warn('[NextAuth][signIn] Compte inactif pour user', dbUser.id);
+
         return false;
       }
 
@@ -86,6 +98,9 @@ export const authOptions: NextAuthOptions = {
 
       // Si ce n'est pas un admin, vérifier et nettoyer les sessions existantes
       if (dbUser.role !== UserRole.ADMIN) {
+        // Debug: log sessions actives
+        // console.log('[NextAuth][signIn] Vérification sessions actives pour', dbUser.id);
+
         const existingSessions = await prisma.session.findMany({
           where: {
             userId: dbUser.id,
@@ -95,6 +110,7 @@ export const authOptions: NextAuthOptions = {
 
         // Si plus de 2 sessions actives, supprimer la plus ancienne
         if (existingSessions.length >= 2) {
+          console.warn('[NextAuth][signIn] Trop de sessions actives pour', dbUser.id, '=> suppression de la plus ancienne');
           const oldestSession = existingSessions.reduce((prev, current) => 
             prev.expires < current.expires ? prev : current
           );
@@ -108,6 +124,7 @@ export const authOptions: NextAuthOptions = {
       return true;
     },
     async jwt({ token, user, trigger, session }) {
+      console.log('[NextAuth][jwt] token:', token, 'user:', user, 'trigger:', trigger, 'session:', session);
       try {
         if (user) {
           return {
@@ -133,7 +150,10 @@ export const authOptions: NextAuthOptions = {
             },
           });
 
+          console.log('[NextAuth][jwt] updatedUser:', updatedUser);
+
           if (!updatedUser || updatedUser.status !== UserStatus.ACTIVE) {
+            console.warn('[NextAuth][jwt] Utilisateur inactif lors de l\'update', token.id);
             throw new Error('Invalid user state');
           }
 
@@ -163,12 +183,16 @@ export const authOptions: NextAuthOptions = {
             },
           });
 
+          console.log('[NextAuth][jwt] user:', user);
+
           if (!user || user.status !== UserStatus.ACTIVE) {
+            console.warn('[NextAuth][jwt] Utilisateur inactif lors de la vérification périodique', token.id);
             throw new Error('Invalid user state');
           }
 
           // Pour les non-admins, vérifier le nombre de sessions
           if (user.role !== UserRole.ADMIN && user.sessions.length > 2) {
+            console.warn('[NextAuth][jwt] Trop de sessions actives pour', token.id);
             throw new Error('Too many active sessions');
           }
 
@@ -180,6 +204,7 @@ export const authOptions: NextAuthOptions = {
 
         return token;
       } catch (error) {
+        console.error('[NextAuth][jwt] Erreur callback:', error);
         return {
           ...token,
           status: UserStatus.INACTIVE,
@@ -188,8 +213,10 @@ export const authOptions: NextAuthOptions = {
       }
     },
     async session({ session, token }) {
+      console.log('[NextAuth][session] session:', session, 'token:', token);
       try {
         if (!token || !token.email || !token.role || !token.status || token.status !== UserStatus.ACTIVE) {
+          console.warn('[NextAuth][session] Token invalide ou utilisateur inactif');
           return {
             ...session,
             user: {
@@ -199,6 +226,7 @@ export const authOptions: NextAuthOptions = {
           };
         }
 
+        console.log('[NextAuth][session] Session valide pour', token.email);
         return {
           ...session,
           user: {
@@ -213,7 +241,7 @@ export const authOptions: NextAuthOptions = {
           },
         };
       } catch (error) {
-        console.error('Session error:', error);
+        console.error('[NextAuth][session] Session error:', error);
         return {
           ...session,
           user: {
@@ -226,6 +254,7 @@ export const authOptions: NextAuthOptions = {
   },
   events: {
     async signOut({ token }) {
+      console.log('[NextAuth][signOut] token:', token);
       if (token) {
         // Enregistrer l'activité de déconnexion
         await logActivity({
@@ -235,6 +264,7 @@ export const authOptions: NextAuthOptions = {
         });
 
         // Supprimer toutes les sessions de l'utilisateur
+        console.warn('[NextAuth][signOut] Suppression des sessions pour', token?.id);
         await prisma.session.deleteMany({
           where: { userId: token.id }
         });
@@ -249,7 +279,9 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" }
       },
       async authorize(credentials): Promise<User | null> {
+        console.log('[NextAuth][authorize] credentials:', credentials);
         if (!credentials?.email || !credentials?.password) {
+          console.warn('[NextAuth][authorize] Email ou mot de passe manquant');
           throw new Error('Email and password required');
         }
 
@@ -268,20 +300,26 @@ export const authOptions: NextAuthOptions = {
           },
         });
 
+        console.log('[NextAuth][authorize] user:', user);
+
         if (!user) {
+          console.warn('[NextAuth][authorize] Aucun utilisateur trouvé pour', credentials.email);
           throw new Error('No user found');
         }
 
         if (user.status !== UserStatus.ACTIVE) {
+          console.warn('[NextAuth][authorize] Compte inactif pour', user.id);
           throw new Error('User account is not active');
         }
 
         if (user.role !== UserRole.ADMIN && !user.emailVerified) {
+          console.warn('[NextAuth][authorize] Email non vérifié pour', user.id);
           throw new Error('Please verify your email first');
         }
 
         const isValid = await compare(credentials.password, user.password);
         if (!isValid) {
+          console.warn('[NextAuth][authorize] Mauvais mot de passe pour', user.id);
           throw new Error('Invalid password');
         }
 

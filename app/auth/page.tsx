@@ -16,13 +16,23 @@ const DockerFlowAuth = () => {
     username: '',
     accountType: 'user'
   });
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Record<string, string | null>>({});
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  // Gère les messages d'erreur NextAuth passés via la query string (?error=...)
   useEffect(() => {
     setIsClient(true);
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const error = params.get('error');
+      if (error) {
+        setErrors(prev => ({ ...prev, auth: decodeURIComponent(error) }));
+        // Log côté client pour debug
+        console.warn('[NextAuth] error param:', error);
+      }
+    }
   }, []);
 
   if (!isClient) {
@@ -92,9 +102,15 @@ const DockerFlowAuth = () => {
         });
 
         if (result?.error) {
-          setErrors({ auth: 'Invalid email or password' });
+          // Affiche le vrai message d'erreur retourné par NextAuth
+          setErrors(prev => ({ ...prev, auth: result.error }));
+          // Log côté client pour debug
+          console.warn('[NextAuth] login error:', result.error);
         } else {
-          router.push('/dashboard');
+          // Redirection selon le rôle
+          import('./role-redirect').then(async mod => {
+            await mod.redirectAfterLogin(router);
+          });
         }
       } else {
         // Inscription
@@ -113,7 +129,7 @@ const DockerFlowAuth = () => {
               return acc;
             }, {}));
           } else {
-            setErrors({ auth: data.error || 'Registration failed' });
+            setErrors(prev => ({ ...prev, auth: data.error || 'Registration failed' }));
           }
         } else {
           setSuccessMessage('Registration successful! Please check your email to verify your account.');
@@ -121,9 +137,10 @@ const DockerFlowAuth = () => {
           router.push('/auth/confirmation');
         }
       }
-    } catch (error) {
+    } catch (error: any) {
+      // Log l'erreur pour debug
       console.error('Auth error:', error);
-      setErrors({ auth: 'An error occurred. Please try again.' });
+      setErrors(prev => ({ ...prev, auth: error?.message || 'An error occurred. Please try again.' }));
     } finally {
       setIsLoading(false);
     }

@@ -1,6 +1,6 @@
 'use client';
 
-import { DockerImage } from '@/lib/docker/types';
+import { DockerImage } from '@/components/containers/types';
 import { ImageCard } from './image-card';
 import { Loading } from '@/components/ui/loading';
 import { ErrorMessage } from '@/components/ui/error-message';
@@ -21,7 +21,7 @@ interface ImageListProps {
 }
 
 export function ImageList({ 
-  images, 
+  images = [], 
   isLoading, 
   error, 
   onRefresh 
@@ -124,7 +124,6 @@ export function ImageList({
                     <ContainerCreation
                       open={isCreateDialogOpen}
                       onOpenChange={setIsCreateDialogOpen}
-                      preSelectedImage={image}
                       onSuccess={onContainerCreated}
                     />
                     <Button

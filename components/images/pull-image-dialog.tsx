@@ -49,10 +49,16 @@ export function PullImageDialog({ onSuccess }: { onSuccess: () => void }) {
     setError("");
 
     try {
+      // Découper l'image et le tag (ex: 'nginx:1.25' => image='nginx', tag='1.25')
+      let img = imageRef.trim();
+      let tag = 'latest';
+      if (img.includes(':')) {
+        [img, tag] = img.split(':');
+      }
       const response = await fetch('/api/images/pull', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: imageRef }),
+        body: JSON.stringify({ image: img, tag }),
       });
 
       if (!response.ok) {

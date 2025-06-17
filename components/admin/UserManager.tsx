@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { UsersTable } from './UsersTable';
 import { Button } from '@/components/ui/button';
 import { CreateUserDialog } from './create-user-dialog';
+import { EditUserDialog } from './edit-user-dialog';
 import { Loader2, Plus, Search, RefreshCw, Users as UsersIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,6 +19,8 @@ export function UserManager({ onUserSelect }: UserManagerProps) {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [editUser, setEditUser] = useState<User | null>(null);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -39,20 +42,29 @@ export function UserManager({ onUserSelect }: UserManagerProps) {
     }
   };
 
-  const handleUserAction = async (action: string, userId: string) => {
-    try {
-      const response = await fetch(`/api/users/${userId}/${action}`, {
-        method: 'POST',
-      });
-      
-      if (!response.ok) throw new Error(`Failed to ${action} user`);
-      
-      toast.success(`User ${action}d successfully`);
-      setRefreshKey(prev => prev + 1);
-    } catch (error) {
-      toast.error(`Failed to ${action} user`);
-      console.error(`Error ${action}ing user:`, error);
+  const handleUserAction = (action: string, userId: string) => {
+    if (action === 'edit') {
+      const user = users.find(u => u.id === userId);
+      if (user) {
+        setEditUser(user);
+        setIsEditDialogOpen(true);
+      }
+      return;
     }
+    // Actions classiques (suspend, delete, etc.)
+    (async () => {
+      try {
+        const response = await fetch(`/api/users/${userId}/${action}`, {
+          method: 'POST',
+        });
+        if (!response.ok) throw new Error(`Failed to ${action} user`);
+        toast.success(`User ${action}d successfully`);
+        setRefreshKey(prev => prev + 1);
+      } catch (error) {
+        toast.error(`Failed to ${action} user`);
+        console.error(`Error ${action}ing user:`, error);
+      }
+    })();
   };
 
   const handleBulkAction = async (action: string, userIds: string[]) => {
@@ -112,6 +124,35 @@ export function UserManager({ onUserSelect }: UserManagerProps) {
     );
   });
 
+  // Handler pour la soumission du formulaire d'édition
+  const handleEditUser = async (userId: string, data: any) => {
+    try {
+      const response = await fetch(`/api/users/${userId}/edit`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...data,
+          password: data.password || undefined, // Ne pas envoyer string vide
+        }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to update user' }));
+        throw new Error(errorData.error || errorData.message || 'Failed to update user');
+      }
+      toast.success('User updated successfully');
+      setRefreshKey(prev => prev + 1);
+      setIsEditDialogOpen(false);
+      setEditUser(null);
+    } catch (error: any) {
+      const message = error instanceof Error ? error.message : 'Failed to update user';
+      toast.error(message);
+      console.error('Error updating user:', error);
+      throw error;
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[200px]">
@@ -165,6 +206,15 @@ export function UserManager({ onUserSelect }: UserManagerProps) {
           setRefreshKey(prev => prev + 1);
           setIsCreateDialogOpen(false);
         }}
+      />
+      <EditUserDialog
+        open={isEditDialogOpen}
+        onOpenChange={(open) => {
+          setIsEditDialogOpen(open);
+          if (!open) setEditUser(null);
+        }}
+        user={editUser}
+        onSubmit={handleEditUser}
       />
     </div>
   );

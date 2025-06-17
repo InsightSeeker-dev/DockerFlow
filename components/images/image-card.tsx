@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { DockerImage } from '@/lib/docker/types';
+import { DockerImage } from '@/components/containers/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
@@ -163,7 +163,7 @@ export function ImageCard({ image, onRemove }: ImageCardProps) {
                 <div className="flex flex-col gap-2">
                   <span className="text-muted-foreground">Tags:</span>
                   <div className="flex flex-wrap gap-2">
-                    {tags.map((tag) => (
+                    {tags.map((tag: string) => (
                       <span
                         key={tag}
                         className="bg-secondary text-secondary-foreground text-xs px-2 py-1 rounded"

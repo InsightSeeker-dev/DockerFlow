@@ -43,7 +43,7 @@ export default function VerifyErrorPage({
         icon: <LogIn className="w-16 h-16 text-blue-500" />,
         buttonText: 'Se connecter',
         buttonIcon: <LogIn className="ml-2 h-5 w-5" />,
-        link: '/auth/login'
+        link: '/auth'
       };
     }
     return {
@@ -52,7 +52,7 @@ export default function VerifyErrorPage({
       icon: <AlertCircle className="w-16 h-16 text-red-500" />,
       buttonText: 'Retour à la connexion',
       buttonIcon: <ArrowLeft className="ml-2 h-5 w-5" />,
-      link: '/auth/login'
+      link: '/auth'
     };
   };
 

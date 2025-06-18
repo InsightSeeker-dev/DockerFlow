@@ -142,6 +142,21 @@ export default function ImageManager() {
 
       if (!response.ok) {
         const error = await response.json();
+        if (response.status === 409) {
+          toast({
+            variant: 'destructive',
+            title: 'Cannot Delete Image',
+            description: (
+              <>
+                <div>{error.error || 'This image is being used by one or more running containers.'}</div>
+                {error.details && <div className="text-xs mt-1 text-muted-foreground">{error.details}</div>}
+              </>
+            ),
+          });
+          setLoading(false);
+          setShowDeleteConfirm(false);
+          return;
+        }
         throw new Error(error.error || 'Failed to delete image');
       }
       
@@ -370,7 +385,7 @@ export default function ImageManager() {
           <DialogHeader>
             <DialogTitle className="text-destructive">Delete Docker Image</DialogTitle>
             <DialogDescription className="space-y-2">
-              <p>Are you sure you want to delete this Docker image? This action cannot be undone.</p>
+              <div>Are you sure you want to delete this Docker image? This action cannot be undone.</div>
               {selectedImage && (
                 <>
                   <div className="mt-4 p-4 bg-muted/50 rounded-lg space-y-2">
@@ -391,9 +406,9 @@ export default function ImageManager() {
                   </div>
                   {selectedImage.RepoTags && selectedImage.RepoTags.length > 1 && (
                     <div className="mt-2 p-2 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 rounded">
-                      <p className="text-sm">
+                      <div className="text-sm">
                         Warning: This image has multiple tags. All tags will be removed.
-                      </p>
+                      </div>
                     </div>
                   )}
                 </>
@@ -462,28 +477,28 @@ export default function ImageManager() {
                 </div>
                 <div>
                   <h4 className="font-medium mb-2">Size</h4>
-                  <p>{formatSize(selectedImage.Size)}</p>
+                  <div>{formatSize(selectedImage.Size)}</div>
                 </div>
                 <div>
                   <h4 className="font-medium mb-2">Created</h4>
-                  <p>{formatDate(selectedImage.Created)}</p>
+                  <div>{formatDate(selectedImage.Created)}</div>
                 </div>
                 {selectedImage.Architecture && (
                   <div>
                     <h4 className="font-medium mb-2">Architecture</h4>
-                    <p>{selectedImage.Architecture}</p>
+                    <div>{selectedImage.Architecture}</div>
                   </div>
                 )}
                 {selectedImage.Os && (
                   <div>
                     <h4 className="font-medium mb-2">Operating System</h4>
-                    <p>{selectedImage.Os}</p>
+                    <div>{selectedImage.Os}</div>
                   </div>
                 )}
                 {selectedImage.Author && (
                   <div>
                     <h4 className="font-medium mb-2">Author</h4>
-                    <p>{selectedImage.Author}</p>
+                    <div>{selectedImage.Author}</div>
                   </div>
                 )}
                 {selectedImage.Labels && Object.keys(selectedImage.Labels).length > 0 && (

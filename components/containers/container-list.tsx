@@ -31,17 +31,16 @@ import { Container, ContainerPort } from './types';
 import { cn } from '@/lib/utils';
 import { 
   Plus, 
-  RefreshCw, 
   Play, 
   Square, 
   RotateCw, 
   ScrollText, 
   Trash2,
   Box,
-  Loader2,
   MoreVertical,
   ExternalLink
 } from 'lucide-react';
+import LoadingSpinner from '@/components/LoadingSpinner';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -355,7 +354,7 @@ export function ContainerList({
               size="icon"
               className="relative dark:border-gray-700 dark:hover:bg-gray-800 h-10 w-10 lg:h-11 lg:w-11"
             >
-              <RefreshCw className={cn("h-4 w-4 lg:h-5 lg:w-5", isLoading && "animate-spin")} />
+              <LoadingSpinner size={20} color="#2563eb" className={isLoading ? '' : 'opacity-50'} />
             </Button>
             <Button 
               onClick={() => setShowCreateDialog(true)}
@@ -372,7 +371,7 @@ export function ContainerList({
       {/* Main content */}
       {isLoading ? (
         <div className="flex justify-center items-center h-64">
-          <Loader2 className="h-8 w-8 lg:h-10 lg:w-10 animate-spin text-blue-600" />
+          <LoadingSpinner size={40} color="#2563eb" />
         </div>
       ) : !Array.isArray(containers) || containers.length === 0 ? (
         <EmptyState onCreateClick={() => setShowCreateDialog(true)} />
@@ -506,7 +505,7 @@ export function ContainerList({
                                     onClick={() => handleAction('restart', container.Id)}
                                     className="text-gray-200"
                                   >
-                                    <RefreshCw className="mr-2 h-4 w-4 text-blue-500" />
+                                    <LoadingSpinner size={16} color="#2563eb" className="mr-2" />
                                     <div>
                                       <div>Redémarrer</div>
                                       <span className="text-xs text-gray-400">
@@ -677,7 +676,7 @@ export function ContainerList({
                           onClick={() => handleAction('restart', container.Id)}
                           className="text-gray-200"
                         >
-                          <RefreshCw className="h-4 w-4 mr-2 text-blue-500" />
+                          <LoadingSpinner size={16} color="#2563eb" className="mr-2" />
                           Redémarrer
                         </Button>
                       </>

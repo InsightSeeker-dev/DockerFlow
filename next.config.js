@@ -2,7 +2,6 @@
 const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
-    ignoreDuringBuilds: true,
   },
   images: { unoptimized: true },
   reactStrictMode: true,
@@ -59,9 +58,6 @@ const nextConfig = {
     })
 
     return config
-  },
-  experimental: {
-    serverActions: true
   }
 }
 

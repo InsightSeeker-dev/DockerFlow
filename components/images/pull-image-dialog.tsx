@@ -142,7 +142,7 @@ export function PullImageDialog({ onSuccess }: { onSuccess: () => void }) {
             <form onSubmit={handleSubmit}>
               {error && (
                 <Alert variant="destructive">
-                  <p>{error}</p>
+                  <div>{error}</div>
                 </Alert>
               )}
 
@@ -154,9 +154,9 @@ export function PullImageDialog({ onSuccess }: { onSuccess: () => void }) {
                   placeholder="e.g., nginx:latest"
                   disabled={isLoading}
                 />
-                <p className="text-sm text-gray-500">
+                <div className="text-sm text-gray-500">
                   Enter the full image reference (e.g., nginx:latest, ubuntu:20.04).
-                </p>
+                </div>
               </div>
 
               {pullMessages.length > 0 && (

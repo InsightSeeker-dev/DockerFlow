@@ -1,7 +1,8 @@
 'use client';
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Container, User, AlertTriangle, Box, Play, Square, Trash2, Download, RefreshCw, Bell, CheckCircle, ActivityIcon, Loader2 } from "lucide-react";
+import { Container, User, AlertTriangle, Box, Play, Square, Trash2, Download, Bell, CheckCircle, ActivityIcon } from "lucide-react";
+import LoadingSpinner from '@/components/LoadingSpinner';
 import { useEffect, useState } from "react";
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -32,7 +33,7 @@ const getActivityIcon = (type: ActivityType) => {
     case 'IMAGE_DELETE':
       return <Trash2 className="h-4 w-4" />;
     case 'SYSTEM_UPDATE':
-      return <RefreshCw className="h-4 w-4" />;
+      return <ActivityIcon className="h-4 w-4" />;
     case 'ALERT_TRIGGERED':
       return <Bell className="h-4 w-4" />;
     case 'ALERT_RESOLVED':
@@ -127,18 +128,24 @@ useEffect(() => {
           onClick={() => fetchActivities()}
           disabled={isLoading}
         >
-          <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
+          <LoadingSpinner size={16} color="#2563eb" className={isLoading ? '' : 'opacity-50'} />
         </Button>
       </CardHeader>
       <CardContent>
-        {isLoading ? (
+        {isLoading && !error ? (
           <div className="flex items-center justify-center py-6">
-            <Loader2 className="h-6 w-6 animate-spin text-gray-500" />
+            <LoadingSpinner size={24} color="#6b7280" />
           </div>
         ) : error ? (
-          <div className="flex items-center justify-center py-6 text-red-500">
-            <AlertTriangle className="h-6 w-6 mr-2" />
-            <span>{error}</span>
+          <div className="flex flex-col items-center justify-center py-6 text-red-500">
+            <span>Erreur lors du chargement des activités :</span>
+            <span className="font-mono text-xs bg-red-950 p-2 rounded mt-2">{error}</span>
+            <button
+              className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded"
+              onClick={() => fetchActivities()}
+            >
+              Réessayer
+            </button>
           </div>
         ) : activities.length === 0 ? (
           <div className="text-center py-6 text-gray-500">

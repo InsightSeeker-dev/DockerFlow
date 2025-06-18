@@ -53,7 +53,35 @@ export async function DELETE(
     const imageName = imageInfo.RepoTags?.[0] || imageInfo.Id;
     
     // Supprimer l'image
-    await image.remove();
+    try {
+      await image.remove();
+    } catch (dockerErr: any) {
+      // Handle Docker conflict error (image in use by container)
+      if (dockerErr?.statusCode === 409 || (dockerErr?.json?.message && dockerErr.json.message.includes('conflict'))) {
+        return NextResponse.json({
+          error: 'Cannot delete image: It is being used by one or more running containers. Please remove or stop those containers first.',
+          details: dockerErr.json?.message || String(dockerErr)
+        }, { status: 409 });
+      }
+      throw dockerErr;
+    }
+
+    // Supprimer l'entrée de la base de données si elle existe
+    try {
+      const prisma = (await import('@/lib/prisma')).prisma;
+      const dbImage = await prisma.dockerImage.findFirst({
+        where: {
+          name: imageName,
+          tag: imageInfo.RepoTags?.[0]?.split(':')[1] || 'latest',
+        },
+      });
+      if (dbImage) {
+        await prisma.dockerImage.delete({ where: { id: dbImage.id } });
+      }
+    } catch (dbErr) {
+      console.error('[IMAGE_DB_DELETE]', dbErr);
+      return NextResponse.json({ error: 'Failed to delete image from database' }, { status: 500 });
+    }
 
     // Enregistrer l'activité
     await imageActivity.delete(session.user.id, imageName, {

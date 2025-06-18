@@ -7,7 +7,8 @@ import { UsersTable } from './UsersTable';
 import { Button } from '@/components/ui/button';
 import { CreateUserDialog } from './create-user-dialog';
 import { EditUserDialog } from './edit-user-dialog';
-import { Loader2, Plus, Search, RefreshCw, Users as UsersIcon } from 'lucide-react';
+import { Plus, Search, Users as UsersIcon } from 'lucide-react';
+import LoadingSpinner from '@/components/LoadingSpinner';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -16,6 +17,7 @@ interface UserManagerProps {
 }
 
 export function UserManager({ onUserSelect }: UserManagerProps) {
+  const [error, setError] = useState<string | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -30,11 +32,13 @@ export function UserManager({ onUserSelect }: UserManagerProps) {
 
   const fetchUsers = async () => {
     try {
+      setError(null);
       const response = await fetch('/api/users?ts=' + Date.now());
       if (!response.ok) throw new Error('Failed to fetch users');
       const data = await response.json();
       setUsers(data);
-    } catch (error) {
+    } catch (error: any) {
+      setError(error?.message || 'Failed to load users');
       toast.error('Failed to load users');
       console.error('Error fetching users:', error);
     } finally {
@@ -153,10 +157,24 @@ export function UserManager({ onUserSelect }: UserManagerProps) {
     }
   };
 
-  if (loading) {
+  if (loading && !error) {
     return (
       <div className="flex items-center justify-center h-[200px]">
-        <Loader2 className="h-8 w-8 animate-spin" />
+        <LoadingSpinner size={32} color="#2563eb" />
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[200px] text-red-500">
+        <span className="mb-2">Erreur lors du chargement des utilisateurs :</span>
+        <span className="font-mono text-xs bg-red-950 p-2 rounded">{error}</span>
+        <button
+          className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded"
+          onClick={() => { setLoading(true); fetchUsers(); }}
+        >
+          Réessayer
+        </button>
       </div>
     );
   }
@@ -180,7 +198,7 @@ export function UserManager({ onUserSelect }: UserManagerProps) {
             }}
             disabled={loading}
           >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            <LoadingSpinner size={16} color="#2563eb" className={loading ? '' : 'opacity-50'} />
           </Button>
         </div>
         <Button onClick={() => setIsCreateDialogOpen(true)}>
@@ -190,7 +208,7 @@ export function UserManager({ onUserSelect }: UserManagerProps) {
 
       {loading ? (
         <div className="flex items-center justify-center p-8">
-          <Loader2 className="h-8 w-8 animate-spin" />
+          <LoadingSpinner size={32} color="#2563eb" />
         </div>
       ) : (
         <UsersTable

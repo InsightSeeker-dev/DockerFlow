@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { formatBytes } from '@/lib/utils';
-import { TrashIcon, Loader2, Info } from 'lucide-react';
+import { TrashIcon, Info } from 'lucide-react';
+import LoadingSpinner from '@/components/LoadingSpinner';
 import { ImageDetails } from './image-details';
 import { useSession } from 'next-auth/react';
 import {
@@ -35,7 +36,7 @@ export function ImageCard({ image, onRemove }: ImageCardProps) {
   const handleRemove = async () => {
     try {
       setIsLoading(true);
-      const imageId = image.Id.replace('sha256:', '');
+      const imageId = image.Id; // Use the full ID, including 'sha256:'
       console.log('Deleting image with ID:', imageId);
 
       // Supprimer l'image
@@ -126,7 +127,7 @@ export function ImageCard({ image, onRemove }: ImageCardProps) {
                   className="opacity-0 group-hover:opacity-100 transition-opacity text-destructive"
                 >
                   {isLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <LoadingSpinner size={16} color="#ef4444" />
                   ) : (
                     <TrashIcon className="h-4 w-4" />
                   )}

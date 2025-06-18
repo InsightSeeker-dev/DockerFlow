@@ -53,6 +53,56 @@ export async function GET(req: NextRequest) {
       };
     });
 
+    // Synchronisation base <-> Docker
+    const userId = user.id;
+    // Upsert chaque image Docker dans la base et collecte les (name, tag) réellement utilisés
+    const allNamesTags: { name: string; tag: string }[] = [];
+    for (const image of processedImages) {
+      const [name, tag = 'latest'] = image.displayName && image.displayTag
+        ? [image.displayName, image.displayTag]
+        : (image.RepoTags[0] || '').split(':');
+      const safeName = name || 'none';
+      const safeTag = tag || 'latest';
+      allNamesTags.push({ name: safeName, tag: safeTag });
+      // Log avant upsert
+      console.log('[UPsert] userId:', userId, 'name:', safeName, 'tag:', safeTag, 'size:', image.Size, 'created:', image.Created);
+      try {
+        await prisma.dockerImage.upsert({
+          where: {
+            userId_name_tag: {
+              userId,
+              name: safeName,
+              tag: safeTag
+            }
+          },
+          update: {
+            size: image.Size,
+            created: new Date(image.Created * 1000)
+          },
+          create: {
+            userId,
+            name: safeName,
+            tag: safeTag,
+            size: image.Size,
+            created: new Date(image.Created * 1000)
+          }
+        });
+      } catch (err) {
+        console.error('[UPSERT ERROR]', err);
+        throw new Error('UPSERT ERROR: ' + (err instanceof Error ? err.message : String(err)));
+      }
+    }
+    // Log avant deleteMany
+    console.log('[DeleteMany] userId:', userId, 'allNamesTags:', allNamesTags);
+    await prisma.dockerImage.deleteMany({
+      where: {
+        userId,
+        NOT: {
+          OR: allNamesTags.map(({ name, tag }) => ({ name, tag }))
+        }
+      }
+    });
+
     // Trier les images : d'abord celles avec des tags, puis par date
     const sortedImages = processedImages.sort((a, b) => {
       // Priorité aux images avec des vrais tags

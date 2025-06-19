@@ -11,20 +11,39 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
-    
-    if (!session || session.user.role !== UserRole.ADMIN) {
+    if (!session || !session.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Récupérer tous les conteneurs (running et stopped)
-    const containers = await docker.listContainers({ all: true });
+    // Récupérer les containers de l'utilisateur connecté depuis la BDD
+    const dbContainers = await prisma.container.findMany({
+      where: { userId: session.user.id },
+      select: { dockerId: true }
+    });
+    const userDockerIds = dbContainers.map(c => c.dockerId);
+    console.log('[container-stats] Containers BDD pour user', session.user.id, ':', userContainerNames);
 
-    // Calculer les statistiques
+    // Récupérer tous les conteneurs Docker
+    const containers = await docker.listContainers({ all: true });
+    console.log('[container-stats] Containers Docker trouvés:', containers.map((c: any) => c.Names));
+
+    // Filtrer uniquement ceux appartenant à l'utilisateur
+    const backendNames = ['traefik', 'traefik-init', 'mongodb1', 'mongodb2', 'mongodb3'];
+    const userContainers = containers.filter((c: { Id: string; Names: string[]; State: string }) => {
+      // Exclude backend/system containers by name
+      const containerName = c.Names[0]?.replace(/^\//, '');
+      if (backendNames.includes(containerName)) return false;
+      // Filter by dockerId (Docker ID)
+      return userDockerIds.includes(c.Id);
+    });
+    console.log('[container-stats] Containers filtrés utilisateur:', userContainers.map((c: any) => c.Names));
+
+    // Calculer les statistiques sur les containers utilisateur
     const stats = {
-      total: containers.length,
-      running: containers.filter(c => c.State === 'running').length,
-      stopped: containers.filter(c => c.State === 'exited').length,
-      error: containers.filter(c => ['restarting', 'dead', 'created'].includes(c.State)).length
+      total: userContainers.length,
+      running: userContainers.filter(c => c.State === 'running').length,
+      stopped: userContainers.filter(c => c.State === 'exited').length,
+      error: userContainers.filter(c => ['restarting', 'dead', 'created'].includes(c.State)).length
     };
 
     return NextResponse.json(stats);

@@ -181,6 +181,7 @@ export async function POST(req: Request) {
     // Créer l'entrée dans la base de données
     const dbContainer = await prisma.container.create({
       data: {
+        dockerId: container.id, // Save Docker container ID
         name,
         imageId: image,
         status: 'running',

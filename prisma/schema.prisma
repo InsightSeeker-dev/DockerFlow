@@ -166,6 +166,7 @@ model Session {
 
 model Container {
   id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  dockerId      String   @unique // Docker container ID
   name          String   @unique
   imageId       String
   image         String   // Nom complet de l'image (e.g., "nginx:latest")

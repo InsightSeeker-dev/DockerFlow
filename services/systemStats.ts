@@ -19,7 +19,21 @@ const MAX_HISTORY_POINTS = 20;
 export async function getSystemStats(): Promise<SystemStats> {
   try {
     // Docker Stats
-    const containers = await docker.listContainers({ all: true });
+    // Filtrage des containers système du SaaS
+    const allContainers = await docker.listContainers({ all: true });
+    const systemContainerNames = [
+      'traefik',
+      'traefik-init',
+      'mongodb1',
+      'mongodb2',
+      'mongodb3',
+    ];
+    // Certains moteurs dockerode utilisent .Names, d'autres .name
+    const containers = allContainers.filter(c => {
+      const names = c.Names || [];
+      // Dockerode retourne .Names sous forme ['/nom']
+      return !names.some(n => systemContainerNames.includes(n.replace(/^\//, '')));
+    });
     const images = await docker.listImages();
     const imageStats = await getImageStats(images);
 

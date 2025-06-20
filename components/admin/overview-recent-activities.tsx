@@ -69,14 +69,20 @@ export function OverviewRecentActivities() {
   const { data: session } = useSession();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize] = useState(5);
   const [total, setTotal] = useState(0);
 
-  const fetchActivities = async () => {
+  // refreshType: "manual" | "auto" | undefined
+  const fetchActivities = async (refreshType?: 'manual' | 'auto') => {
     try {
-      setIsLoading(true);
+      if (refreshType === 'manual') {
+        setIsRefreshing(true);
+      } else {
+        setIsLoading(true);
+      }
       setError(null);
       
       const response = await fetch(`/api/admin/activities?page=${page}&pageSize=${pageSize}`);
@@ -92,27 +98,51 @@ export function OverviewRecentActivities() {
       console.error('Error fetching activities:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch activities');
     } finally {
-      setIsLoading(false);
+      if (refreshType === 'manual') {
+        setIsRefreshing(false);
+      } else {
+        setIsLoading(false);
+      }
     }
   };
 
 useEffect(() => {
   if (session?.user) {
     fetchActivities();
+  } else if (session && !session.user) {
+    setIsLoading(false); // Session chargée mais pas d'user
   }
 
   // Rafraîchir les activités toutes les minutes
   const interval = setInterval(() => {
     if (session?.user) {
-      fetchActivities();
+      fetchActivities('auto');
     }
   }, 60000);
 
   return () => clearInterval(interval);
 }, [session, page]);
 
+// Fallback sécurité : si la session est chargée mais pas d'user, ne pas spinner
+useEffect(() => {
+  if (session && !session.user && isLoading) {
+    setIsLoading(false);
+  }
+}, [session, isLoading]);
+
   if (!session?.user) {
-    return null;
+    return (
+      <Card className="col-span-3">
+        <CardHeader>
+          <CardTitle className="text-lg font-medium">Activités Récentes</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-6 text-gray-500">
+            Aucune activité récente
+          </div>
+        </CardContent>
+      </Card>
+    );
   }
 
   return (
@@ -125,10 +155,10 @@ useEffect(() => {
         <Button
           variant="ghost"
           size="icon"
-          onClick={() => fetchActivities()}
-          disabled={isLoading}
+          onClick={() => fetchActivities('manual')}
+          disabled={isRefreshing}
         >
-          <LoadingSpinner size={16} color="#2563eb" className={isLoading ? '' : 'opacity-50'} />
+          <LoadingSpinner size={16} color="#2563eb" spinning={isRefreshing} className={isRefreshing ? '' : 'opacity-50'} />
         </Button>
       </CardHeader>
       <CardContent>
@@ -147,7 +177,7 @@ useEffect(() => {
               Réessayer
             </button>
           </div>
-        ) : activities.length === 0 ? (
+        ) : (!isLoading && activities.length === 0) ? (
           <div className="text-center py-6 text-gray-500">
             Aucune activité récente
           </div>

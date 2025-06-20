@@ -19,7 +19,8 @@ interface UserManagerProps {
 export function UserManager({ onUserSelect }: UserManagerProps) {
   const [error, setError] = useState<string | null>(null);
   const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -192,13 +193,17 @@ export function UserManager({ onUserSelect }: UserManagerProps) {
           <Button
             variant="outline"
             size="icon"
-            onClick={() => {
+            onClick={async () => {
               toast.info('Actualisation de la liste des utilisateurs...');
+              setIsRefreshing(true);
               setRefreshKey(prev => prev + 1);
+              // Attendre la fin du chargement (optionnel, dépend de ta logique)
+              // Si loading est contrôlé par refreshKey, tu peux ajouter un petit délai ici
+              setTimeout(() => setIsRefreshing(false), 1000); // à ajuster selon la logique réelle
             }}
-            disabled={loading}
+            disabled={isRefreshing}
           >
-            <LoadingSpinner size={16} color="#2563eb" className={loading ? '' : 'opacity-50'} />
+            <LoadingSpinner size={16} color="#2563eb" spinning={isRefreshing} className={isRefreshing ? '' : 'opacity-50'} />
           </Button>
         </div>
         <Button onClick={() => setIsCreateDialogOpen(true)}>

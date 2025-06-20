@@ -27,7 +27,8 @@ export async function GET(
       const containerInfo = await dockerContainer.inspect();
       
       // Vérifier que l'utilisateur a accès au conteneur
-      const dbContainer = await prisma.container.findFirst({
+      // 1. Recherche par name
+      let dbContainer = await prisma.container.findFirst({
         where: {
           name: containerInfo.Name.replace(/^\//, ''),
           OR: [
@@ -36,6 +37,18 @@ export async function GET(
           ]
         }
       });
+      // 2. Si non trouvé et containerInfo.Id existe, recherche par dockerId
+      if (!dbContainer && containerInfo.Id) {
+        dbContainer = await prisma.container.findFirst({
+          where: {
+            dockerId: containerInfo.Id,
+            OR: [
+              { userId: session.user.id },
+              { user: { role: 'ADMIN' } }
+            ]
+          }
+        });
+      }
 
       if (!dbContainer && session.user.role !== 'ADMIN') {
         return NextResponse.json(

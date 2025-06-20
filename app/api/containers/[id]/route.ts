@@ -58,20 +58,25 @@ export async function PATCH(
     
     let dbContainer;
     try {
-      // Vérifier si l'ID est un ID MongoDB valide
+      // 1. Recherche par id MongoDB (si valide)
       const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(params.id);
-      
       if (isValidObjectId) {
-        console.log(`[API] Recherche par ID MongoDB: ${params.id}`);
         dbContainer = await prisma.container.findUnique({
           where: { id: params.id },
           include: { user: true }
         });
-      } else {
-        // Si ce n'est pas un ID MongoDB valide, essayer de rechercher par nom
-        console.log(`[API] Recherche par nom de conteneur: ${params.id}`);
+      }
+      // 2. Si non trouvé, recherche par name
+      if (!dbContainer) {
         dbContainer = await prisma.container.findUnique({
           where: { name: params.id },
+          include: { user: true }
+        });
+      }
+      // 3. Si toujours pas trouvé, recherche par dockerId
+      if (!dbContainer) {
+        dbContainer = await prisma.container.findFirst({
+          where: { dockerId: params.id },
           include: { user: true }
         });
       }

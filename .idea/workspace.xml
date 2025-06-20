@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="f93fa794-3fec-47f6-a5c1-902c66067314" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.env" beforeDir="false" afterPath="$PROJECT_DIR$/.env" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/api/admin/containers/route.ts" beforeDir="false" afterPath="$PROJECT_DIR$/app/api/admin/containers/route.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/api/admin/images/list/route.ts" beforeDir="false" afterPath="$PROJECT_DIR$/app/api/admin/images/list/route.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/api/containers/[id]/info/route.ts" beforeDir="false" afterPath="$PROJECT_DIR$/app/api/containers/[id]/info/route.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/api/containers/[id]/logs/route.ts" beforeDir="false" afterPath="$PROJECT_DIR$/app/api/containers/[id]/logs/route.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/api/containers/[id]/route.ts" beforeDir="false" afterPath="$PROJECT_DIR$/app/api/containers/[id]/route.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/components/LoadingSpinner.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/LoadingSpinner.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/components/admin/ContainerList.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/admin/ContainerList.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/components/admin/UserManager.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/admin/UserManager.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/components/admin/overview-recent-activities.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/admin/overview-recent-activities.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/env.mjs" beforeDir="false" afterPath="$PROJECT_DIR$/env.mjs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/auth.ts" beforeDir="false" afterPath="$PROJECT_DIR$/lib/auth.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/docker/volumeSync.ts" beforeDir="false" afterPath="$PROJECT_DIR$/lib/docker/volumeSync.ts" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="ProblemsViewState">
+    <option name="selectedTabId" value="DEPENDENCY_CHECKER_PROBLEMS_TAB" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;customColor&quot;: &quot;&quot;,
+  &quot;associatedIndex&quot;: 7
+}</component>
+  <component name="ProjectId" id="2yi1k0ggF4d7gaMzd28rU2xTvjm" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;js.debugger.nextJs.config.created.client&quot;: &quot;true&quot;,
+    &quot;js.debugger.nextJs.config.created.server&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;com.codeium.AppSettingsConfigurable&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  }
+}</component>
+  <component name="RdControllerToolWindowsLayoutState" isNewUi="true">
+    <layout>
+      <window_info id="Bookmarks" side_tool="true" />
+      <window_info id="Merge Requests" />
+      <window_info id="Backup and Sync History" />
+      <window_info id="Commit_Guest" show_stripe_button="false" />
+      <window_info id="Pull Requests" />
+      <window_info id="Learn" />
+      <window_info content_ui="combo" id="Project" order="0" weight="0.3300866" />
+      <window_info active="true" id="Commit" order="1" visible="true" weight="0.26948053" />
+      <window_info id="Structure" order="2" side_tool="true" weight="0.25" />
+      <window_info anchor="bottom" id="Database Changes" />
+      <window_info anchor="bottom" id="TypeScript" />
+      <window_info anchor="bottom" id="Profiler" />
+      <window_info anchor="bottom" id="TODO" />
+      <window_info anchor="bottom" id="File Transfer" />
+      <window_info anchor="bottom" id="Windsurf Console" />
+      <window_info anchor="bottom" id="Version Control" order="0" weight="0.32964888" />
+      <window_info anchor="bottom" id="Problems" order="1" />
+      <window_info active="true" anchor="bottom" id="Problems View" order="2" visible="true" weight="0.23342003" />
+      <window_info anchor="bottom" id="Terminal" order="3" weight="0.69375813" />
+      <window_info anchor="bottom" id="Services" order="4" />
+      <window_info anchor="right" id="Coverage" side_tool="true" />
+      <window_info anchor="right" id="Notifications" order="0" weight="0.3300866" />
+      <window_info anchor="right" id="AIAssistant" order="1" weight="0.25" />
+      <window_info anchor="right" id="Database" order="2" weight="0.3300866" />
+      <window_info anchor="right" id="Gradle" order="3" weight="0.25" />
+      <window_info anchor="right" id="Maven" order="4" weight="0.25" />
+      <window_info anchor="right" id="Tabnine Chat" order="5" visible="true" weight="0.3300866" />
+      <window_info anchor="right" x="526" y="214" width="554" height="439" id="Cascade" order="6" weight="0.3300866" />
+      <window_info anchor="right" id="Endpoints" order="7" weight="0.3300866" />
+    </layout>
+  </component>
+  <component name="RunManager" selected="npm.Next.js: server-side">
+    <configuration name="Next.js: debug client-side" type="JavascriptDebugType" uri="http://localhost:3000/">
+      <method v="2" />
+    </configuration>
+    <configuration name="Next.js: server-side" type="js.build_tools.npm">
+      <package-json value="$PROJECT_DIR$/package.json" />
+      <command value="run" />
+      <scripts>
+        <script value="dev" />
+      </scripts>
+      <node-interpreter value="project" />
+      <envs />
+      <method v="2" />
+    </configuration>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-jdk-9823dce3aa75-fbdcb00ec9e3-intellij.indexing.shared.core-IU-251.26094.98" />
+        <option value="bundled-js-predefined-d6986cc7102b-b26f3e71634d-JavaScript-IU-251.26094.98" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="SvnConfiguration">
+    <configuration>$USER_HOME$/.subversion</configuration>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="f93fa794-3fec-47f6-a5c1-902c66067314" name="Changes" comment="" />
+      <created>1750302727437</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1750302727437</updated>
+      <workItem from="1750302761473" duration="234000" />
+      <workItem from="1750304099156" duration="662000" />
+      <workItem from="1750304824285" duration="1450000" />
+      <workItem from="1750377098367" duration="946000" />
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+    <option name="exactExcludedFiles">
+      <list>
+        <option value="$PROJECT_DIR$/types/prisma.d.ts" />
+        <option value="$PROJECT_DIR$/scripts/migrate-user-roles.js" />
+      </list>
+    </option>
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="XSLT-Support.FileAssociations.UIState">
+    <expand />
+    <select />
+  </component>
+</project>

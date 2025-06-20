@@ -53,35 +53,88 @@ export function ContainerList({ title = "Your Containers" }: ContainerListProps)
   const [isLoading, setIsLoading] = React.useState(true);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = React.useState(false);
   const [actionLoading, setActionLoading] = React.useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = React.useState(false);
 
-  const fetchContainers = async () => {
+  // Timeout de refresh manuel (scope global au composant)
+  const refreshTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  const fetchContainers = async (refreshType?: 'manual' | 'auto') => {
     try {
-      setIsLoading(true);
+      if (refreshType === 'manual') {
+        setIsRefreshing(true);
+        console.log('[ContainerList] Début refresh manuel, isRefreshing -> true');
+        // Timeout de sécurité : 15 secondes
+        refreshTimeoutRef.current = setTimeout(() => {
+          setIsRefreshing(false);
+          console.warn('[ContainerList] Forçage du reset isRefreshing suite à timeout');
+        }, 15000);
+      } else {
+        setIsLoading(true);
+      }
       const response = await fetch('/api/admin/containers');
       if (!response.ok) throw new Error('Failed to fetch containers');
       const data = await response.json();
       setContainers(data);
     } catch (error) {
       console.error('Error fetching containers:', error);
+      alert('Erreur lors du rafraîchissement des containers.');
     } finally {
-      setIsLoading(false);
+      if (refreshType === 'manual') {
+        setIsRefreshing(false);
+        console.log('[ContainerList] Fin refresh manuel, isRefreshing -> false');
+        if (refreshTimeoutRef.current) {
+          clearTimeout(refreshTimeoutRef.current);
+          refreshTimeoutRef.current = null;
+          console.log('[ContainerList] Reset isRefreshing normalement');
+        }
+      } else {
+        setIsLoading(false);
+      }
     }
   };
 
+  // Nettoyage du timeout si le composant est démonté pendant un refresh manuel
   React.useEffect(() => {
+    return () => {
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+        refreshTimeoutRef.current = null;
+        console.warn('[ContainerList] Cleanup du timeout de refresh manuel au démontage');
+      }
+    };
+  }, []);
+
+  // Empêche isRefreshing et isLoading d'être à true en même temps
+  React.useEffect(() => {
+    if (isRefreshing && isLoading) {
+      setIsRefreshing(false);
+      console.warn('[ContainerList] Correction automatique : isRefreshing && isLoading tous les deux à true');
+    }
+  }, [isRefreshing, isLoading]);
+
+  React.useEffect(() => {
+    console.log('[ContainerList] useEffect mount');
     fetchContainers();
+    const interval = setInterval(() => {
+      fetchContainers();
+    }, 60000); // auto-refresh toutes les 60s
+    return () => clearInterval(interval);
   }, []);
 
   const handleAction = async (containerId: string, action: 'start' | 'restart' | 'delete') => {
     try {
       setActionLoading(containerId);
-      const response = await fetch(`/api/containers/${containerId}/${action}`, {
-        method: 'POST',
+      const response = await fetch(`/api/containers/${containerId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
       });
       if (!response.ok) throw new Error(`Failed to ${action} container`);
       fetchContainers();
     } catch (error) {
       console.error(`Error ${action}ing container:`, error);
+      alert(`Erreur lors de l'action ${action} sur le container. Veuillez réessayer.`);
+      fetchContainers(); // force le refresh même après erreur
     } finally {
       setActionLoading(null);
     }
@@ -99,12 +152,25 @@ export function ContainerList({ title = "Your Containers" }: ContainerListProps)
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-gray-200">{title}</h2>
-        <Button 
-          onClick={() => setIsCreateDialogOpen(true)}
-          className="bg-blue-600 hover:bg-blue-700"
-        >
-          + Create Container
-        </Button>
+        <div className="flex items-center space-x-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              console.log('[ContainerList] Bouton refresh cliqué. isRefreshing:', isRefreshing, 'isLoading:', isLoading);
+              if (!isRefreshing && !isLoading) fetchContainers('manual');
+            }}
+            disabled={isRefreshing || isLoading}
+          >
+            <RefreshCw className={`h-6 w-6 ${isRefreshing ? 'animate-spin' : ''} text-blue-400`} />
+          </Button>
+          <Button 
+            onClick={() => setIsCreateDialogOpen(true)}
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            + Create Container
+          </Button>
+        </div>
       </div>
 
       {containers.length === 0 ? (

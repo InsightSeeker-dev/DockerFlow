@@ -31,7 +31,7 @@ declare module "next-auth" {
 
 // Extension du token JWT
 declare module "next-auth/jwt" {
-  interface JWT extends Omit<BaseUser, 'username'> {
+  interface JWT extends BaseUser {
     lastChecked?: number;
     sessionId?: string;
   }
@@ -51,15 +51,15 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async signIn({ user, account }) {
       console.log('[NextAuth][signIn] user:', user, 'account:', account);
+      console.time('[NextAuth][signIn] total');
 
       if (!user || !user.email) {
+        console.timeEnd('[NextAuth][signIn] total');
         return false;
       }
 
+      console.time('[NextAuth][signIn] prisma.user.findUnique');
       const dbUser = await prisma.user.findUnique({
-        // Debug: log recherche user
-        // console.log('[NextAuth][signIn] Recherche dbUser for', user?.email);
-
         where: { email: user.email },
         select: { 
           id: true,
@@ -68,59 +68,58 @@ export const authOptions: NextAuthOptions = {
           emailVerified: true
         }
       });
+      console.timeEnd('[NextAuth][signIn] prisma.user.findUnique');
 
-      // Vérifier si l'utilisateur existe et est actif
       if (!dbUser) {
         console.warn('[NextAuth][signIn] Aucun utilisateur trouvé');
+        console.timeEnd('[NextAuth][signIn] total');
         return false;
       }
       
-      // Les administrateurs peuvent se connecter même sans vérification
       if (dbUser.role !== UserRole.ADMIN && !dbUser.emailVerified) {
         console.warn('[NextAuth][signIn] Email non vérifié pour user', dbUser.id);
-
+        console.timeEnd('[NextAuth][signIn] total');
         return false;
       }
       
-      // Vérifier le statut de l'utilisateur
       if (dbUser.status !== UserStatus.ACTIVE) {
         console.warn('[NextAuth][signIn] Compte inactif pour user', dbUser.id);
-
+        console.timeEnd('[NextAuth][signIn] total');
         return false;
       }
 
-      // Enregistrer l'activité de connexion
+      console.time('[NextAuth][signIn] logActivity');
       await logActivity({
         type: ActivityType.USER_LOGIN,
         description: `User ${user.email} logged in`,
         userId: dbUser.id,
       });
+      console.timeEnd('[NextAuth][signIn] logActivity');
 
-      // Si ce n'est pas un admin, vérifier et nettoyer les sessions existantes
       if (dbUser.role !== UserRole.ADMIN) {
-        // Debug: log sessions actives
-        // console.log('[NextAuth][signIn] Vérification sessions actives pour', dbUser.id);
-
+        console.time('[NextAuth][signIn] prisma.session.findMany');
         const existingSessions = await prisma.session.findMany({
           where: {
             userId: dbUser.id,
             expires: { gt: new Date() }
           },
         });
+        console.timeEnd('[NextAuth][signIn] prisma.session.findMany');
 
-        // Si plus de 2 sessions actives, supprimer la plus ancienne
         if (existingSessions.length >= 2) {
           console.warn('[NextAuth][signIn] Trop de sessions actives pour', dbUser.id, '=> suppression de la plus ancienne');
           const oldestSession = existingSessions.reduce((prev, current) => 
             prev.expires < current.expires ? prev : current
           );
           
+          console.time('[NextAuth][signIn] prisma.session.delete');
           await prisma.session.delete({
             where: { id: oldestSession.id }
           });
+          console.timeEnd('[NextAuth][signIn] prisma.session.delete');
         }
       }
-
+      console.timeEnd('[NextAuth][signIn] total');
       return true;
     },
     async jwt({ token, user, trigger, session }) {
@@ -280,11 +279,15 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials): Promise<User | null> {
         console.log('[NextAuth][authorize] credentials:', credentials);
+        console.time('[NextAuth][authorize] total');
+
         if (!credentials?.email || !credentials?.password) {
           console.warn('[NextAuth][authorize] Email ou mot de passe manquant');
+          console.timeEnd('[NextAuth][authorize] total');
           throw new Error('Email and password required');
         }
 
+        console.time('[NextAuth][authorize] prisma.user.findUnique');
         const user = await prisma.user.findUnique({
           where: { email: credentials.email },
           select: {
@@ -299,32 +302,41 @@ export const authOptions: NextAuthOptions = {
             emailVerified: true,
           },
         });
+        console.timeEnd('[NextAuth][authorize] prisma.user.findUnique');
 
         console.log('[NextAuth][authorize] user:', user);
 
         if (!user) {
           console.warn('[NextAuth][authorize] Aucun utilisateur trouvé pour', credentials.email);
+          console.timeEnd('[NextAuth][authorize] total');
           throw new Error('No user found');
         }
 
         if (user.status !== UserStatus.ACTIVE) {
           console.warn('[NextAuth][authorize] Compte inactif pour', user.id);
+          console.timeEnd('[NextAuth][authorize] total');
           throw new Error('User account is not active');
         }
 
         if (user.role !== UserRole.ADMIN && !user.emailVerified) {
           console.warn('[NextAuth][authorize] Email non vérifié pour', user.id);
+          console.timeEnd('[NextAuth][authorize] total');
           throw new Error('Please verify your email first');
         }
 
+        console.time('[NextAuth][authorize] bcrypt.compare');
         const isValid = await compare(credentials.password, user.password);
+        console.timeEnd('[NextAuth][authorize] bcrypt.compare');
+
         if (!isValid) {
           console.warn('[NextAuth][authorize] Mauvais mot de passe pour', user.id);
+          console.timeEnd('[NextAuth][authorize] total');
           throw new Error('Invalid password');
         }
 
         // S'assurer que le username est toujours une chaîne
         const username = user.username || user.email.split('@')[0];
+        console.timeEnd('[NextAuth][authorize] total');
 
         return {
           id: user.id,

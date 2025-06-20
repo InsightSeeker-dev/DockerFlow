@@ -88,8 +88,9 @@ export async function GET(req: NextRequest) {
           }
         });
       } catch (err) {
-        console.error('[UPSERT ERROR]', err);
-        throw new Error('UPSERT ERROR: ' + (err instanceof Error ? err.message : String(err)));
+        // Si un upsert échoue, on log l'erreur mais on continue pour ne pas bloquer toute la requête
+        console.error(`[UPSERT FAILED] Could not sync image ${safeName}:${safeTag}. Error:`, err);
+        continue; // Passe à l'image suivante
       }
     }
     // Log avant deleteMany
@@ -115,9 +116,10 @@ export async function GET(req: NextRequest) {
       return b.Created - a.Created;
     });
 
-    return new NextResponse(JSON.stringify(sortedImages), {
-      headers: { 'Content-Type': 'application/json' }
-    });
+    // Log final avant de retourner la réponse
+    console.log('[API Response] sortedImages to be sent:', JSON.stringify(sortedImages, null, 2));
+    // Toujours retourner un tableau d'images (même vide)
+    return NextResponse.json(Array.isArray(sortedImages) ? sortedImages : [], { status: 200 });
   } catch (error: any) {
     console.error('Error listing images:', error);
     return new NextResponse(

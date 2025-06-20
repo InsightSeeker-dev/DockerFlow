@@ -46,6 +46,20 @@ type PrismaTransaction = Prisma.PrismaPromise<any>;
  * Classe utilitaire pour la synchronisation des volumes entre Docker et la base de données
  * Implémente le pattern Singleton pour garantir une instance unique
  */
+// Fonction utilitaire pour éviter les doublons d'activités volume
+async function shouldLogVolumeActivity(type: ActivityType, userId: string, volumeName: string): Promise<boolean> {
+  const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+  const existing = await prisma.activity.findFirst({
+    where: {
+      type,
+      userId,
+      createdAt: { gte: oneMinuteAgo },
+      metadata: { equals: { volumeName } }
+    }
+  });
+  return !existing;
+}
+
 export class DockerVolumeSync {
   private static instance: DockerVolumeSync;
   private isSyncing: boolean = false;
@@ -306,18 +320,21 @@ export class DockerVolumeSync {
           })
         );
         
-        // Création d'une activité pour l'ajout du volume
-        this.transactions.push(
-          prisma.activity.create({
-            data: {
-              type: ActivityType.VOLUME_CREATE,
-              userId,
-              createdAt: new Date(),
-              description: `Volume ${volumeName} created`,
-              metadata: { volumeName }
-            }
-          })
-        );
+        // Création d'une activité pour l'ajout du volume avec anti-doublon
+        const shouldLogCreate = await shouldLogVolumeActivity(ActivityType.VOLUME_CREATE, userId, volumeName);
+        if (shouldLogCreate) {
+          this.transactions.push(
+            prisma.activity.create({
+              data: {
+                type: ActivityType.VOLUME_CREATE,
+                userId,
+                createdAt: new Date(),
+                description: `Volume ${volumeName} created`,
+                metadata: { volumeName }
+              }
+            })
+          );
+        }
       }
 
       // Mise à jour des volumes existants
@@ -366,18 +383,21 @@ export class DockerVolumeSync {
           })
         );
         
-        // Création d'une activité pour la mise à jour du volume
-        this.transactions.push(
-          prisma.activity.create({
-            data: {
-              type: ActivityType.VOLUME_MOUNT,
-              userId,
-              createdAt: new Date(),
-              description: `Volume ${volumeName} updated`,
-              metadata: { volumeName }
-            }
-          })
-        );
+        // Création d'une activité pour la mise à jour du volume avec anti-doublon
+        const shouldLogMount = await shouldLogVolumeActivity(ActivityType.VOLUME_MOUNT, userId, volumeName);
+        if (shouldLogMount) {
+          this.transactions.push(
+            prisma.activity.create({
+              data: {
+                type: ActivityType.VOLUME_MOUNT,
+                userId,
+                createdAt: new Date(),
+                description: `Volume ${volumeName} updated`,
+                metadata: { volumeName }
+              }
+            })
+          );
+        }
       }
 
       // Suppression des volumes qui n'existent plus dans Docker
@@ -385,18 +405,21 @@ export class DockerVolumeSync {
         const dbVolume = dbVolumeMap.get(volumeName);
         if (!dbVolume) continue;
 
-        // Création d'une activité de suppression
-        this.transactions.push(
-          prisma.activity.create({
-            data: {
-              type: ActivityType.VOLUME_DELETE,
-              userId,
-              createdAt: new Date(),
-              description: `Volume ${volumeName} deleted`,
-              metadata: { volumeName }
-            }
-          })
-        );
+        // Création d'une activité de suppression avec anti-doublon
+        const shouldLogDelete = await shouldLogVolumeActivity(ActivityType.VOLUME_DELETE, userId, volumeName);
+        if (shouldLogDelete) {
+          this.transactions.push(
+            prisma.activity.create({
+              data: {
+                type: ActivityType.VOLUME_DELETE,
+                userId,
+                createdAt: new Date(),
+                description: `Volume ${volumeName} deleted`,
+                metadata: { volumeName }
+              }
+            })
+          );
+        }
 
         // Suppression des associations conteneur-volume
         this.transactions.push(

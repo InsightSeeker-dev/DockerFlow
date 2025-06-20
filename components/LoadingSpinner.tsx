@@ -4,11 +4,12 @@ interface LoadingSpinnerProps {
   size?: number | string; // e.g. 20, '2rem'
   color?: string; // e.g. '#000', 'text-blue-600'
   className?: string;
+  spinning?: boolean; // Ajout: contrôle l'animation
 }
 
-const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({ size = 20, color = 'currentColor', className = '' }) => (
+const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({ size = 20, color = 'currentColor', className = '', spinning = true }) => (
   <svg
-    className={`animate-spin ${className}`.trim()}
+    className={`${spinning ? 'animate-spin' : ''} ${className}`.trim()}
     style={{ width: size, height: size, color }}
     xmlns="http://www.w3.org/2000/svg"
     fill="none"

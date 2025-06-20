@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { docker, getTraefikConfig } from '@/lib/docker';
 import { isAdmin } from '@/lib/utils/auth-helpers';
 import { getContainerStats } from '@/lib/utils/docker-helpers';
+import { synchronizeContainers } from '@/lib/docker/containerSync';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { ActivityType } from '@prisma/client';
@@ -25,6 +26,11 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
     const search = searchParams.get('search');
+
+    // Synchronisation containers <-> DB
+    if (session?.user?.id) {
+      await synchronizeContainers(session.user.id);
+    }
 
     const containers = await docker.listContainers({ all: true });
     const containerPromises = containers
